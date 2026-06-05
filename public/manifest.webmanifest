@@ -1,0 +1,27 @@
+{
+  "name": "ERP Karsa Canvas",
+  "short_name": "ERP Karsa",
+  "description": "Sistem ERP outlet — kasir, stok, laporan keuangan",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#065f46",
+  "orientation": "any",
+  "categories": ["business", "finance"],
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
+}
