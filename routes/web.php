@@ -39,6 +39,7 @@ Route::middleware(['auth', 'outlet'])->group(function () {
 
     // Shifts
     Route::get('/shifts', [\App\Http\Controllers\ShiftController::class, 'index'])->name('shifts');
+    Route::get('/shifts/{id}/detail', [\App\Http\Controllers\ShiftController::class, 'show'])->name('shifts.show');
     Route::post('/shifts/open', [\App\Http\Controllers\ShiftController::class, 'store'])->name('shifts.store');
     Route::post('/shifts/{id}/close', [\App\Http\Controllers\ShiftController::class, 'update'])->name('shifts.update');
 
@@ -76,6 +77,12 @@ Route::middleware(['auth', 'outlet'])->group(function () {
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+
+    // Investments
+    Route::get('/investments', [\App\Http\Controllers\InvestmentController::class, 'index'])->name('investments');
+    Route::post('/investments', [\App\Http\Controllers\InvestmentController::class, 'store'])->name('investments.store');
+    Route::post('/investments/{id}/approve', [\App\Http\Controllers\InvestmentController::class, 'approve'])->name('investments.approve');
+    Route::post('/investments/{id}/reject', [\App\Http\Controllers\InvestmentController::class, 'reject'])->name('investments.reject');
 });
 
 require __DIR__.'/auth.php';

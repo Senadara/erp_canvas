@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\HasUlidPrimary;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TransactionItem extends Model
 {
@@ -22,5 +23,10 @@ class TransactionItem extends Model
             'price_per_porsi' => 'decimal:4',
             'subtotal' => 'decimal:4',
         ];
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
     }
 }

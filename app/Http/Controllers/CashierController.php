@@ -22,6 +22,10 @@ class CashierController extends Controller
         
         $openShift = $this->shiftService->getOpenShift($outletId);
         
+        if ($openShift) {
+            $openShift->load('outlet');
+        }
+        
         $products = [];
         $shiftTransactions = [];
         if ($openShift) {
@@ -29,10 +33,14 @@ class CashierController extends Controller
             $shiftTransactions = $this->transactionService->getShiftTransactions($outletId, $openShift->opened_at);
         }
 
+        // Get unpaid transactions from all shifts (persist even when shift is closed)
+        $unpaidTransactions = $this->transactionService->getUnpaidTransactions($outletId);
+
         return Inertia::render('Cashier/Index', [
             'openShift' => $openShift,
             'products' => $products,
             'shiftTransactions' => $shiftTransactions,
+            'unpaidTransactions' => $unpaidTransactions,
         ]);
     }
 

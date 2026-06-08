@@ -20,6 +20,7 @@ class NavPermission
         'users' => false,
         'outlets' => false,
         'suppliers' => false,
+        'investments' => false,
     ];
 
     /** @var array<string, bool> */
@@ -36,6 +37,7 @@ class NavPermission
         'users' => false,
         'outlets' => false,
         'suppliers' => false,
+        'investments' => true,
     ];
 
     public static function canSee(?User $user, string $feature): bool
@@ -71,6 +73,7 @@ class NavPermission
             ['href' => '/suppliers', 'label' => 'Supplier', 'feature' => 'suppliers', 'icon' => 'truck', 'group' => 'inventaris'],
             ['href' => '/expenses', 'label' => 'Pengeluaran', 'feature' => 'expenses', 'icon' => 'banknotes', 'group' => 'keuangan'],
             ['href' => '/reports', 'label' => 'Laporan', 'feature' => 'reports', 'icon' => 'chart', 'group' => 'keuangan'],
+            ['href' => '/investments', 'label' => 'Investasi', 'feature' => 'investments', 'icon' => 'banknotes', 'group' => 'keuangan'],
             ['href' => '/owner', 'label' => 'Owner', 'feature' => 'owner', 'icon' => 'building', 'group' => 'keuangan'],
             ['href' => '/outlets', 'label' => 'Outlet', 'feature' => 'outlets', 'icon' => 'map', 'group' => 'pengaturan'],
             ['href' => '/users', 'label' => 'Pengguna', 'feature' => 'users', 'icon' => 'users', 'group' => 'pengaturan'],

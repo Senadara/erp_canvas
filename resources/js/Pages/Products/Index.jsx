@@ -96,7 +96,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
     };
 
     const addConversion = () => {
-        setBomData('conversions', [...bomData.conversions, { stock_item_id: '', ratio: '' }]);
+        setBomData('conversions', [...bomData.conversions, { stock_item_id: '', ratio: '', initial_stock: '' }]);
     };
 
     const updateConversion = (index, field, value) => {
@@ -389,7 +389,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                                 ))}
                                             </select>
                                         </div>
-                                        <div className="w-1/3">
+                                        <div className="w-1/4">
                                             <label className="block text-xs font-medium text-slate-700 mb-1">Jumlah</label>
                                             <input
                                                 type="number"
@@ -400,6 +400,18 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                                 className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm"
                                                 required
                                                 placeholder="Cth: 1.5"
+                                            />
+                                        </div>
+                                        <div className="w-1/4">
+                                            <label className="block text-xs font-medium text-slate-700 mb-1">Stok Awal (Opsional)</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={conv.initial_stock || ''}
+                                                onChange={e => updateConversion(index, 'initial_stock', e.target.value)}
+                                                className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+                                                placeholder="+ Stok (Opsional)"
                                             />
                                         </div>
                                         <div className="pt-5">

@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, router, usePage } from '@inertiajs/react';
+import { enqueueSale, isOnline, onConnectivityChange } from '@/pwa/offlineQueue';
 
 function formatRupiah(value) {
     const n = Number(value) || 0;
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
 }
 
-export default function CashierIndex({ openShift, products, shiftTransactions = [] }) {
+export default function CashierIndex({ openShift, products, shiftTransactions = [], unpaidTransactions = [] }) {
     const [cart, setCart] = useState([]);
     const [paymentMethod, setPaymentMethod] = useState('CASH');
     const [paymentStatus, setPaymentStatus] = useState('PAID');
@@ -15,6 +16,8 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
     const [customerName, setCustomerName] = useState('');
     const [processing, setProcessing] = useState(false);
     const [receiptTransaction, setReceiptTransaction] = useState(null);
+    const [isOffline, setIsOffline] = useState(!isOnline());
+    const [localTransactions, setLocalTransactions] = useState([]);
 
     // History Modal State
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
@@ -26,13 +29,23 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
 
     const { flash } = usePage().props;
 
+    // Monitor connectivity changes
+    useEffect(() => {
+        const cleanup = onConnectivityChange((online) => {
+            setIsOffline(!online);
+        });
+        return cleanup;
+    }, []);
+
     useEffect(() => {
         if (flash?.new_transaction) {
             setReceiptTransaction(flash.new_transaction);
-            // Otomatis memicu pop-up print setelah render
-            setTimeout(() => {
-                window.print();
-            }, 500);
+            // Otomatis memicu pop-up print setelah render hanya jika PAID
+            if (flash.new_transaction.payment_status === 'PAID') {
+                setTimeout(() => {
+                    window.print();
+                }, 500);
+            }
         }
     }, [flash]);
 
@@ -74,18 +87,65 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
 
     const total = cart.reduce((sum, item) => sum + (item.price_per_porsi * item.qty_porsi), 0);
 
-    const handleCheckout = (e) => {
+    const handleCheckout = async (e) => {
         e.preventDefault();
         if (processing) return;
         setProcessing(true);
-        
-        router.post(route('cashier.store'), {
+
+        const salePayload = {
             items: cart,
             payment_status: paymentStatus,
             payment_method: paymentMethod,
             cash_received: cashReceived ? Number(cashReceived) : null,
             note: customerName ? `Customer: ${customerName}` : ''
-        }, {
+        };
+
+        // If offline, use offline queue
+        if (isOffline) {
+            try {
+                const localId = await enqueueSale(salePayload);
+                // Create a local transaction object for immediate UI update
+                const itemsWithSubtotal = cart.map(item => ({
+                    ...item,
+                    subtotal: item.qty_porsi * item.price_per_porsi
+                }));
+                const localTx = {
+                    id: `local-${localId}`,
+                    localId,
+                    invoice_number: `OFF-${Date.now()}`,
+                    items: itemsWithSubtotal,
+                    total_amount: total,
+                    payment_status: paymentStatus,
+                    payment_method: paymentMethod,
+                    cash_received: cashReceived ? Number(cashReceived) : null,
+                    change_amount: cashReceived ? Number(cashReceived) - total : 0,
+                    note: customerName ? `Customer: ${customerName}` : '',
+                    created_at: new Date().toISOString(),
+                    isOffline: true
+                };
+                setLocalTransactions(prev => [...prev, localTx]);
+                // Only show receipt for paid transactions
+                if (paymentStatus === 'PAID') {
+                    setReceiptTransaction(localTx);
+                }
+                // Show success message for offline sale
+                alert('Penjualan disimpan offline. Akan disinkronkan saat online.');
+                setCart([]);
+                setCashReceived('');
+                setCustomerName('');
+                setPaymentStatus('PAID');
+                setProcessing(false);
+                return;
+            } catch (error) {
+                console.error('Failed to enqueue offline sale:', error);
+                alert('Gagal menyimpan penjualan offline.');
+                setProcessing(false);
+                return;
+            }
+        }
+
+        // If online, use normal API call
+        router.post(route('cashier.store'), salePayload, {
             onSuccess: () => {
                 setCart([]);
                 setCashReceived('');
@@ -96,8 +156,8 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
         });
     };
 
-    const unpaidTransactions = shiftTransactions.filter(t => t.payment_status === 'UNPAID');
-    const paidTransactions = shiftTransactions.filter(t => t.payment_status === 'PAID');
+    const allUnpaidTransactions = [...unpaidTransactions, ...localTransactions.filter(t => t.payment_status === 'UNPAID')];
+    const paidTransactions = [...shiftTransactions.filter(t => t.payment_status === 'PAID'), ...localTransactions.filter(t => t.payment_status === 'PAID')];
 
     const handlePayDebt = (e) => {
         e.preventDefault();
@@ -140,19 +200,29 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
             <Head title="Kasir" />
 
             <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-slate-900 hidden md:block">Kasir</h1>
-                <div className="flex-1 md:flex-none flex justify-end">
+                <div className="flex items-center gap-3">
+                    <h1 className="text-2xl font-semibold text-slate-900 hidden md:block">Kasir</h1>
+                    {isOffline && (
+                        <span className="bg-amber-100 text-amber-800 text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                            Offline Mode
+                        </span>
+                    )}
+                </div>
+                <div className="flex-1 md:flex-none flex justify-end gap-2">
                     <button 
                         onClick={() => {
-                            setHistoryTab(unpaidTransactions.length > 0 ? 'UNPAID' : 'PAID');
+                            setHistoryTab(allUnpaidTransactions.length > 0 ? 'UNPAID' : 'PAID');
                             setIsHistoryModalOpen(true);
                         }}
                         className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-md hover:bg-slate-50 text-sm font-medium flex items-center gap-2 shadow-sm"
                     >
                         Riwayat Pesanan
-                        {unpaidTransactions.length > 0 && (
+                        {allUnpaidTransactions.length > 0 && (
                             <span className="bg-rose-500 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
-                                {unpaidTransactions.length} Belum Bayar
+                                {allUnpaidTransactions.length} Belum Bayar
                             </span>
                         )}
                     </button>
@@ -338,8 +408,18 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                             <div className="p-6 overflow-y-auto text-slate-800" id="receipt-content">
                                 {/* Receipt content */}
                                 <div className="text-center mb-4">
-                                    <h3 className="font-bold text-lg">Outlet {openShift?.outlet?.name || 'Toko'}</h3>
-                                    <p className="text-xs text-slate-500">{new Date(receiptTransaction.created_at).toLocaleString('id-ID')}</p>
+                                    <h3 className="font-bold text-lg">{openShift?.outlet?.name || 'Toko'}</h3>
+                                    {openShift?.outlet?.address && <p className="text-xs text-slate-600">{openShift.outlet.address}</p>}
+                                    {openShift?.outlet?.phone && <p className="text-xs text-slate-600">Telp: {openShift.outlet.phone}</p>}
+                                    <p className="text-xs text-slate-500 mt-1">{new Date(receiptTransaction.created_at).toLocaleString('id-ID', { 
+                                        timeZone: 'Asia/Jakarta',
+                                        year: 'numeric',
+                                        month: '2-digit',
+                                        day: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        second: '2-digit'
+                                    })}</p>
                                     <p className="text-xs text-slate-500">No: {receiptTransaction.invoice_number}</p>
                                 </div>
                                 <div className="border-t border-b border-dashed border-slate-300 py-3 mb-3 space-y-2">
@@ -424,7 +504,7 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                                         onClick={() => setHistoryTab('UNPAID')}
                                         className={`px-4 py-3 text-sm font-medium border-b-2 ${historyTab === 'UNPAID' ? 'border-rose-500 text-rose-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                                     >
-                                        Belum Bayar ({unpaidTransactions.length})
+                                        Belum Bayar ({allUnpaidTransactions.length})
                                     </button>
                                     <button
                                         onClick={() => setHistoryTab('PAID')}
@@ -436,17 +516,24 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                                 <div className="p-6 overflow-y-auto flex-1 bg-slate-50/50">
                                     {historyTab === 'UNPAID' && (
                                         <div className="space-y-3">
-                                            {unpaidTransactions.length === 0 ? (
+                                            {allUnpaidTransactions.length === 0 ? (
                                                 <p className="text-center text-slate-500 py-8">Tidak ada pesanan yang belum dibayar.</p>
                                             ) : (
-                                                unpaidTransactions.map(tx => (
+                                                allUnpaidTransactions.map(tx => (
                                                     <div key={tx.id} className="bg-white p-4 rounded-lg border border-rose-200 shadow-sm flex justify-between items-center">
                                                         <div>
                                                             <div className="flex items-center gap-2 mb-1">
                                                                 <span className="font-semibold text-slate-900">{tx.invoice_number}</span>
                                                                 <span className="text-xs bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-medium">Utang</span>
                                                             </div>
-                                                            <div className="text-sm text-slate-600 mb-1">{tx.note || 'Tanpa Nama'} • {new Date(tx.created_at).toLocaleTimeString('id-ID')}</div>
+                                                            <div className="text-sm text-slate-600 mb-1">{tx.note || 'Tanpa Nama'} • {new Date(tx.created_at).toLocaleString('id-ID', { 
+                                                                timeZone: 'Asia/Jakarta',
+                                                                year: 'numeric',
+                                                                month: '2-digit',
+                                                                day: '2-digit',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}</div>
                                                             <div className="text-xs text-slate-500">
                                                                 {tx.items.length} item: {tx.items.slice(0, 2).map(i => `${i.qty_porsi}x ${i.product_name}`).join(', ')}
                                                                 {tx.items.length > 2 && ' ...'}
@@ -479,7 +566,14 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                                                                 <span className="font-semibold text-slate-900">{tx.invoice_number}</span>
                                                                 <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-medium">Lunas ({tx.payment_method})</span>
                                                             </div>
-                                                            <div className="text-sm text-slate-600 mb-1">{tx.note || 'Tanpa Nama'} • {new Date(tx.created_at).toLocaleTimeString('id-ID')}</div>
+                                                            <div className="text-sm text-slate-600 mb-1">{tx.note || 'Tanpa Nama'} • {new Date(tx.created_at).toLocaleString('id-ID', { 
+                                                                timeZone: 'Asia/Jakarta',
+                                                                year: 'numeric',
+                                                                month: '2-digit',
+                                                                day: '2-digit',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}</div>
                                                             <div className="text-xs text-slate-500">
                                                                 {tx.items.length} item: {tx.items.slice(0, 2).map(i => `${i.qty_porsi}x ${i.product_name}`).join(', ')}
                                                                 {tx.items.length > 2 && ' ...'}

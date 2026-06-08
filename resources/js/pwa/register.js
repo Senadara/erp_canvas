@@ -31,6 +31,7 @@ export function registerServiceWorker() {
 async function tryFlushQueue() {
     try {
         const pending = await getPendingSales();
+        console.log('[PWA] Pending sales:', pending.length);
         if (pending.length === 0) return;
 
         // Get outlet ID from the page's meta or a global
@@ -40,14 +41,21 @@ async function tryFlushQueue() {
             return;
         }
 
+        console.log('[PWA] Outlet ID:', outletId);
+
         const result = await flushSalesQueue(outletId);
         console.log('[PWA] Sync result:', result);
 
-        if (result.queued > 0) {
+        if (result.queued > 0 || result.failed === 0) {
             // Optionally show a toast or notification
             window.dispatchEvent(new CustomEvent('pwa:synced', { detail: result }));
+            // Reload the page to refresh data from server
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
         }
     } catch (err) {
-        console.warn('[PWA] Flush failed:', err);
+        console.error('[PWA] Flush failed:', err);
+        alert('Gagal menyinkronkan data offline: ' + err.message);
     }
 }

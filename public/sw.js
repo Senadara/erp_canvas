@@ -1,12 +1,17 @@
-const CACHE_NAME = 'erp-karsa-v2';
-const STATIC_ASSETS = ['/login', '/dashboard', '/manifest.webmanifest', '/favicon.ico'];
+const CACHE_NAME = 'erp-karsa-v3';
 const API_CACHE = 'erp-api-cache-v1';
 
 // Install: precache shell
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME)
-            .then((cache) => cache.addAll(STATIC_ASSETS))
+            .then((cache) => {
+                // Cache the manifest and icon
+                return cache.addAll([
+                    '/manifest.webmanifest',
+                    '/favicon.ico'
+                ]);
+            })
             .then(() => self.skipWaiting())
     );
 });
@@ -27,10 +32,16 @@ self.addEventListener('activate', (event) => {
 // Fetch strategy: Network-first for navigations + API, cache-first for static
 self.addEventListener('fetch', (event) => {
     const { request } = event;
-    if (request.method !== 'GET') return;
-
     const url = new URL(request.url);
     if (url.origin !== self.location.origin) return;
+
+    // Allow POST requests to sync endpoint to pass through
+    if (request.method === 'POST' && url.pathname.startsWith('/api/v1/sync/sales')) {
+        event.respondWith(fetch(request));
+        return;
+    }
+
+    if (request.method !== 'GET') return;
 
     // API catalog: cache the response for offline use
     if (url.pathname.startsWith('/api/v1/sync/catalog')) {
@@ -48,37 +59,72 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Static assets (JS/CSS/images): cache-first
-    if (url.pathname.startsWith('/build/') || url.pathname.match(/\.(js|css|png|jpg|webp|ico|svg|woff2?)$/)) {
+    // API sync sales: cache-first for offline queue
+    if (url.pathname.startsWith('/api/v1/sync/sales')) {
+        event.respondWith(
+            fetch(request)
+                .then((res) => {
+                    if (res.ok) {
+                        const clone = res.clone();
+                        caches.open(API_CACHE).then((c) => c.put(request, clone));
+                    }
+                    return res;
+                })
+                .catch(() => {
+                    // Return cached response or offline indicator
+                    return caches.match(request).then((cached) => {
+                        if (cached) return cached;
+                        return new Response(JSON.stringify({ offline: true, message: 'Offline - queued' }), {
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                    });
+                })
+        );
+        return;
+    }
+
+    // Static assets (JS/CSS/images): cache-first with network update
+    if (url.pathname.startsWith('/build/assets/') || url.pathname.match(/\.(js|css|png|jpg|jpeg|webp|ico|svg|woff2?)$/)) {
         event.respondWith(
             caches.match(request).then((cached) => {
-                if (cached) return cached;
-                return fetch(request).then((res) => {
-                    if (res.ok && res.type === 'basic') {
+                const fetchPromise = fetch(request).then((res) => {
+                    if (res.ok) {
                         const clone = res.clone();
                         caches.open(CACHE_NAME).then((c) => c.put(request, clone));
                     }
                     return res;
                 });
+                return cached || fetchPromise;
             })
         );
         return;
     }
 
-    // HTML navigations: network-first with offline fallback
+    // HTML navigations: network-first with offline fallback to cached shell
     if (request.headers.get('accept')?.includes('text/html')) {
         event.respondWith(
             fetch(request)
                 .then((res) => {
-                    if (res.ok && res.type === 'basic') {
+                    if (res.ok) {
                         const clone = res.clone();
                         caches.open(CACHE_NAME).then((c) => c.put(request, clone));
                     }
                     return res;
                 })
-                .catch(() =>
-                    caches.match(request).then((r) => r || caches.match('/dashboard'))
-                )
+                .catch(() => {
+                    // Try to serve from cache, fallback to dashboard
+                    return caches.match(request).then((cached) => {
+                        if (cached) return cached;
+                        // Return a basic offline HTML page
+                        return caches.match('/dashboard').then((dashboard) => {
+                            if (dashboard) return dashboard;
+                            return new Response(
+                                '<html><body><h1>Offline - Anda sedang offline</h1><p>Silakan cek koneksi internet Anda.</p></body></html>',
+                                { headers: { 'Content-Type': 'text/html' } }
+                            );
+                        });
+                    });
+                })
         );
         return;
     }
@@ -87,7 +133,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         fetch(request)
             .then((res) => {
-                if (res.ok && res.type === 'basic') {
+                if (res.ok) {
                     const clone = res.clone();
                     caches.open(CACHE_NAME).then((c) => c.put(request, clone));
                 }

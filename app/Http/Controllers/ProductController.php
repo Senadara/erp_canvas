@@ -73,9 +73,10 @@ class ProductController extends Controller
             'conversions' => 'array',
             'conversions.*.stock_item_id' => 'required|string',
             'conversions.*.ratio' => 'required|numeric|min:0.0001',
+            'conversions.*.initial_stock' => 'nullable|numeric|min:0',
         ]);
 
-        $this->productService->setProductConversions($id, $outletId, $data['conversions']);
+        $this->productService->setProductConversions($id, $outletId, $data['conversions'], $this->stockService);
         return redirect()->back()->with('success', 'Konversi bahan berhasil disimpan.');
     }
 }

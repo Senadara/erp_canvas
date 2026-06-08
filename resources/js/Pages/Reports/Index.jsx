@@ -1,6 +1,7 @@
 import React from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, router } from '@inertiajs/react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 function formatRupiah(value) {
     const n = Number(value) || 0;
@@ -105,24 +106,32 @@ export default function ReportsIndex({ monthlyReport, dailySummary, revenue7Days
                     </div>
 
                     <div>
-                        <h3 className="text-sm font-medium text-slate-700 mb-2">Penjualan 7 Hari Terakhir (Rp)</h3>
-                        <div className="h-32 flex items-end gap-2 text-xs">
-                            {revenue7Days.map((day, i) => {
-                                const max = Math.max(...revenue7Days.map(d => Number(d.total) || 1));
-                                const height = `${(Number(day.total) / max) * 100}%`;
-                                return (
-                                    <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
-                                        <div className="w-full bg-indigo-200 rounded-t-sm" style={{ height: height || '10%' }}>
-                                            <div className="w-full bg-indigo-500 rounded-t-sm" style={{ height: `${(Number(day.cash) / (Number(day.total) || 1)) * 100}%` }}></div>
-                                        </div>
-                                        <span className="text-[10px] text-slate-500">{day.date.substring(5)}</span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        <div className="flex gap-4 mt-2 text-xs text-slate-500 justify-center">
-                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-indigo-500 rounded-sm"></div> Tunai</span>
-                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-indigo-200 rounded-sm"></div> QRIS</span>
+                        <h3 className="text-sm font-medium text-slate-700 mb-4">Penjualan 7 Hari Terakhir (Rp)</h3>
+                        <div className="h-64 w-full">
+                            {revenue7Days && revenue7Days.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={revenue7Days.map(d => ({...d, name: d.date.substring(5), cash: Number(d.cash), qris: Number(d.qris)}))} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
+                                        <YAxis 
+                                            axisLine={false} 
+                                            tickLine={false} 
+                                            tick={{ fontSize: 12, fill: '#64748b' }}
+                                            tickFormatter={(val) => `Rp${val >= 1000000 ? (val/1000000).toFixed(1) + 'M' : val >= 1000 ? (val/1000).toFixed(0) + 'k' : val}`}
+                                        />
+                                        <Tooltip 
+                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                            formatter={(value) => [formatRupiah(value)]}
+                                            cursor={{ fill: '#f8fafc' }}
+                                        />
+                                        <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                                        <Bar dataKey="cash" name="Tunai" stackId="a" fill="#6366f1" radius={[0, 0, 4, 4]} />
+                                        <Bar dataKey="qris" name="QRIS" stackId="a" fill="#c7d2fe" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <div className="h-full flex items-center justify-center text-slate-400 text-sm">Belum ada data penjualan</div>
+                            )}
                         </div>
                     </div>
                 </div>

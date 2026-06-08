@@ -50,11 +50,11 @@ class ProductService
         ]);
     }
 
-    public function setProductConversions(string $productId, string $outletId, array $rows)
+    public function setProductConversions(string $productId, string $outletId, array $rows, ?StockService $stockService = null)
     {
-        Product::where('id', $productId)->where('outlet_id', $outletId)->firstOrFail();
+        $product = Product::where('id', $productId)->where('outlet_id', $outletId)->firstOrFail();
         
-        DB::transaction(function () use ($productId, $rows) {
+        DB::transaction(function () use ($productId, $rows, $outletId, $stockService, $product) {
             Conversion::where('product_id', $productId)->delete();
             foreach ($rows as $row) {
                 Conversion::create([
@@ -62,6 +62,17 @@ class ProductService
                     'stock_item_id' => $row['stock_item_id'],
                     'ratio' => $row['ratio'],
                 ]);
+                
+                if (isset($row['initial_stock']) && $row['initial_stock'] > 0 && $stockService) {
+                    $stockService->addRestockLog(
+                        $outletId,
+                        $row['stock_item_id'],
+                        $row['initial_stock'],
+                        $row['initial_stock'] * ($row['hpp'] ?? 0),
+                        "Stok awal dari produk $product->name",
+                        null
+                    );
+                }
             }
         });
     }

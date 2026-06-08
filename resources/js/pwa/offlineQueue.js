@@ -6,9 +6,11 @@
  */
 
 const DB_NAME = 'erp_offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_SALES = 'pending_sales';
 const STORE_CATALOG = 'catalog';
+const STORE_SHIFTS = 'pending_shifts';
+const STORE_EXPENSES = 'pending_expenses';
 
 function openDB() {
     return new Promise((resolve, reject) => {
@@ -20,6 +22,12 @@ function openDB() {
             }
             if (!db.objectStoreNames.contains(STORE_CATALOG)) {
                 db.createObjectStore(STORE_CATALOG, { keyPath: 'outletId' });
+            }
+            if (!db.objectStoreNames.contains(STORE_SHIFTS)) {
+                db.createObjectStore(STORE_SHIFTS, { keyPath: 'localId', autoIncrement: true });
+            }
+            if (!db.objectStoreNames.contains(STORE_EXPENSES)) {
+                db.createObjectStore(STORE_EXPENSES, { keyPath: 'localId', autoIncrement: true });
             }
         };
         req.onsuccess = () => resolve(req.result);
@@ -66,7 +74,7 @@ export async function markSalesSynced(localIds) {
     return new Promise((resolve) => { tx.oncomplete = resolve; });
 }
 
-export async function flushSalesQueue(outletId, sanctumToken) {
+export async function flushSalesQueue(outletId) {
     const pending = await getPendingSales();
     if (pending.length === 0) return { queued: 0, failed: 0 };
 
@@ -84,13 +92,17 @@ export async function flushSalesQueue(outletId, sanctumToken) {
         'Accept': 'application/json',
         'X-Outlet-Id': outletId,
     };
-    if (sanctumToken) {
-        headers['Authorization'] = `Bearer ${sanctumToken}`;
+
+    // Add CSRF token for web middleware
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (csrfToken) {
+        headers['X-CSRF-TOKEN'] = csrfToken;
     }
 
     const res = await fetch('/api/v1/sync/sales', {
         method: 'POST',
         headers,
+        credentials: 'include',
         body: JSON.stringify({ outlet_id: outletId, sales: salesPayload }),
     });
 
@@ -134,6 +146,85 @@ export async function getCatalog(outletId) {
         req.onsuccess = () => resolve(req.result || null);
         req.onerror = () => reject(req.error);
     });
+}
+
+// ─── Shift Queue ─────────────────────────────────────────────────────────
+
+export async function enqueueShift(shiftPayload, action) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_SHIFTS, 'readwrite');
+        const store = tx.objectStore(STORE_SHIFTS);
+        const record = {
+            ...shiftPayload,
+            action, // 'open' or 'close'
+            createdAt: new Date().toISOString(),
+            synced: false,
+        };
+        const req = store.add(record);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function getPendingShifts() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_SHIFTS, 'readonly');
+        const store = tx.objectStore(STORE_SHIFTS);
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result.filter(r => !r.synced));
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function markShiftsSynced(localIds) {
+    const db = await openDB();
+    const tx = db.transaction(STORE_SHIFTS, 'readwrite');
+    const store = tx.objectStore(STORE_SHIFTS);
+    for (const id of localIds) {
+        store.delete(id);
+    }
+    return new Promise((resolve) => { tx.oncomplete = resolve; });
+}
+
+// ─── Expense Queue ───────────────────────────────────────────────────────
+
+export async function enqueueExpense(expensePayload) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_EXPENSES, 'readwrite');
+        const store = tx.objectStore(STORE_EXPENSES);
+        const record = {
+            ...expensePayload,
+            createdAt: new Date().toISOString(),
+            synced: false,
+        };
+        const req = store.add(record);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function getPendingExpenses() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_EXPENSES, 'readonly');
+        const store = tx.objectStore(STORE_EXPENSES);
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result.filter(r => !r.synced));
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function markExpensesSynced(localIds) {
+    const db = await openDB();
+    const tx = db.transaction(STORE_EXPENSES, 'readwrite');
+    const store = tx.objectStore(STORE_EXPENSES);
+    for (const id of localIds) {
+        store.delete(id);
+    }
+    return new Promise((resolve) => { tx.oncomplete = resolve; });
 }
 
 // ─── Online/Offline Helpers ─────────────────────────────────────────────

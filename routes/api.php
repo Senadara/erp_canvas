@@ -88,6 +88,6 @@ Route::prefix('v1')->group(function () {
                 'errors' => $errors,
                 'syncedAt' => now()->toIso8601String(),
             ]);
-        });
+        })->middleware('web');
     });
 });

@@ -22,6 +22,7 @@ class DashboardController extends Controller
             'openShift' => false,
         ];
 
+        $chartData = [];
         if ($outletId) {
             $sum = Transaction::query()
                 ->where('outlet_id', $outletId)
@@ -33,10 +34,29 @@ class DashboardController extends Controller
                 ->where('outlet_id', $outletId)
                 ->where('status', 'OPEN')
                 ->exists();
+
+            // Last 7 days revenue for chart
+            for ($i = 6; $i >= 0; $i--) {
+                $date = now()->subDays($i)->startOfDay();
+                $end = now()->subDays($i)->endOfDay();
+                
+                $dailySum = Transaction::query()
+                    ->where('outlet_id', $outletId)
+                    ->where('payment_status', 'PAID')
+                    ->whereBetween('created_at', [$date, $end])
+                    ->sum('total_amount');
+                
+                $chartData[] = [
+                    'name' => $date->format('D'), // short day name
+                    'date' => $date->format('Y-m-d'),
+                    'revenue' => (float) $dailySum
+                ];
+            }
         }
 
         return Inertia::render('Dashboard', [
             'stats' => $stats,
+            'chartData' => $chartData,
         ]);
     }
 }

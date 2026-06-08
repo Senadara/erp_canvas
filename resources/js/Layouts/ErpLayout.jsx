@@ -1,5 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     HomeIcon,
     CalculatorIcon,
@@ -20,7 +20,9 @@ import {
     ArrowRightStartOnRectangleIcon,
     UserCircleIcon,
     ChevronLeftIcon,
+    DevicePhoneMobileIcon,
 } from '@heroicons/react/24/outline';
+import { usePWAInstall } from '@/pwa/usePWAInstall';
 
 const iconMap = {
     home: HomeIcon,
@@ -91,12 +93,41 @@ export default function ErpLayout({ title, children }) {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [collapsed, setCollapsed] = useState(false);
     const [profileOpen, setProfileOpen] = useState(false);
+    const { isInstallable, install } = usePWAInstall();
+
+    // Add meta tags for offline sync
+    useEffect(() => {
+        if (outlet.currentId) {
+            let meta = document.querySelector('meta[name="outlet-id"]');
+            if (!meta) {
+                meta = document.createElement('meta');
+                meta.name = 'outlet-id';
+                document.head.appendChild(meta);
+            }
+            meta.content = outlet.currentId;
+        }
+    }, [outlet.currentId]);
 
     const changeOutlet = (e) => {
         router.post(route('outlet.set'), { outlet_id: e.target.value }, { preserveScroll: true });
     };
 
     const grouped = groupNavItems(nav);
+
+    // Session Guard: Auto-logout at 04:00 AM
+    useEffect(() => {
+        const checkTime = () => {
+            const now = new Date();
+            // Use local time for 04:00 AM check
+            if (now.getHours() === 4 && now.getMinutes() === 0 && now.getSeconds() < 30) {
+                // To avoid multiple triggers, we check if within the first 30 seconds of 04:00
+                router.post(route('logout'));
+            }
+        };
+
+        const interval = setInterval(checkTime, 10000); // Check every 10 seconds
+        return () => clearInterval(interval);
+    }, []);
 
     return (
         <div className="flex h-screen overflow-hidden bg-[#f4f6fc]">
@@ -196,6 +227,17 @@ export default function ErpLayout({ title, children }) {
                     </div>
 
                     <div className="flex items-center gap-3">
+                        {/* PWA Install Button */}
+                        {isInstallable && (
+                            <button
+                                onClick={install}
+                                className="hidden sm:flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-brand-700 hover:shadow-md"
+                            >
+                                <DevicePhoneMobileIcon className="h-4 w-4" />
+                                <span>Install App</span>
+                            </button>
+                        )}
+
                         {/* Outlet Selector */}
                         {outlet.list?.length > 0 && (
                             <select

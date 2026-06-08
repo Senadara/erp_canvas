@@ -170,6 +170,15 @@ class TransactionService
             ->get();
     }
 
+    public function getUnpaidTransactions(string $outletId)
+    {
+        return Transaction::where('outlet_id', $outletId)
+            ->where('payment_status', 'UNPAID')
+            ->with('items')
+            ->orderByDesc('created_at')
+            ->get();
+    }
+
     public function payDebt(string $transactionId, string $outletId, string $paymentMethod, ?float $cashReceived)
     {
         return DB::transaction(function () use ($transactionId, $outletId, $paymentMethod, $cashReceived) {
