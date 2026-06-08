@@ -11,12 +11,13 @@ export default function OutletsIndex({ outlets }) {
         name: '',
         address: '',
         phone: '',
+        logo: null,
     });
 
     const openModal = (outlet = null) => {
         if (outlet) {
             setEditingOutlet(outlet);
-            setData({ id: outlet.id, name: outlet.name, address: outlet.address || '', phone: outlet.phone || '' });
+            setData({ id: outlet.id, name: outlet.name, address: outlet.address || '', phone: outlet.phone || '', logo: null });
         } else {
             setEditingOutlet(null);
             reset();
@@ -32,7 +33,19 @@ export default function OutletsIndex({ outlets }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        post(route('outlets.store'), { onSuccess: () => closeModal() });
+        const formData = new FormData();
+        formData.append('id', data.id);
+        formData.append('name', data.name);
+        formData.append('address', data.address);
+        formData.append('phone', data.phone);
+        if (data.logo) {
+            formData.append('logo', data.logo);
+        }
+        post(route('outlets.store'), {
+            data: formData,
+            onSuccess: () => closeModal(),
+            forceFormData: true,
+        });
     };
 
     const handleDelete = (id) => {
@@ -55,6 +68,11 @@ export default function OutletsIndex({ outlets }) {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {outlets.map((o) => (
                     <div key={o.id} className="bg-white shadow-sm rounded-lg border border-slate-200 overflow-hidden">
+                        {o.logo && (
+                            <div className="h-32 bg-slate-50 flex items-center justify-center p-4">
+                                <img src={`/storage/${o.logo}`} alt={o.name} className="max-h-full max-w-full object-contain" onError={(e) => { e.target.style.display = 'none'; console.log('Logo load error:', o.logo); }} />
+                            </div>
+                        )}
                         <div className="px-5 py-4 border-b border-slate-100">
                             <h2 className="text-lg font-bold text-slate-900">{o.name}</h2>
                             {o.address && <p className="text-xs text-slate-500 mt-0.5">{o.address}</p>}
@@ -106,6 +124,21 @@ export default function OutletsIndex({ outlets }) {
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Telepon</label>
                                 <input type="text" value={data.phone} onChange={e => setData('phone', e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Logo</label>
+                                <input
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/jpg,image/gif"
+                                    onChange={e => setData('logo', e.target.files[0])}
+                                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                />
+                                {errors.logo && <p className="text-rose-500 text-xs mt-1">{errors.logo}</p>}
+                                {editingOutlet?.logo && !data.logo && (
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Logo saat ini: <img src={`/storage/${editingOutlet.logo}`} alt="Current logo" className="inline-block h-8 w-8 object-contain" />
+                                    </p>
+                                )}
                             </div>
                             <div className="pt-4 flex justify-end gap-3 border-t border-slate-200">
                                 <button type="button" onClick={closeModal} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">Batal</button>

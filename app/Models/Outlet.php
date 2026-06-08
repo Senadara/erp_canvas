@@ -11,7 +11,7 @@ class Outlet extends Model
 {
     use HasUlidPrimary;
 
-    protected $fillable = ['name', 'address', 'phone'];
+    protected $fillable = ['name', 'address', 'phone', 'logo'];
 
     public function users(): BelongsToMany
     {

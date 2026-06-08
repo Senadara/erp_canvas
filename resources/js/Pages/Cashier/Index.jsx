@@ -5,7 +5,7 @@ import { enqueueSale, isOnline, onConnectivityChange } from '@/pwa/offlineQueue'
 
 function formatRupiah(value) {
     const n = Number(value) || 0;
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
+    return 'Rp' + n.toLocaleString('id-ID');
 }
 
 export default function CashierIndex({ openShift, products, shiftTransactions = [], unpaidTransactions = [] }) {
@@ -22,6 +22,24 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
     // Mobile Cart State
     const [isCartVisible, setIsCartVisible] = useState(false);
     const [bluetoothDevice, setBluetoothDevice] = useState(null);
+    const [bluetoothCharacteristic, setBluetoothCharacteristic] = useState(null);
+    const [bluetoothService, setBluetoothService] = useState(null);
+    const [pairedPrinter, setPairedPrinter] = useState(() => {
+        const saved = localStorage.getItem('pairedPrinter');
+        return saved ? JSON.parse(saved) : null;
+    });
+    const [printerSettings, setPrinterSettings] = useState(() => {
+        const saved = localStorage.getItem('printerSettings');
+        return saved ? JSON.parse(saved) : { customHeader: '', customFooter: '' };
+    });
+    const [isPrinterSettingsOpen, setIsPrinterSettingsOpen] = useState(false);
+
+    // Listen for printer settings event from profile dropdown
+    useEffect(() => {
+        const handleOpenPrinterSettings = () => setIsPrinterSettingsOpen(true);
+        window.addEventListener('openPrinterSettings', handleOpenPrinterSettings);
+        return () => window.removeEventListener('openPrinterSettings', handleOpenPrinterSettings);
+    }, []);
 
     // Search and Filter State
     const [searchQuery, setSearchQuery] = useState('');
@@ -253,6 +271,47 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
         setCashReceived(String(total));
     };
 
+    const handlePairPrinter = async () => {
+        try {
+            if (!navigator.bluetooth) {
+                alert('Browser Anda tidak mendukung Bluetooth. Gunakan Chrome atau Edge di Android/Desktop.');
+                return;
+            }
+
+            const device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+            });
+
+            const printerInfo = {
+                id: device.id,
+                name: device.name || 'Unknown Printer',
+            };
+
+            setPairedPrinter(printerInfo);
+            localStorage.setItem('pairedPrinter', JSON.stringify(printerInfo));
+            alert(`Printer "${device.name}" berhasil dipasangkan!`);
+        } catch (error) {
+            if (error.name === 'NotFoundError') {
+                alert('Pemilihan printer dibatalkan.');
+            } else {
+                console.error('Error pairing printer:', error);
+                alert('Gagal memasangkan printer. Coba lagi.');
+            }
+        }
+    };
+
+    const handleUnpairPrinter = () => {
+        setPairedPrinter(null);
+        localStorage.removeItem('pairedPrinter');
+        alert('Printer berhasil dilepas.');
+    };
+
+    const handleSavePrinterSettings = () => {
+        localStorage.setItem('printerSettings', JSON.stringify(printerSettings));
+        setIsPrinterSettingsOpen(false);
+        alert('Pengaturan printer berhasil disimpan.');
+    };
+
     const allUnpaidTransactions = [...unpaidTransactions, ...localTransactions.filter(t => t.payment_status === 'UNPAID')];
     const paidTransactions = [...shiftTransactions.filter(t => t.payment_status === 'PAID'), ...localTransactions.filter(t => t.payment_status === 'PAID')];
 
@@ -287,6 +346,81 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
             let characteristic = null;
             let service = null;
 
+            // Check if we have an existing connected device
+            if (bluetoothDevice && bluetoothDevice.gatt && bluetoothDevice.gatt.connected) {
+                console.log('Reusing existing connection to:', bluetoothDevice.name);
+                device = bluetoothDevice;
+                server = device.gatt;
+                // Reuse stored characteristic and service if available
+                if (bluetoothCharacteristic && bluetoothService) {
+                    characteristic = bluetoothCharacteristic;
+                    service = bluetoothService;
+                    console.log('Reusing stored characteristic:', characteristic.uuid);
+                }
+            } else if (bluetoothDevice) {
+                // Try to reconnect to the stored device without showing dialog
+                console.log('Device disconnected, attempting to reconnect to:', bluetoothDevice.name);
+                console.log('Device gatt available:', !!bluetoothDevice.gatt);
+                try {
+                    device = bluetoothDevice;
+                    if (device.gatt) {
+                        server = await device.gatt.connect();
+                        console.log('Reconnected successfully to:', device.name);
+                        // Clear stored characteristic/service on reconnect as they might be invalid
+                        setBluetoothCharacteristic(null);
+                        setBluetoothService(null);
+                    } else {
+                        console.log('Device gatt not available, need to request device');
+                        device = null;
+                    }
+                } catch (error) {
+                    console.log('Failed to reconnect to stored device:', error);
+                    device = null;
+                    server = null;
+                }
+            }
+
+            // If still no device, try to request new device
+            if (!device) {
+                if (pairedPrinter) {
+                    try {
+                        console.log('Requesting device with name filter:', pairedPrinter.name);
+                        device = await navigator.bluetooth.requestDevice({
+                            filters: [{ name: pairedPrinter.name }],
+                            optionalServices: ['00001101-0000-1000-8000-00805f9b34fb']
+                        });
+                        console.log('Device selected:', device.name);
+                    } catch (error) {
+                        console.log('Failed to request device with filter, trying acceptAllDevices:', error);
+                        device = null;
+                    }
+                }
+
+                if (!device) {
+                    try {
+                        device = await navigator.bluetooth.requestDevice({
+                            acceptAllDevices: true,
+                            optionalServices: ['00001101-0000-1000-8000-00805f9b34fb']
+                        });
+                        console.log('New device selected:', device.name);
+
+                        // Save as paired printer
+                        const printerInfo = {
+                            id: device.id,
+                            name: device.name || 'Unknown Printer',
+                        };
+                        setPairedPrinter(printerInfo);
+                        localStorage.setItem('pairedPrinter', JSON.stringify(printerInfo));
+                    } catch (error) {
+                        if (error.name === 'NotFoundError') {
+                            alert('Pemilihan printer dibatalkan.');
+                            return;
+                        }
+                        throw error;
+                    }
+                }
+            }
+
             // Build ESC/POS commands for receipt
             const encoder = new TextEncoder();
             let commands = [];
@@ -294,6 +428,85 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
             // Initialize printer
             commands.push(0x1B, 0x40); // Initialize
             commands.push(0x1B, 0x61, 0x01); // Center align
+
+            // Custom header if set
+            if (printerSettings.customHeader) {
+                commands.push(...encoder.encode(printerSettings.customHeader + '\n'));
+                commands.push(...encoder.encode('--------------------------------\n'));
+            }
+
+            // Logo - fetch and convert to base64 if exists (optimized for thermal printer)
+            if (openShift?.outlet?.logo) {
+                try {
+                    console.log('Fetching logo from:', `/storage/${openShift.outlet.logo}`);
+                    const logoResponse = await fetch(`/storage/${openShift.outlet.logo}`);
+                    if (logoResponse.ok) {
+                        const logoBlob = await logoResponse.blob();
+                        console.log('Logo blob size:', logoBlob.size);
+
+                        // Create an image to get dimensions
+                        const imgBitmap = await createImageBitmap(logoBlob);
+                        console.log('Logo dimensions:', imgBitmap.width, 'x', imgBitmap.height);
+
+                        // Resize to max width 96 pixels (thermal printer standard width is 384 dots, 96px = 384/4 bytes)
+                        // This provides better visibility while keeping data manageable
+                        const maxWidth = 96;
+                        const scale = Math.min(maxWidth / imgBitmap.width, 1);
+                        const newWidth = Math.floor(imgBitmap.width * scale);
+                        const newHeight = Math.floor(imgBitmap.height * scale);
+
+                        // Create canvas for resizing and converting to monochrome
+                        const canvas = document.createElement('canvas');
+                        canvas.width = newWidth;
+                        canvas.height = newHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(imgBitmap, 0, 0, newWidth, newHeight);
+
+                        // Get image data and convert to monochrome
+                        const imageData = ctx.getImageData(0, 0, newWidth, newHeight);
+                        const pixels = imageData.data;
+                        const monochromeData = [];
+
+                        // Convert to 1-bit monochrome (ESC/POS format)
+                        for (let y = 0; y < newHeight; y++) {
+                            for (let x = 0; x < newWidth; x += 8) {
+                                let byte = 0;
+                                for (let bit = 0; bit < 8; bit++) {
+                                    if (x + bit < newWidth) {
+                                        const pixelIndex = ((y * newWidth) + (x + bit)) * 4;
+                                        const r = pixels[pixelIndex];
+                                        const g = pixels[pixelIndex + 1];
+                                        const b = pixels[pixelIndex + 2];
+                                        const brightness = (r + g + b) / 3;
+                                        if (brightness < 128) {
+                                            byte |= (1 << (7 - bit));
+                                        }
+                                    }
+                                }
+                                monochromeData.push(byte);
+                            }
+                        }
+
+                        console.log('Monochrome data size:', monochromeData.length);
+
+                        // ESC/POS commands for image using GS v 0 command
+                        // Format: GS v 0 m xL xH yL yH d1...dk
+                        // m = mode (0x30 for normal)
+                        // xL, xH = width in bytes (low, high)
+                        // yL, yH = height in dots (low, high)
+                        commands.push(0x1B, 0x61, 0x01); // Center align
+                        commands.push(0x1D, 0x76, 0x30, 0x00); // GS v 0
+                        commands.push((newWidth / 8) & 0xFF, ((newWidth / 8) >> 8) & 0xFF); // Width in bytes
+                        commands.push(newHeight & 0xFF, (newHeight >> 8) & 0xFF); // Height in dots
+                        commands.push(...monochromeData); // Image data
+                        commands.push(0x0A); // Line feed
+                    } else {
+                        console.log('Logo fetch failed:', logoResponse.status);
+                    }
+                } catch (error) {
+                    console.log('Error loading logo:', error);
+                }
+            }
 
             // Store name
             const storeName = openShift?.outlet?.name || 'Toko';
@@ -352,6 +565,13 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                 commands.push(...encoder.encode(`Catatan: ${transaction.note}\n`));
             }
 
+            // Custom footer if set
+            if (printerSettings.customFooter) {
+                commands.push(...encoder.encode('--------------------------------\n'));
+                commands.push(0x1B, 0x61, 0x01); // Center align
+                commands.push(...encoder.encode(printerSettings.customFooter + '\n'));
+            }
+
             // Footer
             commands.push(0x1B, 0x61, 0x01); // Center align
             commands.push(...encoder.encode('\nTerima Kasih Atas Kunjungan Anda!\n\n'));
@@ -361,32 +581,15 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
 
             const dataArray = new Uint8Array(commands);
 
-            // Try to reconnect if device is already stored and connected
-            if (bluetoothDevice && bluetoothDevice.gatt.connected) {
-                device = bluetoothDevice;
-                server = device.gatt;
-                console.log('Reusing existing connection');
-            } else {
-                // Request Bluetooth device - try without optional services first
-                try {
-                    device = await navigator.bluetooth.requestDevice({
-                        acceptAllDevices: true,
-                        // Don't request optional services initially to see if device stays connected
-                    });
-                } catch (error) {
-                    if (error.name === 'NotFoundError') {
-                        alert('Pemilihan printer dibatalkan.');
-                        return;
-                    }
-                    throw error;
-                }
-
+            // Connect to device if not already connected
+            if (!server) {
                 setBluetoothDevice(device);
 
                 // Use gattserverconnected event to get services immediately after connection
                 const connectionPromise = new Promise((resolve, reject) => {
                     device.addEventListener('gattserverdisconnected', () => {
                         console.log('Device disconnected');
+                        // Don't clear bluetoothDevice - keep it for reconnection attempts
                     });
 
                     device.gatt.connect().then(async (gattServer) => {
@@ -407,6 +610,8 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                             for (const char of characteristics) {
                                 if (char.properties.write || char.properties.writeWithoutResponse) {
                                     characteristic = char;
+                                    setBluetoothCharacteristic(char);
+                                    setBluetoothService(sppService);
                                     console.log('Found writable characteristic:', char.uuid);
                                     resolve();
                                     return;
@@ -431,6 +636,8 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                                         if (char.properties.write || char.properties.writeWithoutResponse) {
                                             characteristic = char;
                                             service = srv;
+                                            setBluetoothCharacteristic(char);
+                                            setBluetoothService(srv);
                                             console.log('Found writable characteristic:', char.uuid, 'properties:', char.properties);
                                             found = true;
                                             break;
@@ -489,10 +696,8 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
 
             console.log('Data sent successfully');
 
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            await server.disconnect();
-            console.log('Disconnected');
+            // Keep connection alive - don't disconnect
+            console.log('Keeping connection alive for next print');
 
             alert('Struk berhasil dikirim ke printer!');
         } catch (error) {
@@ -882,28 +1087,71 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                 </div>
             )}
 
+            {/* Printer Settings Modal */}
+            {isPrinterSettingsOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="text-lg font-semibold text-slate-900">Pengaturan Printer</h2>
+                            <button onClick={() => setIsPrinterSettingsOpen(false)} className="text-slate-400 hover:text-slate-600">&times;</button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            {/* Printer Pairing */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Printer Bluetooth</label>
+                                {pairedPrinter ? (
+                                    <div className="flex items-center justify-between bg-slate-50 p-3 rounded-md">
+                                        <div>
+                                            <p className="text-sm font-medium text-slate-900">{pairedPrinter.name}</p>
+                                            <p className="text-xs text-slate-500">Terpasang</p>
+                                        </div>
+                                        <button onClick={handleUnpairPrinter} className="text-rose-600 text-sm font-medium hover:text-rose-700">
+                                            Lepas
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button onClick={handlePairPrinter} className="w-full px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                                        Pasang Printer
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Custom Header */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Header Kustom</label>
+                                <textarea
+                                    value={printerSettings.customHeader}
+                                    onChange={e => setPrinterSettings({ ...printerSettings, customHeader: e.target.value })}
+                                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                    rows="2"
+                                    placeholder="Teks header kustom (opsional)"
+                                />
+                            </div>
+
+                            {/* Custom Footer */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Footer Kustom</label>
+                                <textarea
+                                    value={printerSettings.customFooter}
+                                    onChange={e => setPrinterSettings({ ...printerSettings, customFooter: e.target.value })}
+                                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                    rows="2"
+                                    placeholder="Teks footer kustom (opsional)"
+                                />
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+                            <button onClick={handleSavePrinterSettings} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                                Simpan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Receipt Modal */}
             {receiptTransaction && (
                 <>
-                    <style type="text/css" media="print">
-                        {`
-                            body * {
-                                visibility: hidden;
-                            }
-                            #receipt-content, #receipt-content * {
-                                visibility: visible;
-                            }
-                            #receipt-content {
-                                position: absolute;
-                                left: 0;
-                                top: 0;
-                                width: 100%;
-                                margin: 0;
-                                padding: 10px;
-                                color: black !important;
-                            }
-                        `}
-                    </style>
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                         <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh] print:shadow-none">
                             <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
@@ -913,10 +1161,13 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                             <div className="p-6 overflow-y-auto text-slate-800" id="receipt-content">
                                 {/* Receipt content */}
                                 <div className="text-center mb-4">
+                                    {openShift?.outlet?.logo && (
+                                        <img src={`/storage/${openShift.outlet.logo}`} alt={openShift.outlet.name} className="h-20 w-auto mx-auto mb-2 object-contain" />
+                                    )}
                                     <h3 className="font-bold text-lg">{openShift?.outlet?.name || 'Toko'}</h3>
                                     {openShift?.outlet?.address && <p className="text-xs text-slate-600">{openShift.outlet.address}</p>}
                                     {openShift?.outlet?.phone && <p className="text-xs text-slate-600">Telp: {openShift.outlet.phone}</p>}
-                                    <p className="text-xs text-slate-500 mt-1">{new Date(receiptTransaction.created_at).toLocaleString('id-ID', { 
+                                    <p className="text-xs text-slate-500 mt-1">{new Date(receiptTransaction.created_at).toLocaleString('id-ID', {
                                         timeZone: 'Asia/Jakarta',
                                         year: 'numeric',
                                         month: '2-digit',
@@ -978,20 +1229,14 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                                 </div>
                             </div>
                             <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
-                                <button onClick={() => setReceiptTransaction(null)} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
+                                <button type="button" onClick={() => setReceiptTransaction(null)} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
                                     Tutup
                                 </button>
-                                <button onClick={() => window.print()} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 flex items-center gap-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                                    </svg>
-                                    Cetak Struk
-                                </button>
-                                <button onClick={() => printToBluetooth(receiptTransaction)} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-2">
+                                <button type="button" onClick={(e) => { e.preventDefault(); printToBluetooth(receiptTransaction); }} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 flex items-center gap-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
                                     </svg>
-                                    Bluetooth
+                                    Cetak Struk
                                 </button>
                             </div>
                         </div>

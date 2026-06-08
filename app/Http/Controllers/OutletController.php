@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Outlet;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class OutletController extends Controller
@@ -24,20 +25,35 @@ class OutletController extends Controller
             'name' => 'required|string',
             'address' => 'nullable|string',
             'phone' => 'nullable|string',
+            'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ]);
+
+        $logoPath = null;
+        if ($request->hasFile('logo')) {
+            $logoPath = $request->file('logo')->store('outlet-logos', 'public');
+        }
 
         if (!empty($data['id'])) {
             $outlet = Outlet::findOrFail($data['id']);
-            $outlet->update([
+            $updateData = [
                 'name' => $data['name'],
                 'address' => $data['address'] ?? null,
                 'phone' => $data['phone'] ?? null,
-            ]);
+            ];
+            if ($logoPath) {
+                $updateData['logo'] = $logoPath;
+                // Delete old logo if exists
+                if ($outlet->logo) {
+                    Storage::disk('public')->delete($outlet->logo);
+                }
+            }
+            $outlet->update($updateData);
         } else {
             Outlet::create([
                 'name' => $data['name'],
                 'address' => $data['address'] ?? null,
                 'phone' => $data['phone'] ?? null,
+                'logo' => $logoPath,
             ]);
         }
 
