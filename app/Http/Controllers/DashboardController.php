@@ -14,37 +14,84 @@ class DashboardController extends Controller
     public function __invoke(Request $request): Response
     {
         $outletId = $request->session()->get('outlet_id');
+        $user = $request->user();
         $today = now()->startOfDay();
 
+        $mitraProductIds = null;
+        if ($user && $user->isMitra()) {
+            $mitraProductIds = $user->getMitraProductIds();
+        }
+
         $stats = [
-            'productCount' => $outletId ? Product::where('outlet_id', $outletId)->where('is_active', true)->count() : 0,
+            'productCount' => 0,
             'todaySales' => '0',
             'openShift' => false,
         ];
 
-        $chartData = [];
         if ($outletId) {
-            $sum = Transaction::query()
-                ->where('outlet_id', $outletId)
-                ->where('payment_status', 'PAID')
-                ->where('created_at', '>=', $today)
-                ->sum('total_amount');
-            $stats['todaySales'] = (string) $sum;
+            $productQuery = Product::where('outlet_id', $outletId)->where('is_active', true);
+            if ($mitraProductIds !== null) {
+                $productQuery->whereIn('id', $mitraProductIds);
+            }
+            $stats['productCount'] = $productQuery->count();
+
             $stats['openShift'] = ShiftRecord::query()
                 ->where('outlet_id', $outletId)
                 ->where('status', 'OPEN')
                 ->exists();
+        }
+
+        $chartData = [];
+        if ($outletId) {
+            $todayQuery = Transaction::query()
+                ->where('outlet_id', $outletId)
+                ->where('payment_status', 'PAID')
+                ->where('created_at', '>=', $today)
+                ->with('items');
+
+            if ($mitraProductIds !== null) {
+                $todayQuery->whereHas('items', function ($q) use ($mitraProductIds) {
+                    $q->whereIn('product_id', $mitraProductIds);
+                });
+            }
+
+            $todayTransactions = $todayQuery->get();
+            $todaySum = 0;
+            foreach ($todayTransactions as $t) {
+                foreach ($t->items as $it) {
+                    if ($mitraProductIds === null || in_array($it->product_id, $mitraProductIds)) {
+                        $todaySum += $it->subtotal;
+                    }
+                }
+            }
+            $stats['todaySales'] = (string) $todaySum;
 
             // Last 7 days revenue for chart
             for ($i = 6; $i >= 0; $i--) {
                 $date = now()->subDays($i)->startOfDay();
                 $end = now()->subDays($i)->endOfDay();
                 
-                $dailySum = Transaction::query()
+                $dailyQuery = Transaction::query()
                     ->where('outlet_id', $outletId)
                     ->where('payment_status', 'PAID')
                     ->whereBetween('created_at', [$date, $end])
-                    ->sum('total_amount');
+                    ->with('items');
+
+                if ($mitraProductIds !== null) {
+                    $dailyQuery->whereHas('items', function ($q) use ($mitraProductIds) {
+                        $q->whereIn('product_id', $mitraProductIds);
+                    });
+                }
+                
+                $dailyTransactions = $dailyQuery->get();
+                $dailySum = 0;
+                foreach ($dailyTransactions as $t) {
+                    foreach ($t->items as $it) {
+                        if ($mitraProductIds === null || in_array($it->product_id, $mitraProductIds)) {
+                            $dailySum += $it->subtotal;
+                        }
+                    }
+                }
                 
                 $chartData[] = [
                     'name' => $date->format('D'), // short day name

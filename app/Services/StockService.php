@@ -33,6 +33,18 @@ class StockService
                 'note' => $note,
             ]);
 
+            if ($row->restock_price > 0 && $row->min_restock_qty > 0) {
+                $cost = ($qty / $row->min_restock_qty) * $row->restock_price;
+                if ($cost > 0) {
+                    \App\Models\PettyCash::create([
+                        'outlet_id' => $row->outlet_id,
+                        'amount' => $cost,
+                        'category' => 'RESTOCK',
+                        'description' => "Restok {$row->name} ({$qty} {$row->unit_name})" . ($note ? " - {$note}" : ""),
+                    ]);
+                }
+            }
+
             return $row;
         });
     }
@@ -117,6 +129,8 @@ class StockService
             'trackable' => $data['trackable'] ?? true,
             'counting_basis' => $data['counting_basis'] ?? 'BIJI',
             'display_group_id' => $data['display_group_id'] ?? null,
+            'min_restock_qty' => $data['min_restock_qty'] ?? 1,
+            'restock_price' => $data['restock_price'] ?? 0,
         ]);
     }
 
@@ -132,6 +146,8 @@ class StockService
             'trackable' => $data['trackable'] ?? $item->trackable,
             'counting_basis' => $data['counting_basis'] ?? $item->counting_basis,
             'display_group_id' => array_key_exists('display_group_id', $data) ? $data['display_group_id'] : $item->display_group_id,
+            'min_restock_qty' => $data['min_restock_qty'] ?? $item->min_restock_qty,
+            'restock_price' => $data['restock_price'] ?? $item->restock_price,
         ]);
 
         return $item;

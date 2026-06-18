@@ -14,7 +14,9 @@ class NavPermission
         'stock' => true,
         'expenses' => false,
         'waste' => true,
-        'reports' => true,
+        'reports' => false,
+        'mitra_reports' => false,
+        'settlements' => false,
         'receipts' => true,
         'owner' => false,
         'users' => false,
@@ -31,7 +33,9 @@ class NavPermission
         'stock' => true,
         'expenses' => false,
         'waste' => false,
-        'reports' => true,
+        'reports' => false,
+        'mitra_reports' => true,
+        'settlements' => false,
         'receipts' => false,
         'owner' => false,
         'users' => false,
@@ -49,8 +53,22 @@ class NavPermission
             return true;
         }
         if ($user->isMitra()) {
-            return self::MITRA_NAV[$feature] ?? false;
+            $base = self::MITRA_NAV[$feature] ?? false;
+
+            // Receipts visibility depends on mitra_can_view_sales
+            if ($feature === 'receipts') {
+                $base = (bool) $user->mitra_can_view_sales;
+            }
+
+            // Support feature_overrides for mitra too
+            $overrides = $user->feature_overrides ?? [];
+            if (array_key_exists($feature, $overrides)) {
+                return (bool) $overrides[$feature];
+            }
+
+            return $base;
         }
+
         $overrides = $user->feature_overrides ?? [];
         if (array_key_exists($feature, $overrides)) {
             return (bool) $overrides[$feature];
@@ -72,7 +90,9 @@ class NavPermission
             ['href' => '/waste', 'label' => 'Waste', 'feature' => 'waste', 'icon' => 'trash', 'group' => 'inventaris'],
             ['href' => '/suppliers', 'label' => 'Supplier', 'feature' => 'suppliers', 'icon' => 'truck', 'group' => 'inventaris'],
             ['href' => '/expenses', 'label' => 'Pengeluaran', 'feature' => 'expenses', 'icon' => 'banknotes', 'group' => 'keuangan'],
-            ['href' => '/reports', 'label' => 'Laporan', 'feature' => 'reports', 'icon' => 'chart', 'group' => 'keuangan'],
+            ['href' => '/reports', 'label' => 'Laporan Reguler', 'feature' => 'reports', 'icon' => 'chart', 'group' => 'keuangan'],
+            ['href' => '/mitra-reports', 'label' => 'Laporan Mitra', 'feature' => 'mitra_reports', 'icon' => 'chart', 'group' => 'keuangan'],
+            ['href' => '/settlements', 'label' => 'Setoran Mitra', 'feature' => 'settlements', 'icon' => 'document', 'group' => 'keuangan'],
             ['href' => '/investments', 'label' => 'Investasi', 'feature' => 'investments', 'icon' => 'banknotes', 'group' => 'keuangan'],
             ['href' => '/owner', 'label' => 'Owner', 'feature' => 'owner', 'icon' => 'building', 'group' => 'keuangan'],
             ['href' => '/outlets', 'label' => 'Outlet', 'feature' => 'outlets', 'icon' => 'map', 'group' => 'pengaturan'],

@@ -15,7 +15,23 @@ class UserService
     {
         return User::with('outlets')
             ->orderBy('display_name')
-            ->get();
+            ->get()
+            ->map(function ($user) {
+                if ($user->isMitra()) {
+                    $user->mitra_product_ids = DB::table('mitra_product_scopes')
+                        ->where('user_id', $user->id)
+                        ->pluck('product_id')
+                        ->toArray();
+                    $user->mitra_stock_ids = DB::table('mitra_stock_scopes')
+                        ->where('user_id', $user->id)
+                        ->pluck('stock_item_id')
+                        ->toArray();
+                } else {
+                    $user->mitra_product_ids = [];
+                    $user->mitra_stock_ids = [];
+                }
+                return $user;
+            });
     }
 
     public function createUser(array $data)
@@ -28,6 +44,7 @@ class UserService
                 'role' => $data['role'],
                 'is_active' => $data['is_active'] ?? true,
                 'feature_overrides' => $data['feature_overrides'] ?? null,
+                'mitra_can_view_sales' => $data['mitra_can_view_sales'] ?? false,
             ]);
 
             if (!empty($data['outlet_ids'])) {
@@ -78,6 +95,10 @@ class UserService
                 $updates['feature_overrides'] = $data['feature_overrides'];
             }
 
+            if (array_key_exists('mitra_can_view_sales', $data)) {
+                $updates['mitra_can_view_sales'] = $data['mitra_can_view_sales'] ?? false;
+            }
+
             $user->update($updates);
 
             if (isset($data['outlet_ids'])) {
@@ -104,6 +125,13 @@ class UserService
                             'stock_item_id' => $sid,
                         ])->toArray()
                     );
+                }
+            } else {
+                // If role changed away from MITRA, clear scopes and sales flag
+                DB::table('mitra_product_scopes')->where('user_id', $user->id)->delete();
+                DB::table('mitra_stock_scopes')->where('user_id', $user->id)->delete();
+                if ($user->mitra_can_view_sales) {
+                    $user->update(['mitra_can_view_sales' => false]);
                 }
             }
 

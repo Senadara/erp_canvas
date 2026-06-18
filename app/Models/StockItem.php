@@ -16,6 +16,7 @@ class StockItem extends Model
     protected $fillable = [
         'outlet_id', 'name', 'current_stock_biji', 'unit_name', 'min_stock_alert',
         'supplier_id', 'trackable', 'counting_basis', 'display_group_id',
+        'min_restock_qty', 'restock_price',
     ];
 
     protected function casts(): array
@@ -24,6 +25,8 @@ class StockItem extends Model
             'trackable' => 'boolean',
             'current_stock_biji' => 'decimal:4',
             'min_stock_alert' => 'decimal:4',
+            'min_restock_qty' => 'decimal:4',
+            'restock_price' => 'decimal:4',
         ];
     }
 

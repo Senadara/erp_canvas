@@ -10,32 +10,46 @@ use Illuminate\Support\Facades\DB;
 
 class ReportService
 {
-    public function getMonthlyReport(string $outletId, int $month, int $year)
+    public function getMonthlyReport(string $outletId, int $month, int $year, ?array $mitraProductIds = null)
     {
         $start = Carbon::create($year, $month, 1)->startOfMonth();
         $end = Carbon::create($year, $month, 1)->endOfMonth();
 
-        $transactions = Transaction::where('outlet_id', $outletId)
+        $query = Transaction::where('outlet_id', $outletId)
             ->where('payment_status', 'PAID')
             ->whereBetween('created_at', [$start, $end])
-            ->with(['items.product'])
-            ->get();
+            ->with(['items.product']);
+
+        if ($mitraProductIds !== null) {
+            $query->whereHas('items', function ($q) use ($mitraProductIds) {
+                $q->whereIn('product_id', $mitraProductIds);
+            });
+        }
+
+        $transactions = $query->get();
 
         $omzet = 0;
         $hpp = 0;
 
         foreach ($transactions as $t) {
-            $omzet += $t->total_amount;
+            $hasMitraProduct = false;
             foreach ($t->items as $it) {
-                if ($it->product) {
-                    $hpp += ($it->product->hpp * $it->qty_porsi);
+                if ($mitraProductIds === null || in_array($it->product_id, $mitraProductIds)) {
+                    $hasMitraProduct = true;
+                    if ($it->product) {
+                        $hpp += ($it->product->hpp * $it->qty_porsi);
+                    }
+                    $omzet += $it->subtotal; // Use subtotal instead of total_amount for specific items
                 }
             }
         }
 
-        $pengeluaran = PettyCash::where('outlet_id', $outletId)
-            ->whereBetween('created_at', [$start, $end])
-            ->sum('amount');
+        $pengeluaran = 0;
+        if ($mitraProductIds === null) {
+            $pengeluaran = PettyCash::where('outlet_id', $outletId)
+                ->whereBetween('created_at', [$start, $end])
+                ->sum('amount');
+        }
 
         $netProfit = $omzet - $hpp - $pengeluaran;
 
@@ -48,31 +62,49 @@ class ReportService
         ];
     }
 
-    public function getDailySummary(string $outletId, Carbon $date)
+    public function getDailySummary(string $outletId, Carbon $date, ?array $mitraProductIds = null)
     {
         $start = clone $date;
         $start->startOfDay();
         $end = clone $date;
         $end->endOfDay();
 
-        $transactions = Transaction::where('outlet_id', $outletId)
+        $query = Transaction::where('outlet_id', $outletId)
             ->where('payment_status', 'PAID')
             ->whereBetween('created_at', [$start, $end])
-            ->get();
+            ->with('items');
+
+        if ($mitraProductIds !== null) {
+            $query->whereHas('items', function ($q) use ($mitraProductIds) {
+                $q->whereIn('product_id', $mitraProductIds);
+            });
+        }
+
+        $transactions = $query->get();
 
         $total = 0;
         $cash = 0;
         $qris = 0;
 
         foreach ($transactions as $t) {
-            $total += $t->total_amount;
-            if ($t->payment_method === 'CASH') $cash += $t->total_amount;
-            elseif ($t->payment_method === 'QRIS') $qris += $t->total_amount;
+            $tTotal = 0;
+            foreach ($t->items as $it) {
+                 if ($mitraProductIds === null || in_array($it->product_id, $mitraProductIds)) {
+                     $tTotal += $it->subtotal;
+                 }
+            }
+
+            $total += $tTotal;
+            if ($t->payment_method === 'CASH') $cash += $tTotal;
+            elseif ($t->payment_method === 'QRIS') $qris += $tTotal;
         }
 
-        $expenses = PettyCash::where('outlet_id', $outletId)
-            ->whereBetween('created_at', [$start, $end])
-            ->sum('amount');
+        $expenses = 0;
+        if ($mitraProductIds === null) {
+            $expenses = PettyCash::where('outlet_id', $outletId)
+                ->whereBetween('created_at', [$start, $end])
+                ->sum('amount');
+        }
 
         return [
             'transactionCount' => $transactions->count(),
@@ -83,16 +115,24 @@ class ReportService
         ];
     }
 
-    public function getLast7DaysRevenue(string $outletId)
+    public function getLast7DaysRevenue(string $outletId, ?array $mitraProductIds = null)
     {
         $end = Carbon::now()->endOfDay();
         $start = clone $end;
         $start->subDays(6)->startOfDay();
 
-        $transactions = Transaction::where('outlet_id', $outletId)
+        $query = Transaction::where('outlet_id', $outletId)
             ->where('payment_status', 'PAID')
             ->whereBetween('created_at', [$start, $end])
-            ->get();
+            ->with('items');
+
+        if ($mitraProductIds !== null) {
+            $query->whereHas('items', function ($q) use ($mitraProductIds) {
+                $q->whereIn('product_id', $mitraProductIds);
+            });
+        }
+
+        $transactions = $query->get();
 
         $byDay = [];
         for ($i = 0; $i < 7; $i++) {
@@ -105,11 +145,18 @@ class ReportService
         foreach ($transactions as $t) {
             $key = $t->created_at->format('Y-m-d');
             if (isset($byDay[$key])) {
-                $byDay[$key]['total'] += $t->total_amount;
+                $tTotal = 0;
+                foreach ($t->items as $it) {
+                    if ($mitraProductIds === null || in_array($it->product_id, $mitraProductIds)) {
+                        $tTotal += $it->subtotal;
+                    }
+                }
+
+                $byDay[$key]['total'] += $tTotal;
                 if ($t->payment_method === 'CASH') {
-                    $byDay[$key]['cash'] += $t->total_amount;
+                    $byDay[$key]['cash'] += $tTotal;
                 } else {
-                    $byDay[$key]['qris'] += $t->total_amount;
+                    $byDay[$key]['qris'] += $tTotal;
                 }
             }
         }
@@ -117,11 +164,16 @@ class ReportService
         return array_values($byDay);
     }
 
-    public function getLowStockCount(string $outletId)
+    public function getLowStockCount(string $outletId, ?array $mitraStockIds = null)
     {
-        $items = StockItem::where('outlet_id', $outletId)
-            ->where('trackable', true)
-            ->get();
+        $query = StockItem::where('outlet_id', $outletId)
+            ->where('trackable', true);
+
+        if ($mitraStockIds !== null) {
+            $query->whereIn('id', $mitraStockIds);
+        }
+
+        $items = $query->get();
             
         $n = 0;
         foreach ($items as $it) {

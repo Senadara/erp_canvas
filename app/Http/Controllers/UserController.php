@@ -48,6 +48,7 @@ class UserController extends Controller
             'mitra_stock_ids.*' => 'string',
             'feature_overrides' => 'nullable|array',
             'feature_overrides.*' => 'boolean',
+            'mitra_can_view_sales' => 'nullable|boolean',
         ]);
 
         try {
@@ -75,6 +76,7 @@ class UserController extends Controller
             'mitra_stock_ids.*' => 'string',
             'feature_overrides' => 'nullable|array',
             'feature_overrides.*' => 'boolean',
+            'mitra_can_view_sales' => 'nullable|boolean',
         ]);
 
         try {

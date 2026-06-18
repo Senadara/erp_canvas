@@ -41,6 +41,16 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
         return () => window.removeEventListener('openPrinterSettings', handleOpenPrinterSettings);
     }, []);
 
+    // Listen for history event from navbar
+    useEffect(() => {
+        const handleOpenHistory = () => {
+            setHistoryTab('UNPAID');
+            setIsHistoryModalOpen(true);
+        };
+        window.addEventListener('openHistory', handleOpenHistory);
+        return () => window.removeEventListener('openHistory', handleOpenHistory);
+    }, []);
+
     // Search and Filter State
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -341,6 +351,12 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                 return;
             }
 
+            // Check if site is using HTTPS (required for Web Bluetooth on deployed sites)
+            if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                alert('Bluetooth printing hanya bekerja di HTTPS. Pastikan website Anda menggunakan HTTPS atau gunakan localhost untuk testing.');
+                return;
+            }
+
             let device;
             let server;
             let characteristic = null;
@@ -356,6 +372,11 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                     characteristic = bluetoothCharacteristic;
                     service = bluetoothService;
                     console.log('Reusing stored characteristic:', characteristic.uuid);
+                } else {
+                    // If no characteristic stored, rediscover services
+                    console.log('No stored characteristic, rediscovering services...');
+                    characteristic = null;
+                    service = null;
                 }
             } else if (bluetoothDevice) {
                 // Try to reconnect to the stored device without showing dialog
@@ -665,6 +686,47 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                 await connectionPromise;
             }
 
+            // If still no characteristic after connection, try to discover services
+            if (!characteristic && server) {
+                console.log('No characteristic found, attempting service discovery...');
+                try {
+                    const services = await server.getPrimaryServices();
+                    console.log('Available services:', services.map(s => s.uuid));
+
+                    let found = false;
+                    for (const srv of services) {
+                        try {
+                            const characteristics = await srv.getCharacteristics();
+                            console.log(`Service ${srv.uuid} characteristics:`, characteristics.map(c => c.uuid));
+
+                            for (const char of characteristics) {
+                                if (char.properties.write || char.properties.writeWithoutResponse) {
+                                    characteristic = char;
+                                    service = srv;
+                                    setBluetoothCharacteristic(char);
+                                    setBluetoothService(srv);
+                                    console.log('Found writable characteristic:', char.uuid, 'properties:', char.properties);
+                                    found = true;
+                                    break;
+                                }
+                            }
+
+                            if (found) break;
+                        } catch (error) {
+                            console.log('Error getting characteristics for service:', srv.uuid, error);
+                            continue;
+                        }
+                    }
+
+                    if (!characteristic) {
+                        throw new Error('Tidak dapat menemukan karakteristik yang dapat ditulis pada printer.');
+                    }
+                } catch (error) {
+                    console.log('Service discovery failed:', error);
+                    throw new Error('Tidak dapat menemukan karakteristik yang dapat ditulis pada printer. Pastikan printer mendukung Bluetooth printing.');
+                }
+            }
+
             if (!characteristic) {
                 throw new Error('Tidak dapat menemukan karakteristik yang dapat ditulis pada printer. Pastikan printer mendukung Bluetooth printing.');
             }
@@ -734,52 +796,24 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
         <ErpLayout title="Kasir">
             <Head title="Kasir" />
 
-            <div className="flex justify-between items-center mb-6">
-                <div className="flex items-center gap-3">
-                    <h1 className="text-2xl font-semibold text-slate-900 hidden md:block">Kasir</h1>
+            <div className="flex justify-between items-center mb-3">
+                <div className="flex items-center gap-2">
                     {isOffline && (
-                        <span className="bg-amber-100 text-amber-800 text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <span className="bg-amber-100 text-amber-800 text-xs font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
                             </svg>
-                            Offline Mode
+                            Offline
                         </span>
                     )}
                 </div>
-                <div className="flex-1 md:flex-none flex justify-end gap-2">
-                    <button 
-                        onClick={() => {
-                            setHistoryTab(allUnpaidTransactions.length > 0 ? 'UNPAID' : 'PAID');
-                            setIsHistoryModalOpen(true);
-                        }}
-                        className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-md hover:bg-slate-50 text-sm font-medium flex items-center gap-2 shadow-sm"
-                    >
-                        Riwayat Pesanan
-                        {allUnpaidTransactions.length > 0 && (
-                            <span className="bg-rose-500 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
-                                {allUnpaidTransactions.length} Belum Bayar
-                            </span>
-                        )}
-                    </button>
-                </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-8rem)]">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-6rem)]">
                 {/* Produk Grid */}
                 <div className="lg:col-span-2 bg-white shadow-sm rounded-lg border border-slate-200 p-4 flex flex-col h-full overflow-hidden">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
                         <h2 className="text-lg font-semibold text-slate-900">Pilih Produk</h2>
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <button
-                                onClick={() => setIsCartVisible(true)}
-                                className="lg:hidden bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-                                </svg>
-                                <span>Keranjang ({cart.length})</span>
-                            </button>
-                        </div>
                     </div>
 
                     {/* Search and Filter */}
@@ -1432,6 +1466,17 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                     </div>
                 </div>
             )}
+
+            {/* Floating Cart Button for Mobile */}
+            <button
+                onClick={() => setIsCartVisible(true)}
+                className="lg:hidden fixed bottom-4 right-4 z-50 bg-indigo-600 text-white p-4 rounded-full shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                <span className="bg-white text-indigo-600 text-xs font-bold px-2 py-0.5 rounded-full">{cart.length}</span>
+            </button>
         </ErpLayout>
     );
 }

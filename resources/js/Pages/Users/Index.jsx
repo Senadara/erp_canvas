@@ -16,6 +16,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
         outlet_ids: [],
         mitra_product_ids: [],
         mitra_stock_ids: [],
+        mitra_can_view_sales: false,
     });
 
     const openModal = (user = null) => {
@@ -28,14 +29,26 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                 role: user.role,
                 is_active: user.is_active,
                 outlet_ids: user.outlets?.map(o => o.id) || [],
-                mitra_product_ids: [],
-                mitra_stock_ids: [],
+                mitra_product_ids: user.mitra_product_ids || [],
+                mitra_stock_ids: user.mitra_stock_ids || [],
+                mitra_can_view_sales: user.mitra_can_view_sales || false,
                 feature_overrides: user.feature_overrides || {},
             });
         } else {
             setEditingUser(null);
             reset();
-            setData('feature_overrides', {});
+            setData({
+                email: '',
+                password: '',
+                display_name: '',
+                role: 'STAFF',
+                is_active: true,
+                outlet_ids: [],
+                mitra_product_ids: [],
+                mitra_stock_ids: [],
+                mitra_can_view_sales: false,
+                feature_overrides: {},
+            });
         }
         setIsModalOpen(true);
     };
@@ -132,13 +145,14 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                 <th className="px-4 py-3 font-medium">Email</th>
                                 <th className="px-4 py-3 font-medium">Role</th>
                                 <th className="px-4 py-3 font-medium">Outlet</th>
+                                <th className="px-4 py-3 font-medium">Akses Mitra</th>
                                 <th className="px-4 py-3 font-medium">Status</th>
                                 <th className="px-4 py-3 font-medium">Aksi</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
                             {users.length === 0 ? (
-                                <tr><td colSpan="6" className="px-4 py-8 text-center text-slate-500">Belum ada pengguna.</td></tr>
+                                <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-500">Belum ada pengguna.</td></tr>
                             ) : (
                                 users.map((u) => (
                                     <tr key={u.id} className="hover:bg-slate-50">
@@ -150,6 +164,15 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 text-xs">{u.outlets?.map(o => o.name).join(', ') || '-'}</td>
+                                        <td className="px-4 py-3">
+                                            {u.role === 'MITRA' ? (
+                                                <span className={`px-2 py-1 rounded text-xs font-medium ${u.mitra_can_view_sales ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
+                                                    Penjualan: {u.mitra_can_view_sales ? '✓' : '✗'}
+                                                </span>
+                                            ) : (
+                                                <span className="text-slate-400">-</span>
+                                            )}
+                                        </td>
                                         <td className="px-4 py-3">
                                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${u.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
                                                 {u.is_active ? 'Aktif' : 'Nonaktif'}
@@ -254,40 +277,53 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                             </div>
 
                             {data.role === 'MITRA' && (
-                                <>
+                                <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg space-y-4">
+                                    <div className="flex items-center gap-3 border-b border-amber-200 pb-3">
+                                        <input 
+                                            type="checkbox" 
+                                            id="mitra_can_view_sales" 
+                                            checked={data.mitra_can_view_sales} 
+                                            onChange={e => setData('mitra_can_view_sales', e.target.checked)} 
+                                            className="w-5 h-5 rounded border-amber-300 text-amber-600 focus:ring-amber-600" 
+                                        />
+                                        <div className="flex-1">
+                                            <label htmlFor="mitra_can_view_sales" className="text-sm font-semibold text-amber-900 cursor-pointer">Izinkan Lihat Data Penjualan (Struk/Receipts)</label>
+                                            <p className="text-xs text-amber-700">Jika aktif, mitra bisa melihat riwayat transaksi yang mengandung produk miliknya.</p>
+                                        </div>
+                                    </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-2">Scope Produk Mitra</label>
-                                        <div className="max-h-32 overflow-y-auto border border-slate-200 rounded p-2 space-y-1">
-                                            {products.map(p => (
-                                                <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                                                    <input type="checkbox" checked={data.mitra_product_ids.includes(p.id)} onChange={() => toggleMitraProduct(p.id)} className="rounded border-slate-300 text-indigo-600" />
+                                        <label className="block text-sm font-medium text-amber-900 mb-2">Scope Produk Mitra (Menu)</label>
+                                        <div className="max-h-32 overflow-y-auto bg-white border border-amber-200 rounded p-2 space-y-1">
+                                            {products.length === 0 ? <p className="text-xs text-amber-600 italic">Belum ada produk di outlet ini.</p> : products.map(p => (
+                                                <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-amber-50 p-1 rounded">
+                                                    <input type="checkbox" checked={data.mitra_product_ids.includes(p.id)} onChange={() => toggleMitraProduct(p.id)} className="rounded border-amber-300 text-amber-600" />
                                                     {p.name}
                                                 </label>
                                             ))}
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-2">Scope Stok Mitra</label>
-                                        <div className="max-h-32 overflow-y-auto border border-slate-200 rounded p-2 space-y-1">
-                                            {stockItems.map(s => (
-                                                <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                                                    <input type="checkbox" checked={data.mitra_stock_ids.includes(s.id)} onChange={() => toggleMitraStock(s.id)} className="rounded border-slate-300 text-indigo-600" />
+                                        <label className="block text-sm font-medium text-amber-900 mb-2">Scope Stok Mitra</label>
+                                        <div className="max-h-32 overflow-y-auto bg-white border border-amber-200 rounded p-2 space-y-1">
+                                            {stockItems.length === 0 ? <p className="text-xs text-amber-600 italic">Belum ada stok di outlet ini.</p> : stockItems.map(s => (
+                                                <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-amber-50 p-1 rounded">
+                                                    <input type="checkbox" checked={data.mitra_stock_ids.includes(s.id)} onChange={() => toggleMitraStock(s.id)} className="rounded border-amber-300 text-amber-600" />
                                                     {s.name}
                                                 </label>
                                             ))}
                                         </div>
                                     </div>
-                                </>
+                                </div>
                             )}
 
                             <div className="flex items-center gap-2">
                                 <input type="checkbox" id="is_active" checked={data.is_active} onChange={e => setData('is_active', e.target.checked)} className="rounded border-slate-300 text-indigo-600" />
-                                <label htmlFor="is_active" className="text-sm text-slate-700">Aktif</label>
+                                <label htmlFor="is_active" className="text-sm text-slate-700">Akun Aktif</label>
                             </div>
 
                             {data.role !== 'OWNER' && (
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-2">Akses Fitur Khusus (Overrides)</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">Akses Fitur Tambahan (Overrides)</label>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 border border-slate-200 rounded p-3 bg-slate-50">
                                         {[
                                             { id: 'dashboard', label: 'Dashboard' },
@@ -311,7 +347,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                             </label>
                                         ))}
                                     </div>
-                                    <p className="text-xs text-slate-500 mt-1">Centang untuk memberikan akses ke fitur ini meskipun role default tidak mengizinkan.</p>
+                                    <p className="text-xs text-slate-500 mt-1">Centang untuk memberikan akses paksa ke fitur di luar dari hak akses standar role.</p>
                                 </div>
                             )}
 

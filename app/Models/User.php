@@ -20,6 +20,7 @@ class User extends Authenticatable
         'role',
         'is_active',
         'feature_overrides',
+        'mitra_can_view_sales',
     ];
 
     protected $hidden = [
@@ -32,6 +33,7 @@ class User extends Authenticatable
         return [
             'is_active' => 'boolean',
             'feature_overrides' => 'array',
+            'mitra_can_view_sales' => 'boolean',
         ];
     }
 
@@ -43,6 +45,17 @@ class User extends Authenticatable
     public function outlets(): BelongsToMany
     {
         return $this->belongsToMany(Outlet::class, 'user_outlets');
+    }
+
+    public function mitraProducts(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'mitra_product_scopes');
+    }
+
+    public function mitraStockItems(): BelongsToMany
+    {
+        return $this->belongsToMany(StockItem::class, 'mitra_stock_scopes')
+                    ->withPivot('price');
     }
 
     public function activityLogs(): HasMany
@@ -58,5 +71,23 @@ class User extends Authenticatable
     public function isMitra(): bool
     {
         return $this->role === 'MITRA';
+    }
+
+    /**
+     * Get the product IDs this mitra is scoped to.
+     */
+    public function getMitraProductIds(): array
+    {
+        if (!$this->isMitra()) return [];
+        return $this->mitraProducts()->pluck('products.id')->toArray();
+    }
+
+    /**
+     * Get the stock item IDs this mitra is scoped to.
+     */
+    public function getMitraStockIds(): array
+    {
+        if (!$this->isMitra()) return [];
+        return $this->mitraStockItems()->pluck('stock_items.id')->toArray();
     }
 }

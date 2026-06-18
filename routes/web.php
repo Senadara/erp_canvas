@@ -28,6 +28,7 @@ Route::middleware(['auth', 'outlet'])->group(function () {
     Route::delete('/stock/{id}', [\App\Http\Controllers\StockController::class, 'destroy'])->name('stock.destroy');
     Route::post('/stock/{id}/add', [\App\Http\Controllers\StockController::class, 'addStock'])->name('stock.add');
     Route::post('/stock/{id}/waste', [\App\Http\Controllers\StockController::class, 'recordWaste'])->name('stock.waste');
+    Route::put('/stock/{id}/mitra-price', [\App\Http\Controllers\StockController::class, 'updateMitraPrice'])->name('stock.update-mitra-price');
 
     // Cashier (Kasir)
     Route::get('/cashier', [\App\Http\Controllers\CashierController::class, 'index'])->name('cashier');
@@ -51,6 +52,14 @@ Route::middleware(['auth', 'outlet'])->group(function () {
 
     // Reports (Laporan)
     Route::get('/reports', [\App\Http\Controllers\ReportController::class, 'index'])->name('reports');
+    
+    // Mitra Reports
+    Route::get('/mitra-reports', [\App\Http\Controllers\MitraReportController::class, 'index'])->name('mitra-reports');
+
+    // Settlements
+    Route::get('/settlements', [\App\Http\Controllers\MitraSettlementController::class, 'index'])->name('settlements');
+    Route::post('/settlements', [\App\Http\Controllers\MitraSettlementController::class, 'store'])->name('settlements.store');
+    Route::post('/settlements/{id}/pay', [\App\Http\Controllers\MitraSettlementController::class, 'pay'])->name('settlements.pay');
 
     // Owner Dashboard
     Route::get('/owner', [\App\Http\Controllers\OwnerController::class, 'index'])->name('owner');

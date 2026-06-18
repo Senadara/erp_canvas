@@ -37,6 +37,7 @@ class HandleInertiaRequests extends Middleware
                     'email' => $user->email,
                     'displayName' => $user->display_name,
                     'role' => $user->role,
+                    'mitra_can_view_sales' => $user->mitra_can_view_sales ?? false,
                 ] : null,
             ],
             'nav' => $user ? NavPermission::allowedNavFor($user) : [],

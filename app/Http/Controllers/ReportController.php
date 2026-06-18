@@ -14,14 +14,22 @@ class ReportController extends Controller
     public function index(Request $request)
     {
         $outletId = $request->session()->get('outlet_id');
+        $user = $request->user();
         
+        $mitraProductIds = null;
+        $mitraStockIds = null;
+        if ($user && $user->isMitra()) {
+            $mitraProductIds = $user->getMitraProductIds();
+            $mitraStockIds = $user->getMitraStockIds();
+        }
+
         $month = $request->query('month', Carbon::now()->month);
         $year = $request->query('year', Carbon::now()->year);
 
-        $monthlyReport = $this->reportService->getMonthlyReport($outletId, (int)$month, (int)$year);
-        $dailySummary = $this->reportService->getDailySummary($outletId, Carbon::now());
-        $revenue7Days = $this->reportService->getLast7DaysRevenue($outletId);
-        $lowStockCount = $this->reportService->getLowStockCount($outletId);
+        $monthlyReport = $this->reportService->getMonthlyReport($outletId, (int)$month, (int)$year, $mitraProductIds);
+        $dailySummary = $this->reportService->getDailySummary($outletId, Carbon::now(), $mitraProductIds);
+        $revenue7Days = $this->reportService->getLast7DaysRevenue($outletId, $mitraProductIds);
+        $lowStockCount = $this->reportService->getLowStockCount($outletId, $mitraStockIds);
 
         return Inertia::render('Reports/Index', [
             'monthlyReport' => $monthlyReport,
