@@ -41,7 +41,7 @@ class NavPermission
         'users' => false,
         'outlets' => false,
         'suppliers' => false,
-        'investments' => true,
+        'investments' => false,
     ];
 
     public static function canSee(?User $user, string $feature): bool

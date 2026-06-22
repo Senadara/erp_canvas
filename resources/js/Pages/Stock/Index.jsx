@@ -228,13 +228,16 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
                                     {isMitra && (
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2">
-                                                <span className="font-medium text-amber-700">Rp {Number(item.mitra_price || 0).toLocaleString('id-ID')}</span>
+                                                <span className="font-medium text-amber-700">Rp {Number(item.restock_price || item.mitra_price || 0).toLocaleString('id-ID')}</span>
+                                                {item.min_restock_qty > 0 && (
+                                                    <span className="text-xs text-slate-400">/ {item.min_restock_qty} {item.unit_name}</span>
+                                                )}
                                             </div>
                                         </td>
                                     )}
                                     <td className="px-4 py-3 flex gap-2">
                                         {isMitra ? (
-                                            <button onClick={() => handleUpdatePrice(item.id, item.mitra_price || 0)} className="inline-flex items-center justify-center px-3 py-1.5 bg-amber-50 text-amber-600 rounded-md font-medium hover:bg-amber-100 transition-colors text-xs border border-amber-200">Ubah Harga</button>
+                                            <span className="text-xs text-slate-400 italic">Harga dikelola admin</span>
                                         ) : (
                                             <>
                                                 <button onClick={() => openRestockModal(item)} className="inline-flex items-center justify-center px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md font-medium hover:bg-emerald-100 transition-colors min-h-[36px] active:scale-[0.98]">Restock</button>

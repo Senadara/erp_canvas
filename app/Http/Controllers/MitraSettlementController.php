@@ -16,12 +16,36 @@ class MitraSettlementController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        if (!$user || (!$user->isOwner() && !($user->feature_overrides['settlements'] ?? false))) {
+        $isMitra = $user && $user->isMitra();
+        $isOwner = $user && $user->isOwner();
+
+        // Mitra dan Owner boleh akses halaman ini
+        if (!$user || (!$isOwner && !$isMitra && !($user->feature_overrides['settlements'] ?? false))) {
             abort(403, 'Anda tidak memiliki akses ke halaman ini.');
         }
 
         $outletId = $request->session()->get('outlet_id');
+
+        // Untuk Mitra: hanya melihat riwayat setoran miliknya sendiri
+        if ($isMitra) {
+            $settlements = MitraSettlement::with('mitra:id,display_name')
+                ->where('outlet_id', $outletId)
+                ->where('mitra_id', $user->id)
+                ->orderByDesc('created_at')
+                ->get();
+
+            return Inertia::render('Settlements/Index', [
+                'mitras' => [],
+                'selectedMitraId' => null,
+                'startDate' => Carbon::now()->startOfMonth()->format('Y-m-d'),
+                'endDate' => Carbon::now()->endOfMonth()->format('Y-m-d'),
+                'reportData' => [],
+                'settlements' => $settlements,
+                'isOwner' => false,
+            ]);
+        }
         
+        // Owner flow: full access
         $mitras = User::where('role', 'MITRA')->where('is_active', true)->orderBy('display_name')->get(['id', 'display_name']);
 
         $selectedMitraId = $request->query('mitra_id');
@@ -48,6 +72,7 @@ class MitraSettlementController extends Controller
             'endDate' => $endDate->format('Y-m-d'),
             'reportData' => $reportData,
             'settlements' => $settlements,
+            'isOwner' => true,
         ]);
     }
 

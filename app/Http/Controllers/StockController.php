@@ -27,8 +27,9 @@ class StockController extends Controller
             
             $stockItems = collect($stockItems)->filter(function ($item) use ($mitraStockIds) {
                 return in_array($item->id, $mitraStockIds);
-            })->map(function ($item) use ($mitraStockItems) {
-                $item->mitra_price = $mitraStockItems[$item->id]->pivot->price ?? 0;
+            })->map(function ($item) {
+                // Harga mitra sekarang mengacu ke restock_price dari master data admin
+                $item->mitra_price = $item->restock_price ?? 0;
                 return $item;
             })->values();
         }
@@ -55,24 +56,8 @@ class StockController extends Controller
 
     public function updateMitraPrice(Request $request, string $id)
     {
-        $user = $request->user();
-        if (!$user || !$user->isMitra()) {
-            abort(403, 'Hanya mitra yang dapat mengatur harga mitra.');
-        }
-
-        $data = $request->validate([
-            'price' => 'required|numeric|min:0',
-        ]);
-
-        if (!$user->mitraStockItems()->where('stock_item_id', $id)->exists()) {
-            return redirect()->back()->withErrors(['error' => 'Item stok tidak ada dalam scope Anda.']);
-        }
-
-        $user->mitraStockItems()->updateExistingPivot($id, [
-            'price' => $data['price']
-        ]);
-
-        return redirect()->back()->with('success', 'Harga mitra berhasil diperbarui.');
+        // Fitur ubah harga mitra dinonaktifkan - harga mengacu ke restock_price yang di-set admin
+        abort(403, 'Fitur ubah harga sudah tidak tersedia. Harga mengikuti pengaturan admin.');
     }
 
     public function store(Request $request)
