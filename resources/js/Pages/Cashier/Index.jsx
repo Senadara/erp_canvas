@@ -8,6 +8,15 @@ function formatRupiah(value) {
     return 'Rp' + n.toLocaleString('id-ID');
 }
 
+const PRINTER_SERVICES = [
+    '00001101-0000-1000-8000-00805f9b34fb', // Standard SPP
+    'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Generic thermal 1
+    '000018f0-0000-1000-8000-00805f9b34fb', // Generic thermal 2
+    '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Generic thermal 3
+    '00001800-0000-1000-8000-00805f9b34fb', // Generic Access
+    '00001801-0000-1000-8000-00805f9b34fb', // Generic Attribute
+];
+
 export default function CashierIndex({ openShift, products, shiftTransactions = [], unpaidTransactions = [] }) {
     const [cart, setCart] = useState([]);
     const [paymentMethod, setPaymentMethod] = useState('CASH');
@@ -345,6 +354,7 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
 
             const device = await navigator.bluetooth.requestDevice({
                 acceptAllDevices: true,
+                optionalServices: PRINTER_SERVICES
             });
 
             const printerInfo = {
@@ -459,16 +469,32 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
             // If still no device, try to request new device
             if (!device) {
                 if (pairedPrinter) {
-                    try {
-                        console.log('Requesting device with name filter:', pairedPrinter.name);
-                        device = await navigator.bluetooth.requestDevice({
-                            filters: [{ name: pairedPrinter.name }],
-                            optionalServices: ['00001101-0000-1000-8000-00805f9b34fb']
-                        });
-                        console.log('Device selected:', device.name);
-                    } catch (error) {
-                        console.log('Failed to request device with filter, trying acceptAllDevices:', error);
-                        device = null;
+                    // Try to get permitted devices silently first (Chrome 85+)
+                    if (navigator.bluetooth.getDevices) {
+                        try {
+                            const permittedDevices = await navigator.bluetooth.getDevices();
+                            const storedDevice = permittedDevices.find(d => d.id === pairedPrinter.id || d.name === pairedPrinter.name);
+                            if (storedDevice) {
+                                console.log('Found permitted device silently:', storedDevice.name);
+                                device = storedDevice;
+                            }
+                        } catch (e) {
+                            console.log('Failed to get permitted devices:', e);
+                        }
+                    }
+
+                    if (!device) {
+                        try {
+                            console.log('Requesting device with name filter:', pairedPrinter.name);
+                            device = await navigator.bluetooth.requestDevice({
+                                filters: [{ name: pairedPrinter.name }],
+                                optionalServices: PRINTER_SERVICES
+                            });
+                            console.log('Device selected:', device.name);
+                        } catch (error) {
+                            console.log('Failed to request device with filter, trying acceptAllDevices:', error);
+                            device = null;
+                        }
                     }
                 }
 
@@ -476,7 +502,7 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                     try {
                         device = await navigator.bluetooth.requestDevice({
                             acceptAllDevices: true,
-                            optionalServices: ['00001101-0000-1000-8000-00805f9b34fb']
+                            optionalServices: PRINTER_SERVICES
                         });
                         console.log('New device selected:', device.name);
 
