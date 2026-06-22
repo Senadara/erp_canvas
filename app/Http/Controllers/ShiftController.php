@@ -49,11 +49,7 @@ class ShiftController extends Controller
         $durationMins = $durationMinutes % 60;
 
         // Transactions during shift
-        $txQuery = Transaction::where('outlet_id', $outletId)
-            ->where('created_at', '>=', $shift->opened_at);
-        if ($shift->closed_at) {
-            $txQuery->where('created_at', '<=', $shift->closed_at);
-        }
+        $txQuery = Transaction::where('shift_id', $shift->id);
         $transactions = $txQuery->with('items')->get();
 
         $totalTransactions = $transactions->count();
@@ -115,11 +111,12 @@ class ShiftController extends Controller
     {
         $outletId = $request->session()->get('outlet_id');
         $data = $request->validate([
+            'name' => 'nullable|string|max:255',
             'opening_cash' => 'required|numeric|min:0',
         ]);
 
         try {
-            $this->shiftService->openShift($outletId, $data['opening_cash']);
+            $this->shiftService->openShift($outletId, $data['opening_cash'], $data['name'] ?? null);
             return redirect()->back()->with('success', 'Shift berhasil dibuka.');
         } catch (\Exception $e) {
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);

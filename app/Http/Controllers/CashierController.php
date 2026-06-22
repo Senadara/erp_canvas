@@ -30,7 +30,7 @@ class CashierController extends Controller
         $shiftTransactions = [];
         if ($openShift) {
             $products = $this->productService->listProducts($outletId);
-            $shiftTransactions = $this->transactionService->getShiftTransactions($outletId, $openShift->opened_at);
+            $shiftTransactions = $this->transactionService->getShiftTransactions($openShift->id);
         }
 
         // Get unpaid transactions from all shifts (persist even when shift is closed)
@@ -67,6 +67,7 @@ class CashierController extends Controller
         ]);
 
         $data['outlet_id'] = $outletId;
+        $data['shift_id'] = $openShift->id;
 
         try {
             $transaction = $this->transactionService->processSale($data);

@@ -77,6 +77,8 @@ class StockController extends Controller
 
     public function store(Request $request)
     {
+        abort_if($request->user() && $request->user()->role !== 'OWNER', 403, 'Hanya owner yang dapat menambah atau mengedit data bahan.');
+
         if ($request->user() && $request->user()->isMitra()) {
             return redirect()->back()->withErrors(['error' => 'Mitra tidak dapat mengubah stok.']);
         }
@@ -108,6 +110,8 @@ class StockController extends Controller
 
     public function destroy(Request $request, string $id)
     {
+        abort_if($request->user() && $request->user()->role !== 'OWNER', 403, 'Hanya owner yang dapat menghapus data bahan.');
+
         if ($request->user() && $request->user()->isMitra()) {
             return redirect()->back()->withErrors(['error' => 'Mitra tidak dapat mengubah stok.']);
         }

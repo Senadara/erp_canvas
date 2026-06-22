@@ -33,7 +33,9 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
         context: 'STOCK',
     });
 
-    const isMitra = usePage().props.auth.user?.role === 'MITRA';
+    const { auth } = usePage().props;
+    const isMitra = auth.user?.role === 'MITRA';
+    const isOwner = auth.user?.role === 'OWNER';
 
     const openModal = (item = null) => {
         if (item) {
@@ -133,7 +135,7 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
 
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-slate-900">Manajemen Stok</h1>
-                {!isMitra && (
+                {isOwner && (
                     <button
                         onClick={() => openModal()}
                         className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium"
@@ -176,7 +178,7 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
                         ))}
                     </select>
                 </div>
-                {!isMitra && (
+                {isOwner && (
                     <button
                         onClick={() => setIsGroupModalOpen(true)}
                         className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
@@ -236,8 +238,8 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
                                         ) : (
                                             <>
                                                 <button onClick={() => openRestockModal(item)} className="inline-flex items-center justify-center px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md font-medium hover:bg-emerald-100 transition-colors min-h-[36px] active:scale-[0.98]">Restock</button>
-                                                <button onClick={() => openModal(item)} className="inline-flex items-center justify-center px-3 py-2 bg-indigo-50 text-indigo-600 rounded-md font-medium hover:bg-indigo-100 transition-colors min-h-[36px] active:scale-[0.98]">Edit</button>
-                                                <button onClick={() => handleDelete(item.id)} className="inline-flex items-center justify-center px-3 py-2 bg-rose-50 text-rose-600 rounded-md font-medium hover:bg-rose-100 transition-colors min-h-[36px] active:scale-[0.98]">Hapus</button>
+                                                {isOwner && <button onClick={() => openModal(item)} className="inline-flex items-center justify-center px-3 py-2 bg-indigo-50 text-indigo-600 rounded-md font-medium hover:bg-indigo-100 transition-colors min-h-[36px] active:scale-[0.98]">Edit</button>}
+                                                {isOwner && <button onClick={() => handleDelete(item.id)} className="inline-flex items-center justify-center px-3 py-2 bg-rose-50 text-rose-600 rounded-md font-medium hover:bg-rose-100 transition-colors min-h-[36px] active:scale-[0.98]">Hapus</button>}
                                             </>
                                         )}
                                     </td>

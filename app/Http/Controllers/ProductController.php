@@ -47,7 +47,22 @@ class ProductController extends Controller
             'image' => 'nullable|image|max:2048', // 2MB max
             'image_url' => 'nullable|string', // If not updating image
         ]);
-        
+        $isOwner = auth()->user()->role === 'OWNER';
+        $id = $request->input('id');
+
+        if (!$isOwner) {
+            abort_if(!$id, 403, 'Akses ditolak. Anda tidak memiliki izin untuk menambah produk baru.');
+            // For non-owner updates, we only allow image updates. 
+            // We fetch the existing product and restore its non-image fields in $data.
+            $existing = \App\Models\Product::where('id', $id)->where('outlet_id', $outletId)->firstOrFail();
+            $data['name'] = $existing->name;
+            $data['category'] = $existing->category;
+            $data['price'] = $existing->price;
+            $data['hpp'] = $existing->hpp;
+            $data['is_active'] = $existing->is_active;
+            $data['display_group_id'] = $existing->display_group_id;
+        }
+
         $data['outlet_id'] = $outletId;
         
         if ($request->hasFile('image')) {
@@ -61,6 +76,7 @@ class ProductController extends Controller
 
     public function destroy(Request $request, string $id)
     {
+        abort_if(auth()->user()->role !== 'OWNER', 403, 'Akses ditolak.');
         $outletId = $request->session()->get('outlet_id');
         $this->productService->deleteProduct($id, $outletId);
         return redirect()->back()->with('success', 'Produk berhasil dihapus.');
@@ -68,6 +84,7 @@ class ProductController extends Controller
 
     public function setConversions(Request $request, string $id)
     {
+        abort_if(auth()->user()->role !== 'OWNER', 403, 'Akses ditolak.');
         $outletId = $request->session()->get('outlet_id');
         $data = $request->validate([
             'conversions' => 'array',

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
-import { Head, useForm, router } from '@inertiajs/react';
+import { Head, useForm, router, usePage } from '@inertiajs/react';
 
 export default function UsersIndex({ users, outlets, activityLogs, products, stockItems }) {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [activeTab, setActiveTab] = useState('users');
+    const { auth } = usePage().props;
+    const isOwner = auth.user.role === 'OWNER';
 
     const { data, setData, post, put, processing, errors, reset } = useForm({
         email: '',
@@ -111,12 +113,14 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
 
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-slate-900">Manajemen Pengguna</h1>
-                <button
-                    onClick={() => openModal()}
-                    className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium"
-                >
-                    + Tambah Pengguna
-                </button>
+                {isOwner && (
+                    <button
+                        onClick={() => openModal()}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium"
+                    >
+                        + Tambah Pengguna
+                    </button>
+                )}
             </div>
 
             {/* Tabs */}
@@ -179,10 +183,14 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 flex gap-2">
-                                            <button onClick={() => openModal(u)} className="inline-flex items-center justify-center px-3 py-2 bg-indigo-50 text-indigo-600 rounded-md font-medium hover:bg-indigo-100 transition-colors min-h-[36px] active:scale-[0.98]">Edit</button>
-                                            {!u.role || u.role !== 'OWNER' ? (
-                                                <button onClick={() => handleDelete(u.id)} className="inline-flex items-center justify-center px-3 py-2 bg-rose-50 text-rose-600 rounded-md font-medium hover:bg-rose-100 transition-colors min-h-[36px] active:scale-[0.98]">Hapus</button>
-                                            ) : null}
+                                            {isOwner && (
+                                                <>
+                                                    <button onClick={() => openModal(u)} className="inline-flex items-center justify-center px-3 py-2 bg-indigo-50 text-indigo-600 rounded-md font-medium hover:bg-indigo-100 transition-colors min-h-[36px] active:scale-[0.98]">Edit</button>
+                                                    {(!u.role || u.role !== 'OWNER') && (
+                                                        <button onClick={() => handleDelete(u.id)} className="inline-flex items-center justify-center px-3 py-2 bg-rose-50 text-rose-600 rounded-md font-medium hover:bg-rose-100 transition-colors min-h-[36px] active:scale-[0.98]">Hapus</button>
+                                                    )}
+                                                </>
+                                            )}
                                         </td>
                                     </tr>
                                 ))

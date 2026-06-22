@@ -34,6 +34,8 @@ class UserController extends Controller
 
     public function store(Request $request)
     {
+        abort_if($request->user() && $request->user()->role !== 'OWNER', 403, 'Hanya owner yang dapat mengelola pengguna.');
+
         $data = $request->validate([
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:6',
@@ -62,6 +64,8 @@ class UserController extends Controller
 
     public function update(Request $request, string $id)
     {
+        abort_if($request->user() && $request->user()->role !== 'OWNER', 403, 'Hanya owner yang dapat mengelola pengguna.');
+
         $data = $request->validate([
             'email' => 'required|email',
             'password' => 'nullable|string|min:6',
@@ -90,6 +94,8 @@ class UserController extends Controller
 
     public function destroy(Request $request, string $id)
     {
+        abort_if($request->user() && $request->user()->role !== 'OWNER', 403, 'Hanya owner yang dapat mengelola pengguna.');
+
         try {
             $this->userService->deleteUser($id);
             $this->userService->logActivity($request->user()->id, 'DELETE_USER', "Hapus user ID: {$id}");

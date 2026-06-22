@@ -41,15 +41,7 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
         return () => window.removeEventListener('openPrinterSettings', handleOpenPrinterSettings);
     }, []);
 
-    // Listen for history event from navbar
-    useEffect(() => {
-        const handleOpenHistory = () => {
-            setHistoryTab('UNPAID');
-            setIsHistoryModalOpen(true);
-        };
-        window.addEventListener('openHistory', handleOpenHistory);
-        return () => window.removeEventListener('openHistory', handleOpenHistory);
-    }, []);
+
 
     // Search and Filter State
     const [searchQuery, setSearchQuery] = useState('');
@@ -68,7 +60,17 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
     const [payDebtCash, setPayDebtCash] = useState('');
     const [debtProcessing, setDebtProcessing] = useState(false);
 
-    const { flash } = usePage().props;
+    const { flash, errors } = usePage().props;
+
+    // Show backend errors to user
+    useEffect(() => {
+        if (errors?.error) {
+            alert(errors.error);
+        } else if (errors && Object.keys(errors).length > 0) {
+            const firstErrorKey = Object.keys(errors)[0];
+            alert(errors[firstErrorKey]);
+        }
+    }, [errors]);
 
     // Monitor connectivity changes
     useEffect(() => {
@@ -81,18 +83,50 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
     useEffect(() => {
         if (flash?.new_transaction) {
             setReceiptTransaction(flash.new_transaction);
-            // Otomatis memicu pop-up print setelah render hanya jika PAID
-            if (flash.new_transaction.payment_status === 'PAID') {
-                setTimeout(() => {
-                    window.print();
-                }, 500);
-            }
+            // Print otomatis via web ditiadakan, akan diprint via bluetooth
         }
     }, [flash]);
 
+    // Helper untuk kalkulasi maksimal porsi berdasarkan stok bahan
+    const getMaxPortions = (product) => {
+        if (!product.conversions || product.conversions.length === 0) return null; // tidak ditrack
+
+        let maxPortions = Infinity;
+        let hasTrackable = false;
+
+        for (const conv of product.conversions) {
+            if (conv.stock_item && conv.stock_item.trackable) {
+                hasTrackable = true;
+                const ratio = parseFloat(conv.ratio);
+                if (ratio > 0) {
+                    const currentStock = parseFloat(conv.stock_item.current_stock_biji) || 0;
+                    const portions = Math.floor(currentStock / ratio);
+                    if (portions < maxPortions) {
+                        maxPortions = portions;
+                    }
+                }
+            }
+        }
+
+        return hasTrackable ? Math.max(0, maxPortions) : null;
+    };
+
     const addToCart = (product) => {
+        const max = getMaxPortions(product);
+        if (max !== null && max <= 0) {
+            alert('Stok habis!');
+            return;
+        }
+
         setCart(prev => {
             const existing = prev.find(item => item.product_id === product.id);
+            const currentQty = existing ? existing.qty_porsi : 0;
+            
+            if (max !== null && currentQty >= max) {
+                alert(`Stok tidak mencukupi. Sisa maksimal: ${max} porsi.`);
+                return prev;
+            }
+
             if (existing) {
                 return prev.map(item => 
                     item.product_id === product.id 
@@ -115,6 +149,16 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
             return prev.map(item => {
                 if (item.product_id === productId) {
                     const newQty = item.qty_porsi + delta;
+                    if (delta > 0) {
+                        const product = products.find(p => p.id === productId);
+                        if (product) {
+                            const max = getMaxPortions(product);
+                            if (max !== null && newQty > max) {
+                                alert(`Stok tidak mencukupi. Sisa maksimal: ${max} porsi.`);
+                                return item;
+                            }
+                        }
+                    }
                     return newQty > 0 ? { ...item, qty_porsi: newQty } : item;
                 }
                 return item;
@@ -279,6 +323,17 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
 
     const handleSetExactAmount = () => {
         setCashReceived(String(total));
+    };
+
+    const handleDebtAddNominal = (amount) => {
+        const current = Number(payDebtCash) || 0;
+        setPayDebtCash(String(current + amount));
+    };
+
+    const handleDebtSetExactAmount = () => {
+        if (selectedUnpaidTx) {
+            setPayDebtCash(String(selectedUnpaidTx.total_amount));
+        }
     };
 
     const handlePairPrinter = async () => {
@@ -812,8 +867,21 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-6rem)]">
                 {/* Produk Grid */}
                 <div className="lg:col-span-2 bg-white shadow-sm rounded-lg border border-slate-200 p-4 flex flex-col h-full overflow-hidden">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
+                    <div className="flex justify-between items-center mb-3">
                         <h2 className="text-lg font-semibold text-slate-900">Pilih Produk</h2>
+                        <button
+                            onClick={() => {
+                                setHistoryTab('UNPAID');
+                                setIsHistoryModalOpen(true);
+                            }}
+                            className="flex items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2 text-sm font-medium text-indigo-700 shadow-sm transition-all hover:bg-indigo-100 hover:border-indigo-300 hover:shadow-md active:scale-95"
+                            title="Riwayat Pesanan"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>Riwayat</span>
+                        </button>
                     </div>
 
                     {/* Search and Filter */}
@@ -843,21 +911,37 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                         </div>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 overflow-y-auto pr-2 pb-4">
-                        {filteredProducts.map(product => (
-                            <button
-                                key={product.id}
-                                onClick={() => addToCart(product)}
-                                className="flex flex-col items-center p-2 sm:p-3 border border-slate-200 rounded-lg hover:border-indigo-500 hover:shadow-md transition-all active:scale-95 bg-slate-50 text-left"
-                            >
-                                {product.image_url ? (
-                                    <img src={product.image_url} alt={product.name} className="w-full h-20 sm:h-24 object-cover rounded mb-2 bg-white" />
-                                ) : (
-                                    <div className="w-full h-20 sm:h-24 bg-slate-200 rounded mb-2 flex items-center justify-center text-slate-400 text-xs">Img</div>
-                                )}
-                                <span className="font-medium text-xs sm:text-sm text-slate-900 w-full truncate">{product.name}</span>
-                                <span className="text-indigo-600 font-semibold text-xs sm:text-sm w-full">{formatRupiah(product.price)}</span>
-                            </button>
-                        ))}
+                        {filteredProducts.map(product => {
+                            const maxPortions = getMaxPortions(product);
+                            const isOutOfStock = maxPortions !== null && maxPortions <= 0;
+                            return (
+                                <button
+                                    key={product.id}
+                                    onClick={() => addToCart(product)}
+                                    disabled={isOutOfStock}
+                                    className={`relative flex flex-col items-center p-2 sm:p-3 border rounded-lg transition-all text-left ${isOutOfStock ? 'border-slate-200 bg-slate-100 opacity-60 cursor-not-allowed' : 'border-slate-200 hover:border-indigo-500 hover:shadow-md active:scale-95 bg-slate-50'}`}
+                                >
+                                    {product.image_url ? (
+                                        <img src={product.image_url} alt={product.name} className={`w-full h-20 sm:h-24 object-cover rounded mb-2 ${isOutOfStock ? 'grayscale' : 'bg-white'}`} />
+                                    ) : (
+                                        <div className="w-full h-20 sm:h-24 bg-slate-200 rounded mb-2 flex items-center justify-center text-slate-400 text-xs">Img</div>
+                                    )}
+                                    <span className="font-medium text-xs sm:text-sm text-slate-900 w-full truncate">{product.name}</span>
+                                    <div className="flex justify-between items-center w-full mt-1">
+                                        <span className="text-indigo-600 font-semibold text-xs sm:text-sm">{formatRupiah(product.price)}</span>
+                                        {maxPortions !== null && (
+                                            <span className={`text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded ${
+                                                maxPortions <= 0 ? 'bg-rose-100 text-rose-700' : 
+                                                maxPortions <= 5 ? 'bg-amber-100 text-amber-700' : 
+                                                'bg-emerald-100 text-emerald-700'
+                                            }`}>
+                                                {maxPortions <= 0 ? 'Habis' : `Sisa ${maxPortions}`}
+                                            </span>
+                                        )}
+                                    </div>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
 
@@ -1432,7 +1516,18 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
 
                                         {payDebtMethod === 'CASH' && (
                                             <div>
-                                                <label className="block text-sm font-medium text-slate-700 mb-1">Uang Diterima (Rp)</label>
+                                                <label className="block text-sm font-medium text-slate-700 mb-2">Uang Diterima (Rp)</label>
+                                                
+                                                {/* Nominal Cepat */}
+                                                <div className="grid grid-cols-3 gap-2 mb-3">
+                                                    <button type="button" onClick={handleDebtSetExactAmount} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded font-medium text-sm transition-colors">Uang Pas</button>
+                                                    <button type="button" onClick={() => handleDebtAddNominal(10000)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded font-medium text-sm transition-colors">+10k</button>
+                                                    <button type="button" onClick={() => handleDebtAddNominal(20000)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded font-medium text-sm transition-colors">+20k</button>
+                                                    <button type="button" onClick={() => handleDebtAddNominal(50000)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded font-medium text-sm transition-colors">+50k</button>
+                                                    <button type="button" onClick={() => handleDebtAddNominal(100000)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded font-medium text-sm transition-colors">+100k</button>
+                                                    <button type="button" onClick={() => setPayDebtCash('')} className="bg-rose-100 hover:bg-rose-200 text-rose-700 py-2 rounded font-medium text-sm transition-colors">Reset</button>
+                                                </div>
+
                                                 <input
                                                     type="number"
                                                     value={payDebtCash}

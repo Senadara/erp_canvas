@@ -130,7 +130,7 @@ export default function ErpLayout({ title, children }) {
     }, []);
 
     return (
-        <div className="flex h-screen overflow-hidden bg-[#f4f6fc]">
+        <div className="flex min-h-screen bg-[#f4f6fc]">
             {/* ── Mobile Overlay ────────────────────────────────── */}
             {sidebarOpen && (
                 <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm lg:hidden" onClick={() => setSidebarOpen(false)} />
@@ -139,7 +139,7 @@ export default function ErpLayout({ title, children }) {
             {/* ── Sidebar ───────────────────────────────────────── */}
             <aside className={`
                 fixed inset-y-0 left-0 z-50 flex flex-col border-r border-slate-200/80 bg-white transition-all duration-300
-                lg:relative lg:translate-x-0
+                lg:sticky lg:top-0 lg:h-screen lg:translate-x-0
                 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
                 ${collapsed ? 'w-[72px]' : 'w-64'}
             `}>
@@ -209,9 +209,9 @@ export default function ErpLayout({ title, children }) {
             </aside>
 
             {/* ── Main Content ──────────────────────────────────── */}
-            <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex flex-1 flex-col min-w-0">
                 {/* Top Header */}
-                <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur-md sm:px-6">
+                <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur-md sm:px-6">
                     <div className="flex items-center gap-3">
                         <button
                             onClick={() => setSidebarOpen(true)}
@@ -221,18 +221,7 @@ export default function ErpLayout({ title, children }) {
                         </button>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        {/* Riwayat Pesanan Button */}
-                        <button
-                            onClick={() => window.dispatchEvent(new CustomEvent('openHistory'))}
-                            className="hidden sm:flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:shadow-md"
-                            title="Riwayat Pesanan"
-                        >
-                            <ClockIcon className="h-4 w-4 text-slate-400" />
-                            <span>Riwayat</span>
-                        </button>
-
-                        {/* PWA Install Button */}
+                    <div className="flex items-center gap-3">                        {/* PWA Install Button */}
                         {isInstallable && (
                             <button
                                 onClick={install}
@@ -325,7 +314,7 @@ export default function ErpLayout({ title, children }) {
                 )}
 
                 {/* Page Content */}
-                <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+                <main className="flex-1 p-4 sm:p-6">
                     <div className="animate-fade-in">
                         {children}
                     </div>

@@ -14,8 +14,8 @@ class Transaction extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'outlet_id', 'invoice_number', 'total_amount', 'payment_method',
-        'cash_received', 'change_amount', 'note', 'payment_status', 'paid_at',
+        'outlet_id', 'shift_id', 'invoice_number', 'total_amount', 'payment_method',
+        'cash_received', 'change_amount', 'note', 'payment_status', 'paid_at', 'created_at',
     ];
 
     protected function casts(): array
@@ -37,5 +37,10 @@ class Transaction extends Model
     public function outlet(): BelongsTo
     {
         return $this->belongsTo(Outlet::class);
+    }
+
+    public function shift(): BelongsTo
+    {
+        return $this->belongsTo(ShiftRecord::class, 'shift_id');
     }
 }

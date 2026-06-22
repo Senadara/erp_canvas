@@ -44,6 +44,7 @@ class TransactionService
     public function processSale(array $payload)
     {
         $outletId = $payload['outlet_id'];
+        $shiftId = $payload['shift_id'] ?? null;
         $items = $payload['items'];
         $paymentStatus = $payload['payment_status'] ?? 'PAID';
         $paymentMethod = $payload['payment_method'] ?? null;
@@ -57,7 +58,7 @@ class TransactionService
             throw new \Exception("Pilih metode pembayaran (tunai / QRIS).");
         }
 
-        return DB::transaction(function () use ($outletId, $items, $paymentStatus, $paymentMethod, $note, $cashReceived) {
+        return DB::transaction(function () use ($outletId, $shiftId, $items, $paymentStatus, $paymentMethod, $note, $cashReceived) {
             $invoiceNumber = $this->nextInvoiceNumber();
 
             $lockPlan = [];
@@ -132,6 +133,7 @@ class TransactionService
 
             $transaction = Transaction::create([
                 'outlet_id' => $outletId,
+                'shift_id' => $shiftId,
                 'invoice_number' => $invoiceNumber,
                 'total_amount' => $total,
                 'payment_method' => $paymentStatus === 'PAID' ? $paymentMethod : null,
@@ -161,10 +163,9 @@ class TransactionService
             ->get();
     }
 
-    public function getShiftTransactions(string $outletId, Carbon $openedAt)
+    public function getShiftTransactions(string $shiftId)
     {
-        return Transaction::where('outlet_id', $outletId)
-            ->where('created_at', '>=', $openedAt)
+        return Transaction::where('shift_id', $shiftId)
             ->with('items')
             ->orderByDesc('created_at')
             ->get();

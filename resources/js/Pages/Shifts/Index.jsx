@@ -18,6 +18,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
     const [localExpenses, setLocalExpenses] = useState([]);
     
     const { data: openData, setData: setOpenData, post: postOpen, processing: opening } = useForm({
+        name: '',
         opening_cash: '',
     });
 
@@ -54,18 +55,19 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
         
         if (isOffline) {
             try {
-                const localId = await enqueueShift({ opening_cash: openData.opening_cash }, 'open');
+                const localId = await enqueueShift({ name: openData.name, opening_cash: openData.opening_cash }, 'open');
                 // Create a local shift object for immediate UI update
                 const localShift = {
                     id: `local-${localId}`,
                     localId,
+                    name: openData.name,
                     opening_cash: Number(openData.opening_cash),
                     opened_at: new Date().toISOString(),
                     isOffline: true
                 };
                 setLocalShifts(prev => [...prev, localShift]);
                 alert('Shift dibuka offline. Akan disinkronkan saat online.');
-                setOpenData('opening_cash', '');
+                setOpenData({ name: '', opening_cash: '' });
                 return;
             } catch (error) {
                 console.error('Failed to enqueue offline shift:', error);
@@ -75,7 +77,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
         }
 
         postOpen(route('shifts.store'), {
-            onSuccess: () => setOpenData('opening_cash', '')
+            onSuccess: () => setOpenData({ name: '', opening_cash: '' })
         });
     };
 
@@ -199,7 +201,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                         <div className="space-y-4">
                             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-md flex justify-between items-center">
                                 <div>
-                                    <p className="font-bold">Shift Terbuka</p>
+                                    <p className="font-bold">Shift Terbuka {openShift.name ? `(${openShift.name})` : ''}</p>
                                     <p className="text-sm">Sejak: {new Date(openShift.opened_at).toLocaleString('id-ID')}</p>
                                 </div>
                                 <div className="text-right">
@@ -252,6 +254,16 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                         <form onSubmit={handleOpen} className="space-y-4">
                             <div className="bg-slate-50 border border-slate-200 text-slate-600 px-4 py-3 rounded-md">
                                 <p>Tidak ada shift yang terbuka saat ini. Buka shift untuk mulai menerima transaksi.</p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Nama Shift (Opsional)</label>
+                                <input
+                                    type="text"
+                                    value={openData.name}
+                                    onChange={e => setOpenData('name', e.target.value)}
+                                    placeholder="Contoh: Shift Pagi, Shift Siang"
+                                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Kas Awal (Uang di Laci) Rp</label>
@@ -340,6 +352,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                 <table className="w-full text-left text-sm text-slate-600">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-700">
                         <tr>
+                            <th className="px-4 py-3 font-medium">Shift</th>
                             <th className="px-4 py-3 font-medium">Buka</th>
                             <th className="px-4 py-3 font-medium">Tutup</th>
                             <th className="px-4 py-3 font-medium">Status</th>
@@ -358,6 +371,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                         ) : (
                             shifts.map((s) => (
                                 <tr key={s.id} onClick={() => openShiftDetail(s.id)} className="hover:bg-indigo-50 cursor-pointer transition-colors">
+                                    <td className="px-4 py-3 font-medium">{s.name || '-'}</td>
                                     <td className="px-4 py-3">{new Date(s.opened_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</td>
                                     <td className="px-4 py-3">{s.closed_at ? new Date(s.closed_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-'}</td>
                                     <td className="px-4 py-3">

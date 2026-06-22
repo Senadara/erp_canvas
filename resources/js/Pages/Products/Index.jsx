@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
-import { Head, useForm, router } from '@inertiajs/react';
+import { Head, useForm, router, usePage } from '@inertiajs/react';
 
 function formatRupiah(value) {
     const n = Number(value) || 0;
@@ -13,6 +13,8 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [filterGroup, setFilterGroup] = useState('');
+    const { auth } = usePage().props;
+    const isOwner = auth.user.role === 'OWNER';
 
     const { data, setData, post, processing, errors, reset } = useForm({
         id: '',
@@ -137,12 +139,14 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
 
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-slate-900">Manajemen Produk</h1>
-                <button
-                    onClick={() => openModal()}
-                    className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium"
-                >
-                    + Tambah Produk
-                </button>
+                {isOwner && (
+                    <button
+                        onClick={() => openModal()}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium"
+                    >
+                        + Tambah Produk
+                    </button>
+                )}
             </div>
 
             {/* Filter Section */}
@@ -160,12 +164,14 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                         ))}
                     </select>
                 </div>
-                <button
-                    onClick={() => setIsGroupModalOpen(true)}
-                    className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
-                >
-                    Kelola Group
-                </button>
+                {isOwner && (
+                    <button
+                        onClick={() => setIsGroupModalOpen(true)}
+                        className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                    >
+                        Kelola Group
+                    </button>
+                )}
             </div>
 
             <div className="bg-white shadow-sm rounded-lg border border-slate-200 overflow-x-auto">
@@ -213,9 +219,9 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 flex gap-2">
-                                        <button onClick={() => openBomModal(p)} className="inline-flex items-center justify-center px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md font-medium hover:bg-emerald-100 transition-colors min-h-[36px] active:scale-[0.98]">Bahan (BOM)</button>
-                                        <button onClick={() => openModal(p)} className="inline-flex items-center justify-center px-3 py-2 bg-indigo-50 text-indigo-600 rounded-md font-medium hover:bg-indigo-100 transition-colors min-h-[36px] active:scale-[0.98]">Edit</button>
-                                        <button onClick={() => handleDelete(p.id)} className="inline-flex items-center justify-center px-3 py-2 bg-rose-50 text-rose-600 rounded-md font-medium hover:bg-rose-100 transition-colors min-h-[36px] active:scale-[0.98]">Hapus</button>
+                                        {isOwner && <button onClick={() => openBomModal(p)} className="inline-flex items-center justify-center px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md font-medium hover:bg-emerald-100 transition-colors min-h-[36px] active:scale-[0.98]">Bahan (BOM)</button>}
+                                        <button onClick={() => openModal(p)} className="inline-flex items-center justify-center px-3 py-2 bg-indigo-50 text-indigo-600 rounded-md font-medium hover:bg-indigo-100 transition-colors min-h-[36px] active:scale-[0.98]">{isOwner ? 'Edit' : 'Ubah Gambar'}</button>
+                                        {isOwner && <button onClick={() => handleDelete(p.id)} className="inline-flex items-center justify-center px-3 py-2 bg-rose-50 text-rose-600 rounded-md font-medium hover:bg-rose-100 transition-colors min-h-[36px] active:scale-[0.98]">Hapus</button>}
                                     </td>
                                 </tr>
                             ))
@@ -240,8 +246,9 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                     type="text"
                                     value={data.name}
                                     onChange={e => setData('name', e.target.value)}
-                                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
                                     required
+                                    disabled={!isOwner}
                                 />
                                 {errors.name && <p className="text-rose-500 text-xs mt-1">{errors.name}</p>}
                             </div>
@@ -253,8 +260,9 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                         type="text"
                                         value={data.category}
                                         onChange={e => setData('category', e.target.value)}
-                                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                                         required
+                                        disabled={!isOwner}
                                     />
                                     {errors.category && <p className="text-rose-500 text-xs mt-1">{errors.category}</p>}
                                 </div>
@@ -263,7 +271,8 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                     <select
                                         value={data.display_group_id}
                                         onChange={e => setData('display_group_id', e.target.value)}
-                                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                                        disabled={!isOwner}
                                     >
                                         <option value="">- Tidak ada -</option>
                                         {displayGroups.map(g => (
@@ -281,8 +290,9 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                         min="0"
                                         value={data.price}
                                         onChange={e => setData('price', e.target.value)}
-                                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                                         required
+                                        disabled={!isOwner}
                                     />
                                     {errors.price && <p className="text-rose-500 text-xs mt-1">{errors.price}</p>}
                                 </div>
@@ -293,7 +303,8 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                         min="0"
                                         value={data.hpp}
                                         onChange={e => setData('hpp', e.target.value)}
-                                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                                        disabled={!isOwner}
                                     />
                                 </div>
                             </div>
@@ -339,9 +350,10 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                     id="is_active"
                                     checked={data.is_active}
                                     onChange={e => setData('is_active', e.target.checked)}
-                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                                    disabled={!isOwner}
                                 />
-                                <label htmlFor="is_active" className="text-sm text-slate-700">Aktif (Tampil di kasir)</label>
+                                <label htmlFor="is_active" className={`text-sm ${!isOwner ? 'text-slate-400' : 'text-slate-700'}`}>Aktif (Tampil di kasir)</label>
                             </div>
 
                             <div className="pt-4 flex justify-end gap-3 border-t border-slate-200">

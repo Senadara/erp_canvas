@@ -12,7 +12,7 @@ class ProductService
     {
         return Product::with([
             'displayGroup:id,name,sort_order',
-            'conversions.stockItem:id,name,outlet_id'
+            'conversions.stockItem:id,name,outlet_id,current_stock_biji,trackable'
         ])
         ->where('outlet_id', $outletId)
         ->orderBy('category')

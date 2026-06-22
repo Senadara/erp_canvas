@@ -18,7 +18,7 @@ class ShiftService
             ->first();
     }
 
-    public function openShift(string $outletId, float $openingCash)
+    public function openShift(string $outletId, float $openingCash, ?string $name = null)
     {
         $open = $this->getOpenShift($outletId);
         if ($open) {
@@ -30,6 +30,7 @@ class ShiftService
 
         return ShiftRecord::create([
             'outlet_id' => $outletId,
+            'name' => $name,
             'opening_cash' => $openingCash,
             'status' => 'OPEN',
             'opened_at' => Carbon::now(),
@@ -49,8 +50,9 @@ class ShiftService
             $outletId = $shift->outlet_id;
 
             $transactions = Transaction::where('outlet_id', $outletId)
-                ->where('created_at', '>=', $openedAt)
                 ->where('payment_status', 'PAID')
+                ->whereNotNull('paid_at')
+                ->where('paid_at', '>=', $openedAt)
                 ->get();
 
             $totalSalesCash = 0;
