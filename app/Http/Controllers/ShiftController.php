@@ -110,6 +110,10 @@ class ShiftController extends Controller
     public function store(Request $request)
     {
         $outletId = $request->session()->get('outlet_id');
+        if (!$outletId) {
+            return redirect()->back()->withErrors(['error' => 'Pilih outlet terlebih dahulu sebelum membuka shift.']);
+        }
+
         $data = $request->validate([
             'name' => 'nullable|string|max:255',
             'opening_cash' => 'required|numeric|min:0',
@@ -118,7 +122,7 @@ class ShiftController extends Controller
         try {
             $this->shiftService->openShift($outletId, $data['opening_cash'], $data['name'] ?? null);
             return redirect()->back()->with('success', 'Shift berhasil dibuka.');
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);
         }
     }
@@ -133,7 +137,7 @@ class ShiftController extends Controller
         try {
             $this->shiftService->closeShift($id, $request->input('actual_cash'), $request->input('note'));
             return redirect()->back()->with('success', 'Shift berhasil ditutup.');
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);
         }
     }
