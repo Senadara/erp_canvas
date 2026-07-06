@@ -2,6 +2,15 @@ import { useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, useForm, router, usePage } from '@inertiajs/react';
 
+function formatRupiah(value) {
+    const n = Number(value) || 0;
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
+}
+
+function fundSourceLabel(source) {
+    return source === 'PRIVATE_CASH' ? 'Uang Pribadi' : 'Kas Kasir';
+}
+
 export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
     const [activeTab, setActiveTab] = useState('stock');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -23,8 +32,9 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
         restock_price: '0',
     });
 
-    const { data: restockData, setData: setRestockData, post: postRestock, processing: restockProcessing, reset: resetRestock } = useForm({
+    const { data: restockData, setData: setRestockData, post: postRestock, processing: restockProcessing, reset: resetRestock, errors: restockErrors } = useForm({
         qty: '',
+        fund_source: 'CASHIER_CASH',
         note: '',
     });
 
@@ -265,13 +275,15 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
                                 <th className="px-4 py-3 font-medium">Qty Restock</th>
                                 <th className="px-4 py-3 font-medium">Stok Sebelum</th>
                                 <th className="px-4 py-3 font-medium">Stok Sesudah</th>
+                                <th className="px-4 py-3 font-medium">Sumber Dana</th>
+                                <th className="px-4 py-3 font-medium text-right">Biaya</th>
                                 <th className="px-4 py-3 font-medium">Catatan</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
                             {!restockLogs || restockLogs.length === 0 ? (
                                 <tr>
-                                    <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
+                                    <td colSpan="8" className="px-4 py-8 text-center text-slate-500">
                                         Belum ada histori restock.
                                     </td>
                                 </tr>
@@ -283,6 +295,12 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
                                         <td className="px-4 py-3 font-bold text-emerald-600">+{Number(log.qty_added)} {log.unit_name}</td>
                                         <td className="px-4 py-3 text-slate-500">{Number(log.stock_before)} {log.unit_name}</td>
                                         <td className="px-4 py-3 font-medium">{Number(log.stock_after)} {log.unit_name}</td>
+                                        <td className="px-4 py-3">
+                                            <span className={`rounded-full px-2 py-1 text-xs font-semibold ${log.fund_source === 'PRIVATE_CASH' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                                {fundSourceLabel(log.fund_source)}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatRupiah(log.restock_cost)}</td>
                                         <td className="px-4 py-3">{log.note || '-'}</td>
                                     </tr>
                                 ))
@@ -449,9 +467,29 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
                                 />
                                 {editingItem?.restock_price > 0 && editingItem?.min_restock_qty > 0 && restockData.qty > 0 && (
                                     <div className="mt-2 p-2 bg-indigo-50 rounded border border-indigo-100 text-sm text-indigo-700 font-medium">
-                                        Estimasi Biaya / Setoran: Rp {Number((restockData.qty / editingItem.min_restock_qty) * editingItem.restock_price).toLocaleString('id-ID')}
+                                        Estimasi Biaya / Setoran: {formatRupiah((restockData.qty / editingItem.min_restock_qty) * editingItem.restock_price)}
                                     </div>
                                 )}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Sumber Dana Restock</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {[
+                                        { value: 'CASHIER_CASH', label: 'Kas Kasir', description: 'Mengurangi saldo laci shift.' },
+                                        { value: 'PRIVATE_CASH', label: 'Uang Pribadi', description: 'Biaya luar kasir, saldo shift tetap.' },
+                                    ].map(option => (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            onClick={() => setRestockData('fund_source', option.value)}
+                                            className={`rounded-md border px-3 py-2 text-left text-sm transition ${restockData.fund_source === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                                        >
+                                            <span className="block font-semibold">{option.label}</span>
+                                            <span className="mt-0.5 block text-xs opacity-80">{option.description}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                                {restockErrors.fund_source && <p className="mt-1 text-xs text-rose-600">{restockErrors.fund_source}</p>}
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Catatan (Opsional)</label>

@@ -58,6 +58,7 @@ class ShiftService
             $summary = $this->calculateMoneySummary($shift);
             $expectedCash = $summary['cash']['expected'];
             $discrepancy = $actualCash - $expectedCash;
+            $totalExpenses = $this->operatingExpenseTotal($summary);
 
             $shift->update([
                 'closed_at' => $shift->closed_at,
@@ -68,7 +69,7 @@ class ShiftService
                 'discrepancy' => $discrepancy,
                 'total_sales_cash' => $summary['cash']['sales'],
                 'total_sales_qris' => $summary['qris']['sales'],
-                'total_expenses' => $summary['cash']['expenses'] + $summary['qris']['expenses'],
+                'total_expenses' => $totalExpenses,
                 'note' => $note,
             ]);
 
@@ -141,7 +142,7 @@ class ShiftService
                 $shift->discrepancy = $shift->actual_cash - $summary['cash']['expected'];
                 $shift->total_sales_cash = $summary['cash']['sales'];
                 $shift->total_sales_qris = $summary['qris']['sales'];
-                $shift->total_expenses = $summary['cash']['expenses'] + $summary['qris']['expenses'];
+                $shift->total_expenses = $this->operatingExpenseTotal($summary);
             } else {
                 $shift->expected_cash = null;
                 $shift->expected_qris = null;
@@ -204,13 +205,24 @@ class ShiftService
             ->get();
 
         foreach ($movements as $movement) {
-            $method = $movement->payment_method === 'QRIS' ? 'qris' : 'cash';
+            $method = $this->resolvePaymentBucket($movement);
             $flow = $this->resolveCashFlow($movement);
             $amount = (float) $movement->amount;
 
             if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
                 $summary['cash']['cashier_topups'] += $amount;
                 $summary['cash']['expenses'] += $amount;
+                continue;
+            }
+
+            if ($method === 'outside') {
+                if ($flow === 'IN') {
+                    $summary['outside']['additions'] += $amount;
+                } elseif ($movement->category === 'Penarikan') {
+                    $summary['outside']['withdrawals'] += $amount;
+                } else {
+                    $summary['outside']['expenses'] += $amount;
+                }
                 continue;
             }
 
@@ -226,7 +238,7 @@ class ShiftService
             }
         }
 
-        foreach (['cash', 'qris'] as $method) {
+        foreach (['cash', 'qris', 'outside'] as $method) {
             $summary[$method]['expected'] =
                 $summary[$method]['opening']
                 + $summary[$method]['sales']
@@ -249,6 +261,22 @@ class ShiftService
         return $movement->cash_flow === 'IN' ? 'IN' : 'OUT';
     }
 
+    private function operatingExpenseTotal(array $summary): float
+    {
+        return max(0, (float) $summary['cash']['expenses'] - (float) $summary['cash']['cashier_topups'])
+            + (float) $summary['qris']['expenses']
+            + (float) $summary['outside']['expenses'];
+    }
+
+    private function resolvePaymentBucket(PettyCash $movement): string
+    {
+        return match ($movement->payment_method) {
+            'QRIS' => 'qris',
+            'PRIVATE' => 'outside',
+            default => 'cash',
+        };
+    }
+
     private function emptyMoneySummary(): array
     {
         $empty = [
@@ -264,6 +292,7 @@ class ShiftService
         return [
             'cash' => $empty,
             'qris' => $empty,
+            'outside' => $empty,
             'total_expected' => 0,
         ];
     }

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Conversion;
+use App\Models\PettyCash;
 use App\Models\Product;
 use App\Models\RestockLog;
 use App\Models\StockItem;
@@ -11,13 +12,17 @@ use Illuminate\Support\Facades\DB;
 
 class StockService
 {
-    public function addStock(string $stockItemId, float $qty, ?string $note = null, ?string $outletId = null)
+    public function addStock(string $stockItemId, float $qty, ?string $note = null, ?string $outletId = null, string $fundSource = RestockLog::FUND_SOURCE_CASHIER)
     {
         if ($qty <= 0) {
             throw new \InvalidArgumentException("Jumlah harus lebih dari 0.");
         }
 
-        return DB::transaction(function () use ($stockItemId, $qty, $note, $outletId) {
+        if (! in_array($fundSource, [RestockLog::FUND_SOURCE_CASHIER, RestockLog::FUND_SOURCE_PRIVATE], true)) {
+            $fundSource = RestockLog::FUND_SOURCE_CASHIER;
+        }
+
+        return DB::transaction(function () use ($stockItemId, $qty, $note, $outletId, $fundSource) {
             $query = StockItem::where('id', $stockItemId);
             if ($outletId) {
                 $query->where('outlet_id', $outletId);
@@ -25,28 +30,38 @@ class StockService
             $row = $query->firstOrFail();
             $before = $row->current_stock_biji;
             $next = $before + $qty;
+            $cost = 0;
+            if ($row->restock_price > 0 && $row->min_restock_qty > 0) {
+                $cost = ($qty / $row->min_restock_qty) * $row->restock_price;
+            }
 
             $row->update(['current_stock_biji' => $next]);
 
-            RestockLog::create([
+            $restockLog = RestockLog::create([
                 'outlet_id' => $row->outlet_id,
                 'stock_item_id' => $stockItemId,
                 'qty_added' => $qty,
                 'stock_before' => $before,
                 'stock_after' => $next,
                 'note' => $note,
+                'fund_source' => $fundSource,
+                'restock_cost' => $cost,
+                'created_at' => now(),
             ]);
 
-            if ($row->restock_price > 0 && $row->min_restock_qty > 0) {
-                $cost = ($qty / $row->min_restock_qty) * $row->restock_price;
-                if ($cost > 0) {
-                    \App\Models\PettyCash::create([
-                        'outlet_id' => $row->outlet_id,
-                        'amount' => $cost,
-                        'category' => 'RESTOCK',
-                        'description' => "Restok {$row->name} ({$qty} {$row->unit_name})" . ($note ? " - {$note}" : ""),
-                    ]);
-                }
+            if ($cost > 0) {
+                $sourceLabel = $fundSource === RestockLog::FUND_SOURCE_PRIVATE ? 'uang pribadi/luar kasir' : 'kas kasir';
+                $movement = PettyCash::create([
+                    'outlet_id' => $row->outlet_id,
+                    'amount' => $cost,
+                    'category' => 'RESTOCK',
+                    'payment_method' => $fundSource === RestockLog::FUND_SOURCE_PRIVATE ? 'PRIVATE' : 'CASH',
+                    'cash_flow' => 'OUT',
+                    'description' => "Restok {$row->name} ({$qty} {$row->unit_name}) via {$sourceLabel}" . ($note ? " - {$note}" : ""),
+                    'created_at' => now(),
+                ]);
+
+                $restockLog->update(['petty_cash_id' => $movement->id]);
             }
 
             return $row;

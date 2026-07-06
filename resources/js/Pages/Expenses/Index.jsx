@@ -15,6 +15,17 @@ function isIncomingMovement(item) {
     return item.cash_flow === 'IN' && !isCashierFundMovement(item);
 }
 
+function paymentLabel(method) {
+    if (method === 'PRIVATE') return 'Uang Pribadi';
+    return method || 'CASH';
+}
+
+function paymentTone(method) {
+    if (method === 'QRIS') return 'bg-blue-100 text-blue-800';
+    if (method === 'PRIVATE') return 'bg-amber-100 text-amber-800';
+    return 'bg-emerald-50 text-emerald-700';
+}
+
 export default function ExpensesIndex({ expenses, openShift }) {
     const { auth } = usePage().props;
     const isOwner = auth?.user?.role === 'OWNER';
@@ -35,6 +46,7 @@ export default function ExpensesIndex({ expenses, openShift }) {
         'Bahan Baku',
         'Gaji',
         'Listrik/Air',
+        'RESTOCK',
         'Tambah Kas',
         'Lainnya'
     ];
@@ -143,7 +155,7 @@ export default function ExpensesIndex({ expenses, openShift }) {
                                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${isCashierFundMovement(e) ? 'bg-amber-100 text-amber-800' : isIncomingMovement(e) ? 'bg-emerald-100 text-emerald-800' : e.category === 'Penarikan' ? 'bg-slate-100 text-slate-700' : 'bg-rose-100 text-rose-800'}`}>
                                             {isCashierFundMovement(e) ? 'Kas Kasir' : e.category}
                                         </span>
-                                        <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${e.payment_method === 'QRIS' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-50 text-emerald-700'}`}>{e.payment_method || 'CASH'}</span>
+                                        <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${paymentTone(e.payment_method)}`}>{paymentLabel(e.payment_method)}</span>
                                         {e.edited_by_owner_at && <span className="ml-2 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Edited owner</span>}
                                     </td>
                                     <td className="px-4 py-3">{e.description || '-'}</td>
@@ -180,7 +192,7 @@ export default function ExpensesIndex({ expenses, openShift }) {
                                     <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide mb-2 ${isCashierFundMovement(e) ? 'bg-amber-100 text-amber-800' : isIncomingMovement(e) ? 'bg-emerald-100 text-emerald-800' : e.category === 'Penarikan' ? 'bg-slate-100 text-slate-700' : 'bg-rose-100 text-rose-800'}`}>
                                         {isCashierFundMovement(e) ? 'Kas Kasir' : e.category}
                                     </span>
-                                    <span className={`ml-2 inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide ${e.payment_method === 'QRIS' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-50 text-emerald-700'}`}>{e.payment_method || 'CASH'}</span>
+                                    <span className={`ml-2 inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide ${paymentTone(e.payment_method)}`}>{paymentLabel(e.payment_method)}</span>
                                     {e.edited_by_owner_at && <span className="ml-2 inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">Edited owner</span>}
                                     <p className="text-sm text-slate-700 leading-snug">{e.description || 'Tanpa keterangan'}</p>
                                 </div>

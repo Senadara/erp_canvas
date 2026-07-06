@@ -83,7 +83,7 @@ class PettyCashService
 
         return [
             'category' => $category,
-            'payment_method' => $paymentMethod === 'QRIS' ? 'QRIS' : 'CASH',
+            'payment_method' => in_array($paymentMethod, ['CASH', 'QRIS', 'PRIVATE'], true) ? $paymentMethod : 'CASH',
             'cash_flow' => $cashFlow === 'IN' ? 'IN' : 'OUT',
         ];
     }

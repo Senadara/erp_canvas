@@ -21,6 +21,17 @@ function isIncomingMovement(item) {
     return item.cash_flow === 'IN' && !isCashierFundMovement(item);
 }
 
+function paymentLabel(method) {
+    if (method === 'PRIVATE') return 'Uang Pribadi';
+    return method || 'CASH';
+}
+
+function paymentTone(method) {
+    if (method === 'QRIS') return 'bg-blue-100 text-blue-700';
+    if (method === 'PRIVATE') return 'bg-amber-100 text-amber-800';
+    return 'bg-emerald-100 text-emerald-700';
+}
+
 export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, standardOpeningCash = 50000 }) {
     const { auth } = usePage().props;
     const isOwner = auth?.user?.role === 'OWNER';
@@ -451,7 +462,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                                             {e.isOffline && <span className="text-[10px] text-amber-600 bg-amber-50 px-1 rounded">Offline</span>}
                                                         </td>
                                                         <td className="px-3 py-2 text-xs">
-                                                            <span className={`px-1.5 py-0.5 rounded font-semibold ${e.payment_method === 'QRIS' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{e.payment_method || 'CASH'}</span>
+                                                            <span className={`px-1.5 py-0.5 rounded font-semibold ${paymentTone(e.payment_method)}`}>{paymentLabel(e.payment_method)}</span>
                                                         </td>
                                                         <td className={`px-3 py-2 font-semibold text-xs ${incoming ? 'text-emerald-600' : 'text-rose-600'}`}>
                                                             {incoming ? '+' : '-'} {formatRupiah(e.amount)}
@@ -659,6 +670,12 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                             <span className="text-slate-400">- Pengeluaran</span>
                                             <span className="text-rose-400">{formatRupiah(shiftDetail.total_expenses)}</span>
                                         </div>
+                                        {Number(shiftDetail.cash_summary?.outside?.expenses || 0) > 0 && (
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-400">Termasuk uang pribadi</span>
+                                                <span className="text-amber-300">{formatRupiah(shiftDetail.cash_summary?.outside?.expenses)}</span>
+                                            </div>
+                                        )}
                                         <div className="flex justify-between">
                                             <span className="text-slate-400">- Penarikan Cash</span>
                                             <span className="text-rose-400">{formatRupiah(shiftDetail.cash_summary?.cash?.withdrawals)}</span>

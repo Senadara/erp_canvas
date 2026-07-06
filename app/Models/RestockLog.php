@@ -10,10 +10,14 @@ class RestockLog extends Model
 {
     use HasUlidPrimary;
 
+    public const FUND_SOURCE_CASHIER = 'CASHIER_CASH';
+    public const FUND_SOURCE_PRIVATE = 'PRIVATE_CASH';
+
     public const UPDATED_AT = null; // Only uses created_at
 
     protected $fillable = [
-        'outlet_id', 'stock_item_id', 'qty_added', 'stock_before', 'stock_after', 'note', 'created_at',
+        'outlet_id', 'stock_item_id', 'qty_added', 'stock_before', 'stock_after', 'note',
+        'fund_source', 'restock_cost', 'petty_cash_id', 'created_at',
     ];
 
     protected function casts(): array
@@ -22,6 +26,7 @@ class RestockLog extends Model
             'qty_added' => 'decimal:4',
             'stock_before' => 'decimal:4',
             'stock_after' => 'decimal:4',
+            'restock_cost' => 'decimal:4',
             'created_at' => 'datetime',
         ];
     }

@@ -3,10 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\Outlet;
-use App\Models\Transaction;
+use App\Models\PettyCash;
+use App\Models\StockItem;
 use App\Models\User;
-use App\Services\PettyCashService;
 use App\Services\ShiftService;
+use App\Services\StockService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -17,7 +18,7 @@ class FinanceCashierFundTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_cashier_fund_is_fixed_per_shift_and_reduces_container_cash(): void
+    public function test_restock_funding_source_keeps_cashier_and_private_money_separate(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-06 09:00:00'));
 
@@ -35,42 +36,39 @@ class FinanceCashierFundTest extends TestCase
 
             $this->assertSame(ShiftService::STANDARD_OPENING_CASH, (int) $shift->opening_cash);
 
-            Transaction::create([
+            $stock = StockItem::create([
                 'outlet_id' => $outlet->id,
-                'shift_id' => $shift->id,
-                'invoice_number' => 'INV-FINANCE-001',
-                'total_amount' => 200000,
-                'payment_method' => 'CASH',
-                'payment_status' => 'PAID',
-                'paid_at' => Carbon::now(),
-                'created_at' => Carbon::now(),
+                'name' => 'Dimsum Ori',
+                'current_stock_biji' => 0,
+                'unit_name' => 'pcs',
+                'min_stock_alert' => 5,
+                'trackable' => true,
+                'counting_basis' => 'BIJI',
+                'min_restock_qty' => 10,
+                'restock_price' => 50000,
             ]);
 
-            $cashierTopup = app(PettyCashService::class)->createExpense([
-                'outlet_id' => $outlet->id,
-                'amount' => 20000,
-                'category' => 'Tambah Kas',
-                'payment_method' => 'CASH',
-                'cash_flow' => 'IN',
-                'description' => 'Tambahan pecahan kecil',
-            ]);
-
-            app(PettyCashService::class)->createExpense([
-                'outlet_id' => $outlet->id,
-                'amount' => 30000,
-                'category' => 'Operasional',
-                'payment_method' => 'CASH',
-                'cash_flow' => 'OUT',
-                'description' => 'Beli es batu',
-            ]);
-
-            $this->assertSame('Tambah Kas', $cashierTopup->category);
-            $this->assertSame('OUT', $cashierTopup->cash_flow);
+            app(StockService::class)->addStock($stock->id, 10, 'Bayar dari laci', $outlet->id, 'CASHIER_CASH');
+            app(StockService::class)->addStock($stock->id, 10, 'Talangan owner', $outlet->id, 'PRIVATE_CASH');
 
             $shiftSummary = app(ShiftService::class)->moneySummary($shift->fresh());
 
-            $this->assertSame(20000.0, $shiftSummary['cash']['cashier_topups']);
-            $this->assertSame(200000.0, $shiftSummary['cash']['expected']);
+            $this->assertSame(50000.0, $shiftSummary['cash']['expenses']);
+            $this->assertSame(50000.0, $shiftSummary['outside']['expenses']);
+            $this->assertSame(0.0, $shiftSummary['cash']['expected']);
+
+            $this->assertDatabaseHas('restock_logs', [
+                'stock_item_id' => $stock->id,
+                'fund_source' => 'CASHIER_CASH',
+                'restock_cost' => 50000,
+            ]);
+            $this->assertDatabaseHas('restock_logs', [
+                'stock_item_id' => $stock->id,
+                'fund_source' => 'PRIVATE_CASH',
+                'restock_cost' => 50000,
+            ]);
+            $this->assertSame(1, PettyCash::where('category', 'RESTOCK')->where('payment_method', 'CASH')->count());
+            $this->assertSame(1, PettyCash::where('category', 'RESTOCK')->where('payment_method', 'PRIVATE')->count());
 
             $this->actingAs($owner)
                 ->withSession(['outlet_id' => $outlet->id])
@@ -82,12 +80,11 @@ class FinanceCashierFundTest extends TestCase
                 ->assertInertia(fn (Assert $page) => $page
                     ->component('Finance/Index')
                     ->where('summary.standardOpeningCash', 50000)
-                    ->where('summary.shiftCount', 1)
-                    ->where('summary.standardCashierFund', 50000)
-                    ->where('summary.cashierTopups', 20000)
-                    ->where('summary.cashierFundTotal', 70000)
-                    ->where('summary.expenseTotal', 30000)
-                    ->where('summary.cashContainerAfterWithdrawals', 100000)
+                    ->where('summary.expenseTotal', 100000)
+                    ->where('summary.cashExpense', 50000)
+                    ->where('summary.outsideExpense', 50000)
+                    ->where('summary.cashRestockExpense', 50000)
+                    ->where('summary.privateRestockExpense', 50000)
                 );
         } finally {
             Carbon::setTestNow();

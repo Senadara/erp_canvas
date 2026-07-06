@@ -36,7 +36,7 @@ class ExpenseController extends Controller
         $data = $request->validate([
             'amount' => 'required|numeric|min:1',
             'category' => 'required|string',
-            'payment_method' => 'nullable|in:CASH,QRIS',
+            'payment_method' => 'nullable|in:CASH,QRIS,PRIVATE',
             'cash_flow' => 'nullable|in:IN,OUT',
             'description' => 'nullable|string',
             'date' => 'nullable|date',
@@ -60,7 +60,7 @@ class ExpenseController extends Controller
         $data = $request->validate([
             'amount' => 'required|numeric|min:1',
             'category' => 'required|string',
-            'payment_method' => 'nullable|in:CASH,QRIS',
+            'payment_method' => 'nullable|in:CASH,QRIS,PRIVATE',
             'cash_flow' => 'nullable|in:IN,OUT',
             'description' => 'nullable|string',
             'date' => 'nullable|date',

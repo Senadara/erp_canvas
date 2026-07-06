@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Outlet;
 use App\Models\PettyCash;
-use App\Models\ShiftRecord;
 use App\Models\Transaction;
 use App\Services\PettyCashService;
 use App\Services\ShiftService;
@@ -59,20 +58,10 @@ class FinanceController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
-        $shifts = ShiftRecord::query()
-            ->where('outlet_id', $outletId)
-            ->whereBetween('opened_at', [$start, $end])
-            ->orderByDesc('opened_at')
-            ->get();
-
-        $summary = $this->buildSummary($paidTransactions, $unpaidTransactions, $canceledTransactions, $cashMovements, $shifts);
-        $daily = $this->buildDailySeries($start, $end, $paidTransactions, $cashMovements, $shifts);
+        $summary = $this->buildSummary($paidTransactions, $unpaidTransactions, $canceledTransactions, $cashMovements);
+        $daily = $this->buildDailySeries($start, $end, $paidTransactions, $cashMovements);
         $topProducts = $this->buildTopProducts($paidTransactions);
         $expenseByCategory = $this->buildExpenseByCategory($cashMovements);
-
-        $openShift = $outletId
-            ? ShiftRecord::where('outlet_id', $outletId)->where('status', 'OPEN')->orderByDesc('opened_at')->first()
-            : null;
 
         return Inertia::render('Finance/Index', [
             'outlet' => $outlet,
@@ -86,7 +75,6 @@ class FinanceController extends Controller
             'expenseByCategory' => $expenseByCategory,
             'cashMovements' => $cashMovements->take(80)->values(),
             'withdrawals' => $cashMovements->where('category', 'Penarikan')->take(50)->values(),
-            'currentShiftBalance' => $this->shiftService->moneySummary($openShift),
         ]);
     }
 
@@ -115,7 +103,7 @@ class FinanceController extends Controller
         return redirect()->back()->with('success', 'Penarikan saldo berhasil dicatat.');
     }
 
-    private function buildSummary($paidTransactions, $unpaidTransactions, $canceledTransactions, $cashMovements, $shifts): array
+    private function buildSummary($paidTransactions, $unpaidTransactions, $canceledTransactions, $cashMovements): array
     {
         $omzet = 0;
         $cashSales = 0;
@@ -138,17 +126,19 @@ class FinanceController extends Controller
         $expenseTotal = 0;
         $cashExpense = 0;
         $qrisExpense = 0;
+        $outsideExpense = 0;
+        $cashRestockExpense = 0;
+        $qrisRestockExpense = 0;
+        $privateRestockExpense = 0;
         $cashAdditions = 0;
         $withdrawCash = 0;
         $withdrawQris = 0;
         $cashierTopups = 0;
         $standardOpeningCash = ShiftService::STANDARD_OPENING_CASH;
-        $shiftCount = $shifts->count();
-        $standardCashierFund = $shiftCount * $standardOpeningCash;
 
         foreach ($cashMovements as $movement) {
             $amount = (float) $movement->amount;
-            $method = $movement->payment_method === 'QRIS' ? 'QRIS' : 'CASH';
+            $method = $this->normalizePaymentMethod($movement);
 
             if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
                 $cashierTopups += $amount;
@@ -163,27 +153,32 @@ class FinanceController extends Controller
             if ($movement->category === 'Penarikan') {
                 if ($method === 'QRIS') {
                     $withdrawQris += $amount;
-                } else {
+                } elseif ($method === 'CASH') {
                     $withdrawCash += $amount;
                 }
                 continue;
             }
 
             $expenseTotal += $amount;
-            if ($method === 'QRIS') {
-                $qrisExpense += $amount;
-            } else {
-                $cashExpense += $amount;
+            if ($movement->category === 'RESTOCK') {
+                if ($method === 'PRIVATE') {
+                    $privateRestockExpense += $amount;
+                } elseif ($method === 'QRIS') {
+                    $qrisRestockExpense += $amount;
+                } else {
+                    $cashRestockExpense += $amount;
+                }
             }
+
+            match ($method) {
+                'QRIS' => $qrisExpense += $amount,
+                'PRIVATE' => $outsideExpense += $amount,
+                default => $cashExpense += $amount,
+            };
         }
 
         $grossProfit = $omzet - $hpp;
         $netProfit = $grossProfit - $expenseTotal;
-        $cashierFundTotal = $standardCashierFund + $cashierTopups;
-        $cashContainerBeforeWithdrawals = $cashSales + $cashAdditions - $cashExpense - $cashierFundTotal;
-        $cashContainerAfterWithdrawals = $cashContainerBeforeWithdrawals - $withdrawCash;
-        $qrisAvailableBeforeWithdrawals = $qrisSales - $qrisExpense;
-        $qrisAvailableAfterWithdrawals = $qrisAvailableBeforeWithdrawals - $withdrawQris;
 
         return [
             'omzet' => $omzet,
@@ -194,19 +189,14 @@ class FinanceController extends Controller
             'expenseTotal' => $expenseTotal,
             'cashExpense' => $cashExpense,
             'qrisExpense' => $qrisExpense,
+            'outsideExpense' => $outsideExpense,
+            'cashRestockExpense' => $cashRestockExpense,
+            'qrisRestockExpense' => $qrisRestockExpense,
+            'privateRestockExpense' => $privateRestockExpense,
             'netProfit' => $netProfit,
             'cashAdditions' => $cashAdditions,
             'standardOpeningCash' => $standardOpeningCash,
-            'shiftCount' => $shiftCount,
-            'standardCashierFund' => $standardCashierFund,
             'cashierTopups' => $cashierTopups,
-            'cashierFundTotal' => $cashierFundTotal,
-            'cashContainerBeforeWithdrawals' => $cashContainerBeforeWithdrawals,
-            'cashContainerAfterWithdrawals' => $cashContainerAfterWithdrawals,
-            'qrisAvailableBeforeWithdrawals' => $qrisAvailableBeforeWithdrawals,
-            'qrisAvailableAfterWithdrawals' => $qrisAvailableAfterWithdrawals,
-            'availableBeforeWithdrawals' => $cashContainerBeforeWithdrawals + $qrisAvailableBeforeWithdrawals,
-            'availableAfterWithdrawals' => $cashContainerAfterWithdrawals + $qrisAvailableAfterWithdrawals,
             'withdrawCash' => $withdrawCash,
             'withdrawQris' => $withdrawQris,
             'withdrawTotal' => $withdrawCash + $withdrawQris,
@@ -218,13 +208,13 @@ class FinanceController extends Controller
         ];
     }
 
-    private function buildDailySeries(Carbon $start, Carbon $end, $paidTransactions, $cashMovements, $shifts): array
+    private function buildDailySeries(Carbon $start, Carbon $end, $paidTransactions, $cashMovements): array
     {
         $days = [];
         $cursor = $start->copy();
         while ($cursor->lte($end)) {
             $key = $cursor->toDateString();
-            $days[$key] = ['date' => $key, 'omzet' => 0, 'expenses' => 0, 'cashier_fund' => 0, 'profit' => 0];
+            $days[$key] = ['date' => $key, 'omzet' => 0, 'expenses' => 0, 'profit' => 0];
             $cursor->addDay();
         }
 
@@ -249,7 +239,6 @@ class FinanceController extends Controller
             }
 
             if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
-                $days[$key]['cashier_fund'] += (float) $movement->amount;
                 continue;
             }
 
@@ -258,15 +247,8 @@ class FinanceController extends Controller
             }
         }
 
-        foreach ($shifts as $shift) {
-            $key = Carbon::parse($shift->opened_at)->toDateString();
-            if (isset($days[$key])) {
-                $days[$key]['cashier_fund'] += ShiftService::STANDARD_OPENING_CASH;
-            }
-        }
-
         foreach ($days as &$day) {
-            $day['profit'] += $day['omzet'] - $day['expenses'] - $day['cashier_fund'];
+            $day['profit'] += $day['omzet'] - $day['expenses'];
         }
 
         return array_values($days);
@@ -315,5 +297,14 @@ class FinanceController extends Controller
             'category' => $category,
             'amount' => $amount,
         ])->values()->all();
+    }
+
+    private function normalizePaymentMethod(PettyCash $movement): string
+    {
+        return match ($movement->payment_method) {
+            'QRIS' => 'QRIS',
+            'PRIVATE' => 'PRIVATE',
+            default => 'CASH',
+        };
     }
 }

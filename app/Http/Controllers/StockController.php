@@ -118,11 +118,12 @@ class StockController extends Controller
 
         $data = $request->validate([
             'qty' => 'required|numeric|min:0.0001',
+            'fund_source' => 'nullable|in:CASHIER_CASH,PRIVATE_CASH',
             'note' => 'nullable|string',
         ]);
 
         $outletId = $request->session()->get('outlet_id');
-        $this->stockService->addStock($id, $data['qty'], $data['note'], $outletId);
+        $this->stockService->addStock($id, $data['qty'], $data['note'], $outletId, $data['fund_source'] ?? \App\Models\RestockLog::FUND_SOURCE_CASHIER);
         return redirect()->back()->with('success', 'Stok berhasil ditambahkan.');
     }
 

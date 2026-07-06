@@ -28,13 +28,23 @@ function isIncomingMovement(item) {
     return item.cash_flow === 'IN' && !isCashierFundMovement(item);
 }
 
+function paymentLabel(method) {
+    if (method === 'PRIVATE') return 'Uang Pribadi';
+    return method || 'CASH';
+}
+
+function paymentTone(method) {
+    if (method === 'QRIS') return 'bg-blue-100 text-blue-800';
+    if (method === 'PRIVATE') return 'bg-amber-100 text-amber-800';
+    return 'bg-emerald-50 text-emerald-700';
+}
+
 export default function FinanceIndex({
     outlet,
     filters,
     summary,
     daily,
     cashMovements = [],
-    currentShiftBalance,
 }) {
     const [dateFrom, setDateFrom] = useState(filters.date_from);
     const [dateTo, setDateTo] = useState(filters.date_to);
@@ -51,7 +61,6 @@ export default function FinanceIndex({
         return ((Number(summary.netProfit) || 0) / omzet) * 100;
     }, [summary]);
 
-    const standardCashText = `${summary.shiftCount || 0} shift x ${formatRupiah(summary.standardOpeningCash || 50000)}`;
     const recentMovements = cashMovements.slice(0, 12);
 
     const applyFilter = (e) => {
@@ -84,16 +93,16 @@ export default function FinanceIndex({
             sub: `Margin ${netMargin.toFixed(1)}% setelah HPP dan operasional`,
         },
         {
-            label: 'Kas Kontainer Bisa Ditarik',
-            value: summary.cashContainerAfterWithdrawals,
-            tone: 'text-slate-900',
-            sub: 'Cash setelah kas kasir, operasional, dan penarikan',
+            label: 'Pengeluaran Operasional',
+            value: summary.expenseTotal,
+            tone: 'text-rose-700',
+            sub: `Kasir ${formatRupiah(summary.cashExpense)} | luar kasir ${formatRupiah(summary.outsideExpense)}`,
         },
         {
-            label: 'Uang Kas Shift/Kasir',
-            value: summary.cashierFundTotal,
+            label: 'Restock Uang Pribadi',
+            value: summary.privateRestockExpense,
             tone: 'text-amber-700',
-            sub: `${standardCashText} + top up ${formatRupiah(summary.cashierTopups)}`,
+            sub: `Restock kasir ${formatRupiah(summary.cashRestockExpense)}`,
         },
     ];
 
@@ -105,7 +114,7 @@ export default function FinanceIndex({
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                         <h1 className="text-2xl font-semibold text-slate-900">Keuangan Outlet</h1>
-                        <p className="mt-1 text-sm text-slate-500">{outlet?.name || 'Outlet'} - ringkasan kas dan penarikan owner.</p>
+                        <p className="mt-1 text-sm text-slate-500">{outlet?.name || 'Outlet'} - ringkasan laba, pengeluaran, dan penarikan owner.</p>
                     </div>
                     <form onSubmit={applyFilter} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
                         <div>
@@ -127,8 +136,8 @@ export default function FinanceIndex({
                     <div className="flex gap-3">
                         <BanknotesIcon className="mt-0.5 h-5 w-5 shrink-0" />
                         <div>
-                            <p className="font-semibold">Kas kasir otomatis disiapkan {formatRupiah(summary.standardOpeningCash || 50000)} setiap buka shift.</p>
-                            <p className="mt-1 text-amber-800">Tambahan kas kasir dicatat sebagai alokasi keluar dari kas kontainer, bukan pemasukan. Besoknya shift kembali memakai standar {formatRupiah(summary.standardOpeningCash || 50000)}.</p>
+                            <p className="font-semibold">Kas shift adalah modal tetap {formatRupiah(summary.standardOpeningCash || 50000)} setiap buka shift.</p>
+                            <p className="mt-1 text-amber-800">Restock dari kas kasir mengurangi saldo laci. Restock dari uang pribadi/luar kasir tetap menjadi biaya operasional, tetapi tidak mengurangi saldo shift.</p>
                         </div>
                     </div>
                 </div>
@@ -147,8 +156,8 @@ export default function FinanceIndex({
                     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                         <div className="mb-4 flex items-start justify-between gap-3">
                             <div>
-                                <h2 className="text-lg font-semibold text-slate-900">Tren Kas Harian</h2>
-                                <p className="text-sm text-slate-500">Omzet, operasional, alokasi kas kasir, dan kas bersih periode.</p>
+                                <h2 className="text-lg font-semibold text-slate-900">Tren Keuangan Harian</h2>
+                                <p className="text-sm text-slate-500">Omzet, pengeluaran operasional, dan laba operasional harian.</p>
                             </div>
                             <CalendarDaysIcon className="h-5 w-5 text-slate-400" />
                         </div>
@@ -161,32 +170,13 @@ export default function FinanceIndex({
                                     <Tooltip formatter={(value, name) => [formatRupiah(value), name]} />
                                     <Area type="monotone" dataKey="omzet" name="Omzet" stroke="#4f46e5" fill="#c7d2fe" strokeWidth={2} />
                                     <Area type="monotone" dataKey="expenses" name="Operasional" stroke="#e11d48" fill="#fecdd3" strokeWidth={2} />
-                                    <Area type="monotone" dataKey="cashier_fund" name="Kas Kasir" stroke="#d97706" fill="#fde68a" strokeWidth={2} />
-                                    <Area type="monotone" dataKey="profit" name="Kas Bersih" stroke="#059669" fill="#bbf7d0" strokeWidth={2} />
+                                    <Area type="monotone" dataKey="profit" name="Laba Operasional" stroke="#059669" fill="#bbf7d0" strokeWidth={2} />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
                     </div>
 
-                    <div className="space-y-6">
-                        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                            <h2 className="text-lg font-semibold text-slate-900">Saldo Shift Aktif</h2>
-                            <div className="mt-4 space-y-3">
-                                <div className="flex justify-between rounded-md bg-emerald-50 px-3 py-2 text-sm">
-                                    <span className="font-medium text-emerald-700">Cash di shift</span>
-                                    <span className="font-bold text-emerald-900">{formatRupiah(currentShiftBalance.cash?.expected)}</span>
-                                </div>
-                                <div className="flex justify-between rounded-md bg-blue-50 px-3 py-2 text-sm">
-                                    <span className="font-medium text-blue-700">QRIS di shift</span>
-                                    <span className="font-bold text-blue-900">{formatRupiah(currentShiftBalance.qris?.expected)}</span>
-                                </div>
-                                <div className="flex justify-between rounded-md bg-amber-50 px-3 py-2 text-sm">
-                                    <span className="font-medium text-amber-700">Top up kasir</span>
-                                    <span className="font-bold text-amber-900">{formatRupiah(currentShiftBalance.cash?.cashier_topups)}</span>
-                                </div>
-                            </div>
-                        </div>
-
+                    <div>
                         <form onSubmit={submitWithdrawal} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                             <h2 className="text-lg font-semibold text-slate-900">Penarikan Owner</h2>
                             <div className="mt-4 space-y-4">
@@ -228,7 +218,7 @@ export default function FinanceIndex({
                     <div className="mb-4 flex items-start justify-between gap-3">
                         <div>
                             <h2 className="text-lg font-semibold text-slate-900">Mutasi Keuangan Terbaru</h2>
-                            <p className="text-sm text-slate-500">Termasuk penarikan, pengeluaran, dan alokasi kas kasir.</p>
+                            <p className="text-sm text-slate-500">Termasuk penarikan, pengeluaran, restock kasir, dan restock uang pribadi.</p>
                         </div>
                         <ClipboardDocumentListIcon className="h-5 w-5 text-slate-400" />
                     </div>
@@ -247,8 +237,8 @@ export default function FinanceIndex({
                                                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${cashierFund ? 'bg-amber-100 text-amber-800' : item.category === 'Penarikan' ? 'bg-slate-100 text-slate-700' : incoming ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
                                                         {cashierFund ? 'Kas Kasir' : item.category}
                                                     </span>
-                                                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${item.payment_method === 'QRIS' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-50 text-emerald-700'}`}>
-                                                        {item.payment_method || 'CASH'}
+                                                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${paymentTone(item.payment_method)}`}>
+                                                        {paymentLabel(item.payment_method)}
                                                     </span>
                                                 </div>
                                                 <div className="mt-1 text-xs text-slate-500">{new Date(item.created_at).toLocaleString('id-ID')} - {item.description || 'Tanpa catatan'}</div>

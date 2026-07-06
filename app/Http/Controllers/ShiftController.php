@@ -100,7 +100,8 @@ class ShiftController extends Controller
 
         $cashierTopups = (float) ($cashSummary['cash']['cashier_topups'] ?? 0);
         $totalOperatingExpenses = max(0, (float) $cashSummary['cash']['expenses'] - $cashierTopups)
-            + (float) $cashSummary['qris']['expenses'];
+            + (float) $cashSummary['qris']['expenses']
+            + (float) ($cashSummary['outside']['expenses'] ?? 0);
 
         return response()->json([
             'shift' => $shift,
