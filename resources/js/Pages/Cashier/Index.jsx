@@ -17,7 +17,7 @@ const PRINTER_SERVICES = [
     '00001801-0000-1000-8000-00805f9b34fb', // Generic Attribute
 ];
 
-export default function CashierIndex({ openShift, products, shiftTransactions = [], unpaidTransactions = [] }) {
+export default function CashierIndex({ openShift, products, shiftTransactions = [], unpaidTransactions = [], cashSummary }) {
     const [cart, setCart] = useState([]);
     const [paymentMethod, setPaymentMethod] = useState('CASH');
     const [paymentStatus, setPaymentStatus] = useState('PAID');
@@ -389,6 +389,23 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
 
     const allUnpaidTransactions = [...unpaidTransactions, ...localTransactions.filter(t => t.payment_status === 'UNPAID')];
     const paidTransactions = [...shiftTransactions.filter(t => t.payment_status === 'PAID'), ...localTransactions.filter(t => t.payment_status === 'PAID')];
+    const canceledTransactions = shiftTransactions.filter(t => t.payment_status === 'CANCELED');
+
+    const handleCancelOrder = (tx) => {
+        if (tx.isOffline) {
+            alert('Order offline belum bisa dibatalkan sebelum sinkron.');
+            return;
+        }
+        const reason = window.prompt(`Alasan membatalkan ${tx.invoice_number}?`, '');
+        if (reason === null) return;
+
+        router.post(route('receipts.cancel', tx.id), { reason }, {
+            onSuccess: () => {
+                setSelectedUnpaidTx(null);
+                setReceiptTransaction(null);
+            }
+        });
+    };
 
     const handlePayDebt = (e) => {
         e.preventDefault();
@@ -890,7 +907,24 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-6rem)]">
+            {cashSummary && (
+                <div className="mb-4 grid grid-cols-3 gap-3">
+                    <div className="rounded-lg border border-emerald-200 bg-white px-3 py-2 shadow-sm">
+                        <p className="text-[11px] font-semibold uppercase text-emerald-600">Cash</p>
+                        <p className="text-base font-bold text-slate-900">{formatRupiah(cashSummary.cash?.expected)}</p>
+                    </div>
+                    <div className="rounded-lg border border-blue-200 bg-white px-3 py-2 shadow-sm">
+                        <p className="text-[11px] font-semibold uppercase text-blue-600">QRIS</p>
+                        <p className="text-base font-bold text-slate-900">{formatRupiah(cashSummary.qris?.expected)}</p>
+                    </div>
+                    <div className="rounded-lg border border-indigo-200 bg-white px-3 py-2 shadow-sm">
+                        <p className="text-[11px] font-semibold uppercase text-indigo-600">Total</p>
+                        <p className="text-base font-bold text-slate-900">{formatRupiah(cashSummary.total_expected)}</p>
+                    </div>
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-12rem)]">
                 {/* Produk Grid */}
                 <div className="lg:col-span-2 bg-white shadow-sm rounded-lg border border-slate-200 p-4 flex flex-col h-full overflow-hidden">
                     <div className="flex justify-between items-center mb-3">
@@ -1412,6 +1446,12 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                                     >
                                         Selesai ({paidTransactions.length})
                                     </button>
+                                    <button
+                                        onClick={() => setHistoryTab('CANCELED')}
+                                        className={`px-4 py-3 text-sm font-medium border-b-2 ${historyTab === 'CANCELED' ? 'border-slate-600 text-slate-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        Batal ({canceledTransactions.length})
+                                    </button>
                                 </div>
                                 <div className="p-6 overflow-y-auto flex-1 bg-slate-50/50">
                                     {historyTab === 'UNPAID' && (
@@ -1441,12 +1481,17 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                                                         </div>
                                                         <div className="text-right">
                                                             <div className="font-bold text-lg text-slate-900 mb-2">{formatRupiah(tx.total_amount)}</div>
-                                                            <button 
-                                                                onClick={() => setSelectedUnpaidTx(tx)}
-                                                                className="bg-rose-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-rose-700 transition-colors shadow-sm"
-                                                            >
-                                                                Bayar Sekarang
-                                                            </button>
+                                                            <div className="flex flex-col items-end gap-2">
+                                                                <button 
+                                                                    onClick={() => setSelectedUnpaidTx(tx)}
+                                                                    className="bg-rose-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-rose-700 transition-colors shadow-sm"
+                                                                >
+                                                                    Bayar Sekarang
+                                                                </button>
+                                                                <button onClick={() => handleCancelOrder(tx)} className="text-xs font-semibold text-slate-500 hover:text-rose-600">
+                                                                    Batalkan Order
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 ))
@@ -1490,7 +1535,35 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                                                             >
                                                                 Cetak Ulang Struk
                                                             </button>
+                                                            <button onClick={() => handleCancelOrder(tx)} className="text-xs font-semibold text-slate-500 hover:text-rose-600">
+                                                                Batalkan Order
+                                                            </button>
                                                         </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {historyTab === 'CANCELED' && (
+                                        <div className="space-y-3">
+                                            {canceledTransactions.length === 0 ? (
+                                                <p className="text-center text-slate-500 py-8">Tidak ada order yang dibatalkan.</p>
+                                            ) : (
+                                                canceledTransactions.map(tx => (
+                                                    <div key={tx.id} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center opacity-80">
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className="font-semibold text-slate-900">{tx.invoice_number}</span>
+                                                                <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium">Batal</span>
+                                                            </div>
+                                                            <div className="text-sm text-slate-600 mb-1">{tx.cancel_reason || 'Tanpa alasan'} - {new Date(tx.canceled_at || tx.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</div>
+                                                            <div className="text-xs text-slate-500">
+                                                                {tx.items.length} item: {tx.items.slice(0, 2).map(i => `${i.qty_porsi}x ${i.product_name}`).join(', ')}
+                                                                {tx.items.length > 2 && ' ...'}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right font-bold text-slate-500">{formatRupiah(tx.total_amount)}</div>
                                                     </div>
                                                 ))
                                             )}

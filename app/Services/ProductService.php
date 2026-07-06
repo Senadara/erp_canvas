@@ -4,20 +4,35 @@ namespace App\Services;
 
 use App\Models\Conversion;
 use App\Models\Product;
+use App\Models\StockItem;
 use Illuminate\Support\Facades\DB;
 
 class ProductService
 {
+    public function __construct(private ConversionOutletResolver $conversionOutletResolver) {}
+
     public function listProducts(string $outletId)
     {
-        return Product::with([
+        $products = Product::with([
             'displayGroup:id,name,sort_order',
-            'conversions.stockItem:id,name,outlet_id,current_stock_biji,trackable'
+            'conversions.stockItem:id,name,outlet_id,current_stock_biji,unit_name,trackable,counting_basis'
         ])
         ->where('outlet_id', $outletId)
         ->orderBy('category')
         ->orderBy('name')
         ->get();
+
+        $products->each(function (Product $product) use ($outletId) {
+            $product->setRelation(
+                'conversions',
+                $product->conversions
+                    ->map(fn (Conversion $conversion) => $this->conversionOutletResolver->repairForListing($conversion, $outletId))
+                    ->filter()
+                    ->values()
+            );
+        });
+
+        return $products;
     }
 
     public function upsertProduct(array $data)
@@ -53,6 +68,16 @@ class ProductService
     public function setProductConversions(string $productId, string $outletId, array $rows, ?StockService $stockService = null)
     {
         $product = Product::where('id', $productId)->where('outlet_id', $outletId)->firstOrFail();
+        $stockIds = collect($rows)->pluck('stock_item_id')->filter()->unique()->values();
+        $validStockIds = StockItem::where('outlet_id', $outletId)
+            ->whereIn('id', $stockIds)
+            ->pluck('id')
+            ->all();
+
+        $invalidStockIds = $stockIds->diff($validStockIds)->values();
+        if ($invalidStockIds->isNotEmpty()) {
+            throw new \InvalidArgumentException('Konversi produk hanya boleh memakai bahan dari outlet yang sama.');
+        }
         
         DB::transaction(function () use ($productId, $rows, $outletId, $stockService, $product) {
             Conversion::where('product_id', $productId)->delete();
@@ -64,22 +89,21 @@ class ProductService
                 ]);
                 
                 if (isset($row['initial_stock']) && $row['initial_stock'] > 0 && $stockService) {
-                    $stockService->addRestockLog(
-                        $outletId,
+                    $stockService->addStock(
                         $row['stock_item_id'],
                         $row['initial_stock'],
-                        $row['initial_stock'] * ($row['hpp'] ?? 0),
-                        "Stok awal dari produk $product->name",
-                        null
+                        "Stok awal dari produk {$product->name}"
                     );
                 }
             }
         });
     }
 
-    public function deleteProduct(string $id, string $outletId)
+    public function deactivateProduct(string $id, string $outletId): Product
     {
         $product = Product::where('id', $id)->where('outlet_id', $outletId)->firstOrFail();
-        return $product->delete();
+        $product->update(['is_active' => false]);
+
+        return $product;
     }
 }

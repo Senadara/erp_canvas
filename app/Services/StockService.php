@@ -11,14 +11,18 @@ use Illuminate\Support\Facades\DB;
 
 class StockService
 {
-    public function addStock(string $stockItemId, float $qty, ?string $note = null)
+    public function addStock(string $stockItemId, float $qty, ?string $note = null, ?string $outletId = null)
     {
         if ($qty <= 0) {
             throw new \InvalidArgumentException("Jumlah harus lebih dari 0.");
         }
 
-        return DB::transaction(function () use ($stockItemId, $qty, $note) {
-            $row = StockItem::findOrFail($stockItemId);
+        return DB::transaction(function () use ($stockItemId, $qty, $note, $outletId) {
+            $query = StockItem::where('id', $stockItemId);
+            if ($outletId) {
+                $query->where('outlet_id', $outletId);
+            }
+            $row = $query->firstOrFail();
             $before = $row->current_stock_biji;
             $next = $before + $qty;
 

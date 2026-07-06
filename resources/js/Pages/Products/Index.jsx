@@ -1,6 +1,15 @@
 import { useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, useForm, router, usePage } from '@inertiajs/react';
+import {
+    ArchiveBoxIcon,
+    CheckCircleIcon,
+    FunnelIcon,
+    MagnifyingGlassIcon,
+    NoSymbolIcon,
+    PlusIcon,
+    Squares2X2Icon,
+} from '@heroicons/react/24/outline';
 
 function formatRupiah(value) {
     const n = Number(value) || 0;
@@ -13,6 +22,8 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [filterGroup, setFilterGroup] = useState('');
+    const [filterStatus, setFilterStatus] = useState('ALL');
+    const [searchTerm, setSearchTerm] = useState('');
     const { auth } = usePage().props;
     const isOwner = auth.user.role === 'OWNER';
 
@@ -84,9 +95,24 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
         });
     };
 
-    const handleDelete = (id) => {
-        if (confirm('Yakin ingin menghapus produk ini?')) {
-            router.delete(route('products.destroy', id));
+    const handleDeactivate = (product) => {
+        if (confirm(`Produk "${product.name}" akan dinonaktifkan dari kasir, tetapi tetap tersimpan untuk histori transaksi dan struk. Lanjutkan?`)) {
+            router.delete(route('products.destroy', product.id), { preserveScroll: true });
+        }
+    };
+
+    const handleActivate = (product) => {
+        if (confirm(`Aktifkan kembali produk "${product.name}" agar tampil di kasir?`)) {
+            router.post(route('products.store'), {
+                id: product.id,
+                name: product.name,
+                category: product.category,
+                price: product.price,
+                hpp: product.hpp ?? 0,
+                is_active: true,
+                display_group_id: product.display_group_id || '',
+                image_url: product.image_url || '',
+            }, { preserveScroll: true });
         }
     };
 
@@ -129,49 +155,169 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
         }
     };
 
-    const filteredProducts = filterGroup 
-        ? products.filter(p => p.display_group_id === filterGroup)
-        : products;
+    const productStats = products.reduce((acc, product) => {
+        acc.total += 1;
+        if (product.is_active) acc.active += 1;
+        else acc.inactive += 1;
+        return acc;
+    }, { total: 0, active: 0, inactive: 0 });
+
+    const filteredProducts = products.filter((product) => {
+        const searchable = [
+            product.name,
+            product.category,
+            product.display_group?.name,
+        ].filter(Boolean).join(' ').toLowerCase();
+        const matchesSearch = searchable.includes(searchTerm.trim().toLowerCase());
+        const matchesGroup = !filterGroup || product.display_group_id === filterGroup;
+        const matchesStatus =
+            filterStatus === 'ALL'
+            || (filterStatus === 'ACTIVE' && product.is_active)
+            || (filterStatus === 'INACTIVE' && !product.is_active);
+
+        return matchesSearch && matchesGroup && matchesStatus;
+    });
+
+    const hasActiveFilters = Boolean(searchTerm || filterGroup || filterStatus !== 'ALL');
+
+    const resetFilters = () => {
+        setSearchTerm('');
+        setFilterGroup('');
+        setFilterStatus('ALL');
+    };
 
     return (
         <ErpLayout title="Produk">
             <Head title="Produk" />
 
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-slate-900">Manajemen Produk</h1>
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                    <h1 className="text-2xl font-semibold text-slate-900">Manajemen Produk</h1>
+                    <p className="mt-1 text-sm text-slate-500">Kelola katalog, status tampil di kasir, dan komposisi bahan.</p>
+                </div>
                 {isOwner && (
                     <button
                         onClick={() => openModal()}
-                        className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium"
+                        className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
                     >
-                        + Tambah Produk
+                        <PlusIcon className="h-4 w-4" />
+                        Tambah Produk
                     </button>
                 )}
             </div>
 
-            {/* Filter Section */}
-            <div className="mb-4 flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                <div className="flex items-center gap-4">
-                    <label className="text-sm font-medium text-slate-700">Filter Group:</label>
-                    <select 
-                        value={filterGroup} 
+            <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-xs font-semibold uppercase text-slate-400">Total</p>
+                            <p className="mt-1 text-2xl font-semibold text-slate-900">{productStats.total}</p>
+                        </div>
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                            <ArchiveBoxIcon className="h-5 w-5" />
+                        </div>
+                    </div>
+                </div>
+                <div className="rounded-lg border border-emerald-200 bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-xs font-semibold uppercase text-emerald-500">Aktif</p>
+                            <p className="mt-1 text-2xl font-semibold text-emerald-700">{productStats.active}</p>
+                        </div>
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                            <CheckCircleIcon className="h-5 w-5" />
+                        </div>
+                    </div>
+                </div>
+                <div className="rounded-lg border border-amber-200 bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-xs font-semibold uppercase text-amber-500">Nonaktif</p>
+                            <p className="mt-1 text-2xl font-semibold text-amber-700">{productStats.inactive}</p>
+                        </div>
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+                            <NoSymbolIcon className="h-5 w-5" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                        <FunnelIcon className="h-5 w-5 text-slate-400" />
+                        Filter Produk
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {hasActiveFilters && (
+                            <button
+                                type="button"
+                                onClick={resetFilters}
+                                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                            >
+                                Reset
+                            </button>
+                        )}
+                        {isOwner && (
+                            <button
+                                onClick={() => setIsGroupModalOpen(true)}
+                                className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100"
+                            >
+                                <Squares2X2Icon className="h-4 w-4" />
+                                Kelola Group
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_280px]">
+                    <div className="relative">
+                        <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                        <input
+                            type="search"
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            placeholder="Cari nama produk, kategori, atau group"
+                            className="w-full rounded-lg border-slate-300 py-2 pl-10 pr-3 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        />
+                    </div>
+
+                    <select
+                        value={filterGroup}
                         onChange={e => setFilterGroup(e.target.value)}
-                        className="border border-slate-300 rounded-md px-3 py-1.5 text-sm min-w-[200px]"
+                        className="rounded-lg border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                     >
                         <option value="">Semua Group</option>
                         {displayGroups.map(g => (
                             <option key={g.id} value={g.id}>{g.name}</option>
                         ))}
                     </select>
+
+                    <div className="grid grid-cols-3 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                        {[
+                            ['ALL', 'Semua'],
+                            ['ACTIVE', 'Aktif'],
+                            ['INACTIVE', 'Nonaktif'],
+                        ].map(([value, label]) => (
+                            <button
+                                key={value}
+                                type="button"
+                                onClick={() => setFilterStatus(value)}
+                                className={`rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
+                                    filterStatus === value
+                                        ? 'bg-white text-indigo-700 shadow-sm'
+                                        : 'text-slate-500 hover:text-slate-800'
+                                }`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
-                {isOwner && (
-                    <button
-                        onClick={() => setIsGroupModalOpen(true)}
-                        className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
-                    >
-                        Kelola Group
-                    </button>
-                )}
+
+                <p className="mt-3 text-xs font-medium text-slate-500">
+                    Menampilkan {filteredProducts.length} dari {productStats.total} produk.
+                </p>
             </div>
 
             <div className="bg-white shadow-sm rounded-lg border border-slate-200 overflow-x-auto">
@@ -190,22 +336,32 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                         {filteredProducts.length === 0 ? (
                             <tr>
                                 <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
-                                    Belum ada produk.
+                                    {hasActiveFilters ? 'Tidak ada produk sesuai filter.' : 'Belum ada produk.'}
                                 </td>
                             </tr>
                         ) : (
                             filteredProducts.map((p) => (
-                                <tr key={p.id} className="hover:bg-slate-50">
-                                    <td className="px-4 py-3 font-medium text-slate-900">
+                                <tr key={p.id} className={`${p.is_active ? 'hover:bg-slate-50' : 'bg-slate-50/70 text-slate-500 hover:bg-amber-50/40'}`}>
+                                    <td className={`px-4 py-3 font-medium ${p.is_active ? 'text-slate-900' : 'text-slate-500'}`}>
                                         <div className="flex items-center gap-3">
                                             {p.image_url ? (
-                                                <img src={p.image_url} alt={p.name} className="w-10 h-10 rounded object-cover border" />
+                                                <img src={p.image_url} alt={p.name} className={`w-10 h-10 rounded object-cover border ${p.is_active ? '' : 'opacity-60 grayscale'}`} />
                                             ) : (
-                                                <div className="w-10 h-10 rounded bg-slate-100 border flex items-center justify-center text-slate-400">
+                                                <div className={`w-10 h-10 rounded border flex items-center justify-center text-slate-400 ${p.is_active ? 'bg-slate-100' : 'bg-white'}`}>
                                                     Img
                                                 </div>
                                             )}
-                                            {p.name}
+                                            <div className="min-w-0">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span>{p.name}</span>
+                                                    {!p.is_active && (
+                                                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                                                            Tidak tampil di kasir
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="mt-0.5 text-xs font-normal text-slate-400">{p.category}</p>
+                                            </div>
                                         </div>
                                     </td>
                                     <td className="px-4 py-3">
@@ -218,10 +374,16 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                             {p.is_active ? 'Aktif' : 'Nonaktif'}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3 flex gap-2">
+                                    <td className="px-4 py-3">
+                                        <div className="flex flex-wrap gap-2">
                                         {isOwner && <button onClick={() => openBomModal(p)} className="inline-flex items-center justify-center px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md font-medium hover:bg-emerald-100 transition-colors min-h-[36px] active:scale-[0.98]">Bahan (BOM)</button>}
                                         <button onClick={() => openModal(p)} className="inline-flex items-center justify-center px-3 py-2 bg-indigo-50 text-indigo-600 rounded-md font-medium hover:bg-indigo-100 transition-colors min-h-[36px] active:scale-[0.98]">{isOwner ? 'Edit' : 'Ubah Gambar'}</button>
-                                        {isOwner && <button onClick={() => handleDelete(p.id)} className="inline-flex items-center justify-center px-3 py-2 bg-rose-50 text-rose-600 rounded-md font-medium hover:bg-rose-100 transition-colors min-h-[36px] active:scale-[0.98]">Hapus</button>}
+                                        {isOwner && (p.is_active ? (
+                                            <button onClick={() => handleDeactivate(p)} className="inline-flex items-center justify-center px-3 py-2 bg-amber-50 text-amber-700 rounded-md font-medium hover:bg-amber-100 transition-colors min-h-[36px] active:scale-[0.98]">Nonaktifkan</button>
+                                        ) : (
+                                            <button onClick={() => handleActivate(p)} className="inline-flex items-center justify-center px-3 py-2 bg-emerald-50 text-emerald-700 rounded-md font-medium hover:bg-emerald-100 transition-colors min-h-[36px] active:scale-[0.98]">Aktifkan</button>
+                                        ))}
+                                        </div>
                                     </td>
                                 </tr>
                             ))

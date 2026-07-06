@@ -121,7 +121,8 @@ class StockController extends Controller
             'note' => 'nullable|string',
         ]);
 
-        $this->stockService->addStock($id, $data['qty'], $data['note']);
+        $outletId = $request->session()->get('outlet_id');
+        $this->stockService->addStock($id, $data['qty'], $data['note'], $outletId);
         return redirect()->back()->with('success', 'Stok berhasil ditambahkan.');
     }
 

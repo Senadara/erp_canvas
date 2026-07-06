@@ -14,7 +14,8 @@ class PettyCash extends Model
     public $timestamps = false; // Only has created_at
 
     protected $fillable = [
-        'outlet_id', 'amount', 'category', 'description', 'created_at',
+        'outlet_id', 'amount', 'category', 'payment_method', 'cash_flow', 'description',
+        'created_at', 'edited_by_owner_at', 'edited_by_owner_id',
     ];
 
     protected function casts(): array
@@ -22,6 +23,7 @@ class PettyCash extends Model
         return [
             'amount' => 'decimal:4',
             'created_at' => 'datetime',
+            'edited_by_owner_at' => 'datetime',
         ];
     }
 

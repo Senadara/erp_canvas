@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
-import { Head, useForm, router } from '@inertiajs/react';
+import { Head, useForm, router, usePage } from '@inertiajs/react';
 import { isOnline, onConnectivityChange, enqueueShift, enqueueExpense } from '@/pwa/offlineQueue';
 
 function formatRupiah(value) {
@@ -8,17 +8,26 @@ function formatRupiah(value) {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
 }
 
-export default function ShiftsIndex({ shifts, openShift, expenses }) {
+function defaultShiftName() {
+    const now = new Date();
+    return `Shift ${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }) {
+    const { auth } = usePage().props;
+    const isOwner = auth?.user?.role === 'OWNER';
     const [isClosing, setIsClosing] = useState(false);
     const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+    const [movementTitle, setMovementTitle] = useState('Catat Pengeluaran');
     const [shiftDetail, setShiftDetail] = useState(null);
     const [loadingDetail, setLoadingDetail] = useState(false);
     const [isOffline, setIsOffline] = useState(!isOnline());
     const [localShifts, setLocalShifts] = useState([]);
     const [localExpenses, setLocalExpenses] = useState([]);
+    const [editingShift, setEditingShift] = useState(null);
     
     const { data: openData, setData: setOpenData, post: postOpen, processing: opening } = useForm({
-        name: '',
+        name: defaultShiftName(),
         opening_cash: '',
     });
 
@@ -30,7 +39,18 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
     const { data: expenseData, setData: setExpenseData, post: postExpense, processing: expenseProcessing, reset: resetExpense } = useForm({
         amount: '',
         category: 'Operasional',
+        payment_method: 'CASH',
+        cash_flow: 'OUT',
         description: '',
+    });
+
+    const { data: editShiftData, setData: setEditShiftData, put: putShift, delete: deleteShift, processing: shiftEditProcessing } = useForm({
+        name: '',
+        opened_at: '',
+        closed_at: '',
+        opening_cash: '',
+        actual_cash: '',
+        note: '',
     });
 
     const expenseCategories = [
@@ -38,7 +58,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
         'Bahan Baku',
         'Gaji',
         'Listrik/Air',
-        'Tambah Modal',
+        'Tambah Kas',
         'Lainnya'
     ];
 
@@ -49,6 +69,65 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
         });
         return cleanup;
     }, []);
+
+    const toLocalInputValue = (value) => {
+        if (!value) return '';
+        const date = new Date(value);
+        date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+        return date.toISOString().slice(0, 16);
+    };
+
+    const openMovementModal = (type = 'expense') => {
+        if (type === 'add') {
+            setMovementTitle('Tambah Kas Kasir');
+            setExpenseData({
+                amount: '',
+                category: 'Tambah Kas',
+                payment_method: 'CASH',
+                cash_flow: 'IN',
+                description: '',
+            });
+        } else {
+            setMovementTitle('Catat Pengeluaran');
+            setExpenseData({
+                amount: '',
+                category: 'Operasional',
+                payment_method: 'CASH',
+                cash_flow: 'OUT',
+                description: '',
+            });
+        }
+        setIsExpenseModalOpen(true);
+    };
+
+    const openShiftEditor = (shift) => {
+        setEditingShift(shift);
+        setEditShiftData({
+            name: shift.name || '',
+            opened_at: toLocalInputValue(shift.opened_at),
+            closed_at: toLocalInputValue(shift.closed_at),
+            opening_cash: shift.opening_cash || '',
+            actual_cash: shift.actual_cash || '',
+            note: shift.note || '',
+        });
+    };
+
+    const handleShiftEditSubmit = (e) => {
+        e.preventDefault();
+        if (!editingShift) return;
+
+        putShift(route('shifts.owner-update', editingShift.id), {
+            onSuccess: () => setEditingShift(null),
+        });
+    };
+
+    const handleShiftDelete = (shift) => {
+        if (confirm('Yakin ingin menghapus shift kosong ini? Shift yang punya transaksi atau mutasi kas tidak dapat dihapus.')) {
+            deleteShift(route('shifts.destroy', shift.id), {
+                onSuccess: () => setEditingShift(null),
+            });
+        }
+    };
 
     const handleOpen = async (e) => {
         e.preventDefault();
@@ -67,7 +146,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                 };
                 setLocalShifts(prev => [...prev, localShift]);
                 alert('Shift dibuka offline. Akan disinkronkan saat online.');
-                setOpenData({ name: '', opening_cash: '' });
+                setOpenData({ name: defaultShiftName(), opening_cash: '' });
                 return;
             } catch (error) {
                 console.error('Failed to enqueue offline shift:', error);
@@ -77,7 +156,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
         }
 
         postOpen(route('shifts.store'), {
-            onSuccess: () => setOpenData({ name: '', opening_cash: '' })
+            onSuccess: () => setOpenData({ name: defaultShiftName(), opening_cash: '' })
         });
     };
 
@@ -194,6 +273,26 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                 </div>
             </div>
 
+            {openShift && cashSummary && (
+                <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-lg border border-emerald-200 shadow-sm p-4">
+                        <p className="text-xs font-semibold uppercase text-emerald-600">Saldo Cash Kasir</p>
+                        <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.cash?.expected)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Penjualan {formatRupiah(cashSummary.cash?.sales)} - keluar {formatRupiah((cashSummary.cash?.expenses || 0) + (cashSummary.cash?.withdrawals || 0))}</p>
+                    </div>
+                    <div className="bg-white rounded-lg border border-blue-200 shadow-sm p-4">
+                        <p className="text-xs font-semibold uppercase text-blue-600">Saldo QRIS</p>
+                        <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.qris?.expected)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Penjualan {formatRupiah(cashSummary.qris?.sales)} - penarikan {formatRupiah(cashSummary.qris?.withdrawals)}</p>
+                    </div>
+                    <div className="bg-white rounded-lg border border-indigo-200 shadow-sm p-4">
+                        <p className="text-xs font-semibold uppercase text-indigo-600">Total Cash + QRIS</p>
+                        <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.total_expected)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Sudah termasuk tambah kas, pengeluaran, dan penarikan.</p>
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 <div className="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
                     <h2 className="text-lg font-semibold text-slate-900 mb-4">Status Shift Saat Ini</h2>
@@ -256,13 +355,14 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                                 <p>Tidak ada shift yang terbuka saat ini. Buka shift untuk mulai menerima transaksi.</p>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Nama Shift (Opsional)</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Nama Shift</label>
                                 <input
                                     type="text"
                                     value={openData.name}
                                     onChange={e => setOpenData('name', e.target.value)}
                                     placeholder="Contoh: Shift Pagi, Shift Siang"
                                     className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                    required
                                 />
                             </div>
                             <div>
@@ -286,19 +386,28 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                 {/* Bagian Pengeluaran/Kasbon */}
                 <div className="bg-white shadow-sm rounded-lg border border-slate-200 p-6 flex flex-col">
                     <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-lg font-semibold text-slate-900">Pengeluaran (Petty Cash)</h2>
-                        <button
-                            onClick={() => setIsExpenseModalOpen(true)}
-                            disabled={!openShift}
-                            className="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                            + Catat
-                        </button>
+                        <h2 className="text-lg font-semibold text-slate-900">Mutasi Kas Shift</h2>
+                        <div className="flex flex-wrap justify-end gap-2">
+                            <button
+                                onClick={() => openMovementModal('expense')}
+                                disabled={!openShift}
+                                className="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+                            >
+                                Pengeluaran
+                            </button>
+                            <button
+                                onClick={() => openMovementModal('add')}
+                                disabled={!openShift}
+                                className="bg-emerald-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                                Tambah Kas
+                            </button>
+                        </div>
                     </div>
 
                     {!openShift ? (
                         <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-                            Buka shift terlebih dahulu untuk mencatat pengeluaran.
+                            Buka shift terlebih dahulu untuk mencatat mutasi kas.
                         </div>
                     ) : (
                         <div className="flex-1 flex flex-col">
@@ -307,6 +416,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                                     <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
                                         <tr>
                                             <th className="px-3 py-2 font-medium">Kategori</th>
+                                            <th className="px-3 py-2 font-medium">Media</th>
                                             <th className="px-3 py-2 font-medium">Nominal</th>
                                             <th className="px-3 py-2 font-medium w-10"></th>
                                         </tr>
@@ -314,8 +424,8 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                                     <tbody className="divide-y divide-slate-100">
                                         {(!expenses || expenses.length === 0) && localExpenses.length === 0 ? (
                                             <tr>
-                                                <td colSpan="3" className="px-3 py-6 text-center text-slate-400 text-xs">
-                                                    Belum ada pengeluaran di shift ini.
+                                                <td colSpan="4" className="px-3 py-6 text-center text-slate-400 text-xs">
+                                                    Belum ada mutasi kas di shift ini.
                                                 </td>
                                             </tr>
                                         ) : (
@@ -324,11 +434,17 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                                                     <td className="px-3 py-2">
                                                         <span className="font-medium text-slate-800 block text-xs">{e.category}</span>
                                                         {e.description && <span className="text-[10px] text-slate-500 line-clamp-1">{e.description}</span>}
+                                                        {e.edited_by_owner_at && <span className="mt-1 inline-block text-[10px] text-amber-700 bg-amber-100 px-1 rounded">Edited owner</span>}
                                                         {e.isOffline && <span className="text-[10px] text-amber-600 bg-amber-50 px-1 rounded">Offline</span>}
                                                     </td>
-                                                    <td className="px-3 py-2 font-semibold text-rose-600 text-xs">{formatRupiah(e.amount)}</td>
+                                                    <td className="px-3 py-2 text-xs">
+                                                        <span className={`px-1.5 py-0.5 rounded font-semibold ${e.payment_method === 'QRIS' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{e.payment_method || 'CASH'}</span>
+                                                    </td>
+                                                    <td className={`px-3 py-2 font-semibold text-xs ${e.cash_flow === 'IN' || e.category === 'Tambah Kas' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                        {e.cash_flow === 'IN' || e.category === 'Tambah Kas' ? '+' : '-'} {formatRupiah(e.amount)}
+                                                    </td>
                                                     <td className="px-3 py-2 text-right">
-                                                        {!e.isOffline && <button onClick={() => handleExpenseDelete(e.id)} className="text-rose-500 hover:text-rose-700 text-xs font-bold">&times;</button>}
+                                                        {isOwner && !e.isOffline && <button onClick={() => handleExpenseDelete(e.id)} className="text-rose-500 hover:text-rose-700 text-xs font-bold">&times;</button>}
                                                     </td>
                                                 </tr>
                                             ))
@@ -337,9 +453,9 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                                 </table>
                             </div>
                             <div className="mt-3 pt-3 border-t border-slate-200 flex justify-between items-center text-sm">
-                                <span className="font-semibold text-slate-700">Total Pengeluaran Shift:</span>
-                                <span className="font-bold text-rose-600">
-                                    {formatRupiah([...(expenses || []), ...localExpenses].reduce((sum, e) => sum + Number(e.amount), 0))}
+                                <span className="font-semibold text-slate-700">Total Saldo Shift:</span>
+                                <span className="font-bold text-indigo-700">
+                                    {formatRupiah(cashSummary?.total_expected)}
                                 </span>
                             </div>
                         </div>
@@ -359,19 +475,23 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                             <th className="px-4 py-3 font-medium text-right">Kas Awal</th>
                             <th className="px-4 py-3 font-medium text-right">Ekspektasi Kas</th>
                             <th className="px-4 py-3 font-medium text-right">Selisih</th>
+                            {isOwner && <th className="px-4 py-3 font-medium text-center">Aksi</th>}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                         {shifts.length === 0 ? (
                             <tr>
-                                <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
+                                <td colSpan={isOwner ? 8 : 7} className="px-4 py-8 text-center text-slate-500">
                                     Belum ada riwayat shift.
                                 </td>
                             </tr>
                         ) : (
                             shifts.map((s) => (
                                 <tr key={s.id} onClick={() => openShiftDetail(s.id)} className="hover:bg-indigo-50 cursor-pointer transition-colors">
-                                    <td className="px-4 py-3 font-medium">{s.name || '-'}</td>
+                                    <td className="px-4 py-3 font-medium">
+                                        <div>{s.name || '-'}</div>
+                                        {s.edited_by_owner_at && <span className="mt-1 inline-block rounded bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Edited owner</span>}
+                                    </td>
                                     <td className="px-4 py-3">{new Date(s.opened_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</td>
                                     <td className="px-4 py-3">{s.closed_at ? new Date(s.closed_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-'}</td>
                                     <td className="px-4 py-3">
@@ -388,6 +508,19 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                                             </span>
                                         ) : '-'}
                                     </td>
+                                    {isOwner && (
+                                        <td className="px-4 py-3 text-center">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    openShiftEditor(s);
+                                                }}
+                                                className="rounded bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                                            >
+                                                Edit
+                                            </button>
+                                        </td>
+                                    )}
                                 </tr>
                             ))
                         )}
@@ -501,6 +634,10 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                                             <span className="text-emerald-400">{formatRupiah(shiftDetail.shift?.total_sales_cash)}</span>
                                         </div>
                                         <div className="flex justify-between">
+                                            <span className="text-slate-400">+ Tambah Kas</span>
+                                            <span className="text-emerald-400">{formatRupiah(shiftDetail.cash_summary?.cash?.additions)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
                                             <span className="text-slate-400">+ Penjualan (QRIS)</span>
                                             <span className="text-blue-400">{formatRupiah(shiftDetail.shift?.total_sales_qris)}</span>
                                         </div>
@@ -508,9 +645,21 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                                             <span className="text-slate-400">- Pengeluaran</span>
                                             <span className="text-rose-400">{formatRupiah(shiftDetail.total_expenses)}</span>
                                         </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-400">- Penarikan Cash</span>
+                                            <span className="text-rose-400">{formatRupiah(shiftDetail.cash_summary?.cash?.withdrawals)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-400">- Penarikan QRIS</span>
+                                            <span className="text-rose-400">{formatRupiah(shiftDetail.cash_summary?.qris?.withdrawals)}</span>
+                                        </div>
                                         <div className="border-t border-slate-700 pt-2 flex justify-between font-bold">
                                             <span>Ekspektasi Kas</span>
                                             <span>{formatRupiah(shiftDetail.shift?.expected_cash)}</span>
+                                        </div>
+                                        <div className="flex justify-between font-bold">
+                                            <span>Ekspektasi QRIS</span>
+                                            <span>{formatRupiah(shiftDetail.cash_summary?.qris?.expected)}</span>
                                         </div>
                                         {shiftDetail.shift?.actual_cash && (
                                             <>
@@ -539,13 +688,67 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                 </div>
             )}
 
+            {editingShift && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="text-lg font-semibold text-slate-900">Koreksi Shift Owner</h2>
+                            <button onClick={() => setEditingShift(null)} className="text-slate-400 hover:text-slate-600">&times;</button>
+                        </div>
+                        <form onSubmit={handleShiftEditSubmit} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Nama Shift</label>
+                                <input type="text" value={editShiftData.name} onChange={e => setEditShiftData('name', e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" required />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Waktu Buka</label>
+                                    <input type="datetime-local" value={editShiftData.opened_at} onChange={e => setEditShiftData('opened_at', e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" required />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Waktu Tutup</label>
+                                    <input type="datetime-local" value={editShiftData.closed_at} onChange={e => setEditShiftData('closed_at', e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Kas Awal</label>
+                                    <input type="number" min="0" value={editShiftData.opening_cash} onChange={e => setEditShiftData('opening_cash', e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" required />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Kas Aktual</label>
+                                    <input type="number" min="0" value={editShiftData.actual_cash} onChange={e => setEditShiftData('actual_cash', e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Catatan</label>
+                                <textarea value={editShiftData.note} onChange={e => setEditShiftData('note', e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" rows="2" />
+                            </div>
+                            <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
+                                <button type="button" onClick={() => handleShiftDelete(editingShift)} className="px-4 py-2 text-sm font-medium text-rose-700 bg-rose-50 rounded-md hover:bg-rose-100">
+                                    Hapus Shift
+                                </button>
+                                <div className="flex gap-3 justify-end">
+                                    <button type="button" onClick={() => setEditingShift(null)} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
+                                        Batal
+                                    </button>
+                                    <button type="submit" disabled={shiftEditProcessing} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                                        {shiftEditProcessing ? 'Menyimpan...' : 'Simpan Koreksi'}
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* Expense Modal */}
             {isExpenseModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-sm">
                         <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
                             <h2 className="text-lg font-semibold text-slate-900">
-                                Catat Pengeluaran
+                                {movementTitle}
                             </h2>
                             <button onClick={() => setIsExpenseModalOpen(false)} className="text-slate-400 hover:text-slate-600">&times;</button>
                         </div>
@@ -565,7 +768,12 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Kategori</label>
                                 <select
                                     value={expenseData.category}
-                                    onChange={e => setExpenseData('category', e.target.value)}
+                                    onChange={e => {
+                                        const category = e.target.value;
+                                        setExpenseData('category', category);
+                                        setExpenseData('cash_flow', category === 'Tambah Kas' ? 'IN' : 'OUT');
+                                        if (category === 'Tambah Kas') setExpenseData('payment_method', 'CASH');
+                                    }}
                                     className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
                                     required
                                 >
@@ -574,6 +782,30 @@ export default function ShiftsIndex({ shifts, openShift, expenses }) {
                                     ))}
                                 </select>
                             </div>
+                            {expenseData.category === 'Penarikan' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Sumber Saldo</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setExpenseData('payment_method', 'CASH')}
+                                            className={`py-2 rounded border text-sm font-medium ${expenseData.payment_method === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'border-slate-300 text-slate-600'}`}
+                                        >
+                                            Cash
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setExpenseData('payment_method', 'QRIS')}
+                                            className={`py-2 rounded border text-sm font-medium ${expenseData.payment_method === 'QRIS' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'border-slate-300 text-slate-600'}`}
+                                        >
+                                            QRIS
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            {expenseData.category !== 'Penarikan' && (
+                                <input type="hidden" value={expenseData.payment_method} readOnly />
+                            )}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Keterangan (Opsional)</label>
                                 <textarea

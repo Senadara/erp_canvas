@@ -27,6 +27,10 @@ class ShiftService
         if ($openingCash < 0) {
             throw new \Exception("Kas awal tidak valid.");
         }
+        $name = trim((string) $name);
+        if ($name === '') {
+            throw new \Exception("Nama shift wajib diisi.");
+        }
 
         return ShiftRecord::create([
             'outlet_id' => $outletId,
@@ -48,52 +52,21 @@ class ShiftService
 
             $openedAt = $shift->opened_at;
             $outletId = $shift->outlet_id;
-
-            $transactions = Transaction::where('outlet_id', $outletId)
-                ->where('payment_status', 'PAID')
-                ->whereNotNull('paid_at')
-                ->where('paid_at', '>=', $openedAt)
-                ->get();
-
-            $totalSalesCash = 0;
-            $totalSalesQris = 0;
-
-            foreach ($transactions as $t) {
-                if ($t->payment_method === 'CASH') {
-                    $totalSalesCash += $t->total_amount;
-                } elseif ($t->payment_method === 'QRIS') {
-                    $totalSalesQris += $t->total_amount;
-                }
-            }
-
-            $expenses = PettyCash::where('outlet_id', $outletId)
-                ->where('created_at', '>=', $openedAt)
-                ->get();
-
-            $totalExpenses = 0;
-            $totalTambahan = 0;
-
-            foreach ($expenses as $e) {
-                if ($e->category === 'Tambah Modal') {
-                    $totalTambahan += $e->amount;
-                } else {
-                    $totalExpenses += $e->amount;
-                }
-            }
-
-            $opening = $shift->opening_cash;
-            $expectedCash = $opening + $totalSalesCash + $totalTambahan - $totalExpenses;
+            $shift->closed_at = Carbon::now();
+            $summary = $this->calculateMoneySummary($shift);
+            $expectedCash = $summary['cash']['expected'];
             $discrepancy = $actualCash - $expectedCash;
 
             $shift->update([
-                'closed_at' => Carbon::now(),
+                'closed_at' => $shift->closed_at,
                 'status' => 'CLOSED',
                 'actual_cash' => $actualCash,
                 'expected_cash' => $expectedCash,
+                'expected_qris' => $summary['qris']['expected'],
                 'discrepancy' => $discrepancy,
-                'total_sales_cash' => $totalSalesCash,
-                'total_sales_qris' => $totalSalesQris,
-                'total_expenses' => $totalExpenses,
+                'total_sales_cash' => $summary['cash']['sales'],
+                'total_sales_qris' => $summary['qris']['sales'],
+                'total_expenses' => $summary['cash']['expenses'] + $summary['qris']['expenses'],
                 'note' => $note,
             ]);
 
@@ -107,5 +80,182 @@ class ShiftService
             ->orderByDesc('opened_at')
             ->take($limit)
             ->get();
+    }
+
+    public function moneySummary(?ShiftRecord $shift): array
+    {
+        if (! $shift) {
+            return $this->emptyMoneySummary();
+        }
+
+        return $this->calculateMoneySummary($shift);
+    }
+
+    public function ownerUpdateShift(string $shiftId, string $outletId, array $data, string $ownerId): ShiftRecord
+    {
+        return DB::transaction(function () use ($shiftId, $outletId, $data, $ownerId) {
+            $shift = ShiftRecord::where('id', $shiftId)
+                ->where('outlet_id', $outletId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $name = trim((string) $data['name']);
+            if ($name === '') {
+                throw new \Exception("Nama shift wajib diisi.");
+            }
+
+            $openedAt = Carbon::parse($data['opened_at']);
+            $closedAt = ! empty($data['closed_at']) ? Carbon::parse($data['closed_at']) : null;
+            if ($closedAt && $closedAt->lt($openedAt)) {
+                throw new \Exception("Waktu tutup tidak boleh sebelum waktu buka.");
+            }
+
+            if (! $closedAt) {
+                $otherOpen = ShiftRecord::where('outlet_id', $outletId)
+                    ->where('status', 'OPEN')
+                    ->where('id', '!=', $shift->id)
+                    ->exists();
+                if ($otherOpen) {
+                    throw new \Exception("Outlet ini sudah memiliki shift terbuka lain.");
+                }
+            }
+
+            $shift->fill([
+                'name' => $name,
+                'opened_at' => $openedAt,
+                'closed_at' => $closedAt,
+                'opening_cash' => $data['opening_cash'],
+                'actual_cash' => $closedAt ? ($data['actual_cash'] ?? 0) : null,
+                'note' => $data['note'] ?? null,
+                'status' => $closedAt ? 'CLOSED' : 'OPEN',
+                'edited_by_owner_at' => Carbon::now(),
+                'edited_by_owner_id' => $ownerId,
+            ]);
+
+            if ($closedAt) {
+                $summary = $this->calculateMoneySummary($shift);
+                $shift->expected_cash = $summary['cash']['expected'];
+                $shift->expected_qris = $summary['qris']['expected'];
+                $shift->discrepancy = $shift->actual_cash - $summary['cash']['expected'];
+                $shift->total_sales_cash = $summary['cash']['sales'];
+                $shift->total_sales_qris = $summary['qris']['sales'];
+                $shift->total_expenses = $summary['cash']['expenses'] + $summary['qris']['expenses'];
+            } else {
+                $shift->expected_cash = null;
+                $shift->expected_qris = null;
+                $shift->actual_cash = null;
+                $shift->discrepancy = null;
+                $shift->total_sales_cash = null;
+                $shift->total_sales_qris = null;
+                $shift->total_expenses = null;
+            }
+
+            $shift->save();
+
+            return $shift;
+        });
+    }
+
+    public function ownerDeleteShift(string $shiftId, string $outletId): void
+    {
+        DB::transaction(function () use ($shiftId, $outletId) {
+            $shift = ShiftRecord::where('id', $shiftId)
+                ->where('outlet_id', $outletId)
+                ->withCount('transactions')
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $end = $shift->closed_at ?? Carbon::now();
+            $expenseCount = PettyCash::where('outlet_id', $outletId)
+                ->whereBetween('created_at', [$shift->opened_at, $end])
+                ->count();
+
+            if ($shift->transactions_count > 0 || $expenseCount > 0) {
+                throw new \Exception("Shift yang sudah memiliki transaksi atau mutasi kas tidak dapat dihapus.");
+            }
+
+            $shift->delete();
+        });
+    }
+
+    private function calculateMoneySummary(ShiftRecord $shift): array
+    {
+        $start = Carbon::parse($shift->opened_at);
+        $end = $shift->closed_at ? Carbon::parse($shift->closed_at) : Carbon::now();
+
+        $transactions = Transaction::where('outlet_id', $shift->outlet_id)
+            ->where('payment_status', 'PAID')
+            ->whereNotNull('paid_at')
+            ->whereBetween('paid_at', [$start, $end])
+            ->get();
+
+        $summary = $this->emptyMoneySummary();
+        $summary['cash']['opening'] = (float) $shift->opening_cash;
+
+        foreach ($transactions as $transaction) {
+            $method = $transaction->payment_method === 'QRIS' ? 'qris' : 'cash';
+            $summary[$method]['sales'] += (float) $transaction->total_amount;
+        }
+
+        $movements = PettyCash::where('outlet_id', $shift->outlet_id)
+            ->whereBetween('created_at', [$start, $end])
+            ->get();
+
+        foreach ($movements as $movement) {
+            $method = $movement->payment_method === 'QRIS' ? 'qris' : 'cash';
+            $flow = $this->resolveCashFlow($movement);
+            $amount = (float) $movement->amount;
+
+            if ($flow === 'IN') {
+                $summary[$method]['additions'] += $amount;
+                continue;
+            }
+
+            if ($movement->category === 'Penarikan') {
+                $summary[$method]['withdrawals'] += $amount;
+            } else {
+                $summary[$method]['expenses'] += $amount;
+            }
+        }
+
+        foreach (['cash', 'qris'] as $method) {
+            $summary[$method]['expected'] =
+                $summary[$method]['opening']
+                + $summary[$method]['sales']
+                + $summary[$method]['additions']
+                - $summary[$method]['expenses']
+                - $summary[$method]['withdrawals'];
+        }
+
+        $summary['total_expected'] = $summary['cash']['expected'] + $summary['qris']['expected'];
+
+        return $summary;
+    }
+
+    private function resolveCashFlow(PettyCash $movement): string
+    {
+        if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
+            return 'IN';
+        }
+
+        return $movement->cash_flow === 'IN' ? 'IN' : 'OUT';
+    }
+
+    private function emptyMoneySummary(): array
+    {
+        $empty = [
+            'opening' => 0,
+            'sales' => 0,
+            'additions' => 0,
+            'expenses' => 0,
+            'withdrawals' => 0,
+            'expected' => 0,
+        ];
+
+        return [
+            'cash' => $empty,
+            'qris' => $empty,
+            'total_expected' => 0,
+        ];
     }
 }

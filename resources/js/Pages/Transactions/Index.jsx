@@ -1,5 +1,5 @@
 import ErpLayout from '@/Layouts/ErpLayout';
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
 
 function formatRupiah(value) {
@@ -9,6 +9,15 @@ function formatRupiah(value) {
 
 export default function TransactionsIndex({ transactions }) {
     const [selectedTransaction, setSelectedTransaction] = useState(null);
+
+    const handleCancelOrder = (transaction) => {
+        const reason = window.prompt(`Alasan membatalkan ${transaction.invoice_number}?`, '');
+        if (reason === null) return;
+
+        router.post(route('receipts.cancel', transaction.id), { reason }, {
+            onSuccess: () => setSelectedTransaction(null),
+        });
+    };
 
     return (
         <ErpLayout title="Riwayat Transaksi">
@@ -42,7 +51,9 @@ export default function TransactionsIndex({ transactions }) {
                                     <td className="px-4 py-3 whitespace-nowrap">{new Date(t.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</td>
                                     <td className="px-4 py-3 font-medium text-indigo-600 group-hover:underline">{t.invoice_number}</td>
                                     <td className="px-4 py-3">
-                                        {t.payment_method === 'CASH' ? (
+                                        {t.payment_status === 'CANCELED' ? (
+                                            <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs font-bold">BATAL</span>
+                                        ) : t.payment_method === 'CASH' ? (
                                             <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-bold">TUNAI</span>
                                         ) : (
                                             <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold">QRIS</span>
@@ -144,6 +155,12 @@ export default function TransactionsIndex({ transactions }) {
                                             <span>BELUM BAYAR (UTANG)</span>
                                         </div>
                                     )}
+                                    {selectedTransaction.payment_status === 'CANCELED' && (
+                                        <div className="rounded bg-slate-100 px-3 py-2 text-slate-700 mt-3 text-xs">
+                                            <div className="font-bold">ORDER DIBATALKAN</div>
+                                            <div>{selectedTransaction.cancel_reason || 'Tanpa alasan'}</div>
+                                        </div>
+                                    )}
                                 </div>
                                 {selectedTransaction.note && (
                                     <div className="mt-4 text-xs italic text-center text-slate-600">
@@ -158,6 +175,11 @@ export default function TransactionsIndex({ transactions }) {
                                 <button onClick={() => setSelectedTransaction(null)} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
                                     Tutup
                                 </button>
+                                {selectedTransaction.payment_status !== 'CANCELED' && (
+                                    <button onClick={() => handleCancelOrder(selectedTransaction)} className="px-4 py-2 text-sm font-medium text-rose-700 bg-rose-50 rounded-md hover:bg-rose-100">
+                                        Batalkan
+                                    </button>
+                                )}
                                 <button onClick={() => window.print()} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 flex items-center gap-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />

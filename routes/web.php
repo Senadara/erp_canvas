@@ -37,12 +37,15 @@ Route::middleware(['auth', 'outlet'])->group(function () {
 
     // Transactions (Struk / Receipts)
     Route::get('/receipts', [\App\Http\Controllers\TransactionController::class, 'index'])->name('receipts');
+    Route::post('/receipts/{id}/cancel', [\App\Http\Controllers\TransactionController::class, 'cancel'])->name('receipts.cancel');
 
     // Shifts
     Route::get('/shifts', [\App\Http\Controllers\ShiftController::class, 'index'])->name('shifts');
     Route::get('/shifts/{id}/detail', [\App\Http\Controllers\ShiftController::class, 'show'])->name('shifts.show');
     Route::post('/shifts/open', [\App\Http\Controllers\ShiftController::class, 'store'])->name('shifts.store');
     Route::post('/shifts/{id}/close', [\App\Http\Controllers\ShiftController::class, 'update'])->name('shifts.update');
+    Route::put('/shifts/{id}/owner', [\App\Http\Controllers\ShiftController::class, 'ownerUpdate'])->name('shifts.owner-update');
+    Route::delete('/shifts/{id}', [\App\Http\Controllers\ShiftController::class, 'destroy'])->name('shifts.destroy');
 
     // Expenses (Pengeluaran)
     Route::get('/expenses', [\App\Http\Controllers\ExpenseController::class, 'index'])->name('expenses');
@@ -52,6 +55,8 @@ Route::middleware(['auth', 'outlet'])->group(function () {
 
     // Reports (Laporan)
     Route::get('/reports', [\App\Http\Controllers\ReportController::class, 'index'])->name('reports');
+    Route::get('/finance', [\App\Http\Controllers\FinanceController::class, 'index'])->name('finance');
+    Route::post('/finance/withdraw', [\App\Http\Controllers\FinanceController::class, 'withdraw'])->name('finance.withdraw');
     
     // Mitra Reports
     Route::get('/mitra-reports', [\App\Http\Controllers\MitraReportController::class, 'index'])->name('mitra-reports');

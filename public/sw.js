@@ -1,4 +1,4 @@
-const CACHE_NAME = 'erp-karsa-v3';
+const CACHE_NAME = 'erp-karsa-v4';
 const API_CACHE = 'erp-api-cache-v1';
 
 // Install: precache shell

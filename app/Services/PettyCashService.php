@@ -20,28 +20,38 @@ class PettyCashService
         $date = isset($data['date']) && !empty($data['date']) 
             ? Carbon::parse($data['date']) 
             : Carbon::now();
+        $normalized = $this->normalizeCashMovement($data);
 
         return PettyCash::create([
             'outlet_id' => $data['outlet_id'],
             'amount' => $data['amount'],
-            'category' => $data['category'],
+            'category' => $normalized['category'],
+            'payment_method' => $normalized['payment_method'],
+            'cash_flow' => $normalized['cash_flow'],
             'description' => $data['description'] ?? null,
             'created_at' => $date,
         ]);
     }
 
-    public function updateExpense(string $id, string $outletId, array $data)
+    public function updateExpense(string $id, string $outletId, array $data, ?string $ownerId = null)
     {
         $expense = PettyCash::where('id', $id)->where('outlet_id', $outletId)->firstOrFail();
+        $normalized = $this->normalizeCashMovement($data);
         
         $updateData = [
             'amount' => $data['amount'],
-            'category' => $data['category'],
+            'category' => $normalized['category'],
+            'payment_method' => $normalized['payment_method'],
+            'cash_flow' => $normalized['cash_flow'],
             'description' => $data['description'] ?? null,
         ];
 
         if (isset($data['date']) && !empty($data['date'])) {
             $updateData['created_at'] = Carbon::parse($data['date']);
+        }
+        if ($ownerId) {
+            $updateData['edited_by_owner_at'] = Carbon::now();
+            $updateData['edited_by_owner_id'] = $ownerId;
         }
 
         $expense->update($updateData);
@@ -53,5 +63,28 @@ class PettyCashService
     {
         $expense = PettyCash::where('id', $id)->where('outlet_id', $outletId)->firstOrFail();
         return $expense->delete();
+    }
+
+    private function normalizeCashMovement(array $data): array
+    {
+        $category = $data['category'];
+        $paymentMethod = $data['payment_method'] ?? 'CASH';
+        $cashFlow = $data['cash_flow'] ?? 'OUT';
+
+        if (in_array($category, ['Tambah Modal', 'Tambah Kas'], true)) {
+            $category = 'Tambah Kas';
+            $cashFlow = 'IN';
+            $paymentMethod = 'CASH';
+        }
+
+        if ($category === 'Penarikan') {
+            $cashFlow = 'OUT';
+        }
+
+        return [
+            'category' => $category,
+            'payment_method' => $paymentMethod === 'QRIS' ? 'QRIS' : 'CASH',
+            'cash_flow' => $cashFlow === 'IN' ? 'IN' : 'OUT',
+        ];
     }
 }

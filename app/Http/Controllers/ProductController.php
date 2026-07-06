@@ -78,8 +78,8 @@ class ProductController extends Controller
     {
         abort_if(auth()->user()->role !== 'OWNER', 403, 'Akses ditolak.');
         $outletId = $request->session()->get('outlet_id');
-        $this->productService->deleteProduct($id, $outletId);
-        return redirect()->back()->with('success', 'Produk berhasil dihapus.');
+        $this->productService->deactivateProduct($id, $outletId);
+        return redirect()->back()->with('success', 'Produk berhasil dinonaktifkan. Histori transaksi dan struk tetap aman.');
     }
 
     public function setConversions(Request $request, string $id)
@@ -93,7 +93,11 @@ class ProductController extends Controller
             'conversions.*.initial_stock' => 'nullable|numeric|min:0',
         ]);
 
-        $this->productService->setProductConversions($id, $outletId, $data['conversions'], $this->stockService);
-        return redirect()->back()->with('success', 'Konversi bahan berhasil disimpan.');
+        try {
+            $this->productService->setProductConversions($id, $outletId, $data['conversions'], $this->stockService);
+            return redirect()->back()->with('success', 'Konversi bahan berhasil disimpan.');
+        } catch (\Throwable $e) {
+            return redirect()->back()->withErrors(['error' => $e->getMessage()]);
+        }
     }
 }

@@ -21,6 +21,7 @@ class CashierController extends Controller
         $outletId = $request->session()->get('outlet_id');
         
         $openShift = $this->shiftService->getOpenShift($outletId);
+        $cashSummary = $this->shiftService->moneySummary($openShift);
         
         if ($openShift) {
             $openShift->load('outlet');
@@ -41,6 +42,7 @@ class CashierController extends Controller
             'products' => $products,
             'shiftTransactions' => $shiftTransactions,
             'unpaidTransactions' => $unpaidTransactions,
+            'cashSummary' => $cashSummary,
         ]);
     }
 

@@ -12,12 +12,13 @@ export default function OutletsIndex({ outlets }) {
         address: '',
         phone: '',
         logo: null,
+        source_outlet_id: '',
     });
 
     const openModal = (outlet = null) => {
         if (outlet) {
             setEditingOutlet(outlet);
-            setData({ id: outlet.id, name: outlet.name, address: outlet.address || '', phone: outlet.phone || '', logo: null });
+            setData({ id: outlet.id, name: outlet.name, address: outlet.address || '', phone: outlet.phone || '', logo: null, source_outlet_id: '' });
         } else {
             setEditingOutlet(null);
             reset();
@@ -38,6 +39,7 @@ export default function OutletsIndex({ outlets }) {
         formData.append('name', data.name);
         formData.append('address', data.address);
         formData.append('phone', data.phone);
+        formData.append('source_outlet_id', data.source_outlet_id || '');
         if (data.logo) {
             formData.append('logo', data.logo);
         }
@@ -125,6 +127,22 @@ export default function OutletsIndex({ outlets }) {
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Telepon</label>
                                 <input type="text" value={data.phone} onChange={e => setData('phone', e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
                             </div>
+                            {!editingOutlet && outlets.length > 0 && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Copy Stok & Produk Dari</label>
+                                    <select
+                                        value={data.source_outlet_id}
+                                        onChange={e => setData('source_outlet_id', e.target.value)}
+                                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                    >
+                                        <option value="">Buat outlet kosong</option>
+                                        {outlets.map((outlet) => (
+                                            <option key={outlet.id} value={outlet.id}>{outlet.name}</option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-1 text-xs text-slate-500">Produk, grup, dan bahan akan dibuat sebagai data baru untuk outlet ini.</p>
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Logo</label>
                                 <input

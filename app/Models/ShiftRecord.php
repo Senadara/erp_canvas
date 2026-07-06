@@ -16,7 +16,8 @@ class ShiftRecord extends Model
 
     protected $fillable = [
         'outlet_id', 'name', 'opened_at', 'closed_at', 'opening_cash', 'expected_cash', 'actual_cash',
-        'discrepancy', 'total_sales_cash', 'total_sales_qris', 'total_expenses', 'note', 'status',
+        'expected_qris', 'discrepancy', 'total_sales_cash', 'total_sales_qris', 'total_expenses',
+        'note', 'edited_by_owner_at', 'edited_by_owner_id', 'status',
     ];
 
     protected function casts(): array
@@ -26,11 +27,13 @@ class ShiftRecord extends Model
             'closed_at' => 'datetime',
             'opening_cash' => 'decimal:4',
             'expected_cash' => 'decimal:4',
+            'expected_qris' => 'decimal:4',
             'actual_cash' => 'decimal:4',
             'discrepancy' => 'decimal:4',
             'total_sales_cash' => 'decimal:4',
             'total_sales_qris' => 'decimal:4',
             'total_expenses' => 'decimal:4',
+            'edited_by_owner_at' => 'datetime',
         ];
     }
 

@@ -2,16 +2,18 @@
 
 namespace App\Services;
 
-use App\Models\Conversion;
-use App\Models\StockItem;
+use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
+use App\Models\TransactionStockMovement;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class TransactionService
 {
+    public function __construct(private ConversionOutletResolver $conversionOutletResolver) {}
+
     private function startOfDayLocal()
     {
         return Carbon::now()->startOfDay();
@@ -62,20 +64,28 @@ class TransactionService
             $invoiceNumber = $this->nextInvoiceNumber();
 
             $lockPlan = [];
+            $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
+            $products = Product::where('outlet_id', $outletId)
+                ->whereIn('id', $productIds)
+                ->with('conversions.stockItem')
+                ->get()
+                ->keyBy('id');
 
             foreach ($items as $line) {
-                $conversions = Conversion::where('product_id', $line['product_id'])
-                    ->with('stockItem')
-                    ->get();
-                
-                $relevant = $conversions->filter(fn($c) => $c->stockItem->outlet_id === $outletId);
-                
-                if ($relevant->isEmpty()) {
-                    continue; // Jika tidak ada BOM, tidak perlu memotong stok bahan
+                $product = $products->get($line['product_id']);
+                if (! $product) {
+                    throw new \Exception("Produk tidak valid untuk outlet ini.");
                 }
 
-                foreach ($relevant as $c) {
-                    if (!$c->stockItem->trackable) continue;
+                foreach ($product->conversions as $c) {
+                    $c = $this->conversionOutletResolver->resolveForSale($c, $outletId, $product->name);
+                    if (! $c) continue;
+
+                    if (! $c->stockItem) {
+                        throw new \Exception("Konversi produk {$product->name} memiliki bahan yang tidak ditemukan.");
+                    }
+                    if (! $c->stockItem->trackable) continue;
+
                     $need = $c->ratio * $line['qty_porsi'];
                     if (!isset($lockPlan[$c->stock_item_id])) {
                         $lockPlan[$c->stock_item_id] = 0;
@@ -89,8 +99,13 @@ class TransactionService
             sort($sortedIds);
 
             foreach ($sortedIds as $stockItemId) {
-                $stock = clone DB::table('stock_items')->where('id', $stockItemId)->lockForUpdate()->first();
-                if (!$stock || $stock->outlet_id !== $outletId) {
+                $stock = DB::table('stock_items')
+                    ->where('id', $stockItemId)
+                    ->where('outlet_id', $outletId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$stock) {
                     throw new \Exception("Stok tidak valid untuk outlet ini.");
                 }
                 if ($stock->current_stock_biji < $lockPlan[$stockItemId]) {
@@ -107,14 +122,15 @@ class TransactionService
             $itemCreates = [];
 
             foreach ($items as $line) {
-                $price = $line['price_per_porsi'];
+                $product = $products->get($line['product_id']);
+                $price = $product->price;
                 $sub = $price * $line['qty_porsi'];
                 $total += $sub;
                 
                 $itemCreates[] = [
                     'id' => Str::ulid(),
-                    'product_id' => $line['product_id'],
-                    'product_name' => $line['product_name'],
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
                     'qty_porsi' => $line['qty_porsi'],
                     'price_per_porsi' => $price,
                     'subtotal' => $sub,
@@ -149,6 +165,22 @@ class TransactionService
                 $ic['transaction_id'] = $transaction->id;
             }
             TransactionItem::insert($itemCreates);
+
+            if (! empty($lockPlan)) {
+                $movementCreates = [];
+                foreach ($lockPlan as $stockItemId => $needed) {
+                    $movementCreates[] = [
+                        'id' => (string) Str::ulid(),
+                        'outlet_id' => $outletId,
+                        'transaction_id' => $transaction->id,
+                        'stock_item_id' => $stockItemId,
+                        'qty' => $needed,
+                        'type' => 'SALE_DEDUCTION',
+                        'created_at' => Carbon::now(),
+                    ];
+                }
+                TransactionStockMovement::insert($movementCreates);
+            }
 
             return $transaction->load('items');
         });
@@ -194,6 +226,9 @@ class TransactionService
             if ($transaction->payment_status === 'PAID') {
                 throw new \Exception("Transaksi sudah lunas.");
             }
+            if ($transaction->payment_status === 'CANCELED') {
+                throw new \Exception("Transaksi sudah dibatalkan.");
+            }
 
             if ($paymentMethod === 'CASH' && $cashReceived !== null && $cashReceived < $transaction->total_amount) {
                 throw new \Exception("Uang tunai kurang dari total tagihan.");
@@ -214,5 +249,109 @@ class TransactionService
 
             return $transaction->load('items');
         });
+    }
+
+    public function cancelOrder(string $transactionId, string $outletId, ?string $reason = null, ?string $userId = null)
+    {
+        return DB::transaction(function () use ($transactionId, $outletId, $reason, $userId) {
+            $transaction = Transaction::where('id', $transactionId)
+                ->where('outlet_id', $outletId)
+                ->with('items')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $transaction) {
+                throw new \Exception("Transaksi tidak ditemukan.");
+            }
+            if ($transaction->payment_status === 'CANCELED' || $transaction->canceled_at) {
+                throw new \Exception("Transaksi sudah dibatalkan.");
+            }
+
+            $restorePlan = $this->stockRestorePlan($transaction, $outletId);
+            $sortedIds = array_keys($restorePlan);
+            sort($sortedIds);
+
+            foreach ($sortedIds as $stockItemId) {
+                $stock = DB::table('stock_items')
+                    ->where('id', $stockItemId)
+                    ->where('outlet_id', $outletId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $stock) {
+                    throw new \Exception("Stok tidak valid untuk outlet ini.");
+                }
+            }
+
+            foreach ($restorePlan as $stockItemId => $qty) {
+                DB::table('stock_items')
+                    ->where('id', $stockItemId)
+                    ->where('outlet_id', $outletId)
+                    ->increment('current_stock_biji', $qty);
+            }
+
+            if (! empty($restorePlan)) {
+                $movementCreates = [];
+                foreach ($restorePlan as $stockItemId => $qty) {
+                    $movementCreates[] = [
+                        'id' => (string) Str::ulid(),
+                        'outlet_id' => $outletId,
+                        'transaction_id' => $transaction->id,
+                        'stock_item_id' => $stockItemId,
+                        'qty' => $qty,
+                        'type' => 'CANCEL_RESTORE',
+                        'created_at' => Carbon::now(),
+                    ];
+                }
+                TransactionStockMovement::insert($movementCreates);
+            }
+
+            $transaction->update([
+                'payment_status' => 'CANCELED',
+                'canceled_at' => Carbon::now(),
+                'canceled_by' => $userId,
+                'cancel_reason' => $reason,
+            ]);
+
+            return $transaction->fresh()->load('items');
+        });
+    }
+
+    private function stockRestorePlan(Transaction $transaction, string $outletId): array
+    {
+        $movements = TransactionStockMovement::where('transaction_id', $transaction->id)
+            ->where('type', 'SALE_DEDUCTION')
+            ->get();
+
+        $restorePlan = [];
+        foreach ($movements as $movement) {
+            $restorePlan[$movement->stock_item_id] = ($restorePlan[$movement->stock_item_id] ?? 0) + (float) $movement->qty;
+        }
+
+        if (! empty($restorePlan)) {
+            return $restorePlan;
+        }
+
+        $products = Product::whereIn('id', $transaction->items->pluck('product_id')->unique())
+            ->with('conversions.stockItem')
+            ->get()
+            ->keyBy('id');
+
+        foreach ($transaction->items as $item) {
+            $product = $products->get($item->product_id);
+            if (! $product) continue;
+
+            foreach ($product->conversions as $conversion) {
+                if (! $conversion->stockItem || $conversion->stockItem->outlet_id !== $outletId) {
+                    continue;
+                }
+                if (! $conversion->stockItem->trackable) continue;
+
+                $restorePlan[$conversion->stock_item_id] = ($restorePlan[$conversion->stock_item_id] ?? 0)
+                    + ((float) $conversion->ratio * (int) $item->qty_porsi);
+            }
+        }
+
+        return $restorePlan;
     }
 }

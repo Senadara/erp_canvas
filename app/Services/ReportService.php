@@ -48,6 +48,8 @@ class ReportService
         if ($mitraProductIds === null) {
             $pengeluaran = PettyCash::where('outlet_id', $outletId)
                 ->whereBetween('created_at', [$start, $end])
+                ->where('cash_flow', 'OUT')
+                ->whereNotIn('category', ['Tambah Modal', 'Tambah Kas', 'Penarikan'])
                 ->sum('amount');
         }
 
@@ -103,6 +105,8 @@ class ReportService
         if ($mitraProductIds === null) {
             $expenses = PettyCash::where('outlet_id', $outletId)
                 ->whereBetween('created_at', [$start, $end])
+                ->where('cash_flow', 'OUT')
+                ->whereNotIn('category', ['Tambah Modal', 'Tambah Kas', 'Penarikan'])
                 ->sum('amount');
         }
 

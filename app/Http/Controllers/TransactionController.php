@@ -44,4 +44,22 @@ class TransactionController extends Controller
             'transactions' => $transactions,
         ]);
     }
+
+    public function cancel(Request $request, string $id)
+    {
+        $user = $request->user();
+        abort_if($user && $user->isMitra(), 403, 'Mitra tidak dapat membatalkan order.');
+
+        $outletId = $request->session()->get('outlet_id');
+        $data = $request->validate([
+            'reason' => 'nullable|string|max:255',
+        ]);
+
+        try {
+            $this->transactionService->cancelOrder($id, $outletId, $data['reason'] ?? null, $user?->id);
+            return redirect()->back()->with('success', 'Order berhasil dibatalkan dan stok dikembalikan.');
+        } catch (\Throwable $e) {
+            return redirect()->back()->withErrors(['error' => $e->getMessage()]);
+        }
+    }
 }

@@ -16,6 +16,7 @@ class Transaction extends Model
     protected $fillable = [
         'outlet_id', 'shift_id', 'invoice_number', 'total_amount', 'payment_method',
         'cash_received', 'change_amount', 'note', 'payment_status', 'paid_at', 'created_at',
+        'canceled_at', 'canceled_by', 'cancel_reason', 'edited_by_owner_at', 'edited_by_owner_id',
     ];
 
     protected function casts(): array
@@ -23,6 +24,8 @@ class Transaction extends Model
         return [
             'created_at' => 'datetime',
             'paid_at' => 'datetime',
+            'canceled_at' => 'datetime',
+            'edited_by_owner_at' => 'datetime',
             'total_amount' => 'decimal:4',
             'cash_received' => 'decimal:4',
             'change_amount' => 'decimal:4',
@@ -42,5 +45,10 @@ class Transaction extends Model
     public function shift(): BelongsTo
     {
         return $this->belongsTo(ShiftRecord::class, 'shift_id');
+    }
+
+    public function stockMovements(): HasMany
+    {
+        return $this->hasMany(TransactionStockMovement::class);
     }
 }

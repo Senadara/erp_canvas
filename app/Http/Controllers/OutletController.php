@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\Outlet;
+use App\Services\OutletCloneService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class OutletController extends Controller
 {
+    public function __construct(private OutletCloneService $outletCloneService) {}
+
     public function index()
     {
         $outlets = Outlet::withCount(['products', 'stockItems', 'users'])->orderBy('name')->get();
@@ -26,6 +29,7 @@ class OutletController extends Controller
             'address' => 'nullable|string',
             'phone' => 'nullable|string',
             'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'source_outlet_id' => 'nullable|string|exists:outlets,id',
         ]);
 
         $logoPath = null;
@@ -49,12 +53,19 @@ class OutletController extends Controller
             }
             $outlet->update($updateData);
         } else {
-            Outlet::create([
-                'name' => $data['name'],
-                'address' => $data['address'] ?? null,
-                'phone' => $data['phone'] ?? null,
-                'logo' => $logoPath,
-            ]);
+            \Illuminate\Support\Facades\DB::transaction(function () use ($data, $logoPath) {
+                $outlet = Outlet::create([
+                    'name' => $data['name'],
+                    'address' => $data['address'] ?? null,
+                    'phone' => $data['phone'] ?? null,
+                    'logo' => $logoPath,
+                ]);
+
+                if (! empty($data['source_outlet_id'])) {
+                    $sourceOutlet = Outlet::findOrFail($data['source_outlet_id']);
+                    $this->outletCloneService->copyCatalog($sourceOutlet, $outlet);
+                }
+            });
         }
 
         return redirect()->back()->with('success', 'Outlet berhasil disimpan.');

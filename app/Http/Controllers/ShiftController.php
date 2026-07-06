@@ -19,6 +19,7 @@ class ShiftController extends Controller
         $outletId = $request->session()->get('outlet_id');
         $shifts = $this->shiftService->listShifts($outletId);
         $openShift = $this->shiftService->getOpenShift($outletId);
+        $cashSummary = $this->shiftService->moneySummary($openShift);
 
         $expenses = [];
         if ($openShift) {
@@ -32,6 +33,7 @@ class ShiftController extends Controller
             'shifts' => $shifts,
             'openShift' => $openShift,
             'expenses' => $expenses,
+            'cashSummary' => $cashSummary,
         ]);
     }
 
@@ -81,9 +83,13 @@ class ShiftController extends Controller
             $expQuery->where('created_at', '<=', $shift->closed_at);
         }
         $shiftExpenses = $expQuery->get();
+        $cashSummary = $this->shiftService->moneySummary($shift);
 
         $expenseByCategory = [];
         foreach ($shiftExpenses as $exp) {
+            if (in_array($exp->category, ['Tambah Modal', 'Tambah Kas', 'Penarikan'], true)) {
+                continue;
+            }
             $cat = $exp->category;
             if (!isset($expenseByCategory[$cat])) {
                 $expenseByCategory[$cat] = 0;
@@ -103,7 +109,8 @@ class ShiftController extends Controller
             'avg_transaction' => round($avgTransaction),
             'product_breakdown' => array_slice($categoryBreakdown, 0, 15),
             'expense_by_category' => $expenseByCategory,
-            'total_expenses' => $shiftExpenses->sum('amount'),
+            'total_expenses' => $cashSummary['cash']['expenses'] + $cashSummary['qris']['expenses'],
+            'cash_summary' => $cashSummary,
         ]);
     }
 
@@ -115,7 +122,7 @@ class ShiftController extends Controller
         }
 
         $data = $request->validate([
-            'name' => 'nullable|string|max:255',
+            'name' => 'required|string|max:255',
             'opening_cash' => 'required|numeric|min:0',
         ]);
 
@@ -137,6 +144,41 @@ class ShiftController extends Controller
         try {
             $this->shiftService->closeShift($id, $request->input('actual_cash'), $request->input('note'));
             return redirect()->back()->with('success', 'Shift berhasil ditutup.');
+        } catch (\Throwable $e) {
+            return redirect()->back()->withErrors(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function ownerUpdate(Request $request, string $id)
+    {
+        abort_if(! $request->user()?->isOwner(), 403, 'Hanya owner yang dapat mengoreksi shift.');
+        $outletId = $request->session()->get('outlet_id');
+
+        $data = $request->validate([
+            'name' => 'required|string|max:255',
+            'opened_at' => 'required|date',
+            'closed_at' => 'nullable|date',
+            'opening_cash' => 'required|numeric|min:0',
+            'actual_cash' => 'nullable|numeric|min:0',
+            'note' => 'nullable|string',
+        ]);
+
+        try {
+            $this->shiftService->ownerUpdateShift($id, $outletId, $data, $request->user()->id);
+            return redirect()->back()->with('success', 'Shift berhasil dikoreksi owner.');
+        } catch (\Throwable $e) {
+            return redirect()->back()->withErrors(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function destroy(Request $request, string $id)
+    {
+        abort_if(! $request->user()?->isOwner(), 403, 'Hanya owner yang dapat menghapus shift.');
+        $outletId = $request->session()->get('outlet_id');
+
+        try {
+            $this->shiftService->ownerDeleteShift($id, $outletId);
+            return redirect()->back()->with('success', 'Shift berhasil dihapus.');
         } catch (\Throwable $e) {
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);
         }
