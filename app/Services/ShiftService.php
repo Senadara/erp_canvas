@@ -10,6 +10,8 @@ use Carbon\Carbon;
 
 class ShiftService
 {
+    public const STANDARD_OPENING_CASH = 50000;
+
     public function getOpenShift(string $outletId)
     {
         return ShiftRecord::where('outlet_id', $outletId)
@@ -35,7 +37,7 @@ class ShiftService
         return ShiftRecord::create([
             'outlet_id' => $outletId,
             'name' => $name,
-            'opening_cash' => $openingCash,
+            'opening_cash' => self::STANDARD_OPENING_CASH,
             'status' => 'OPEN',
             'opened_at' => Carbon::now(),
         ]);
@@ -206,6 +208,12 @@ class ShiftService
             $flow = $this->resolveCashFlow($movement);
             $amount = (float) $movement->amount;
 
+            if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
+                $summary['cash']['cashier_topups'] += $amount;
+                $summary['cash']['expenses'] += $amount;
+                continue;
+            }
+
             if ($flow === 'IN') {
                 $summary[$method]['additions'] += $amount;
                 continue;
@@ -235,7 +243,7 @@ class ShiftService
     private function resolveCashFlow(PettyCash $movement): string
     {
         if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
-            return 'IN';
+            return 'OUT';
         }
 
         return $movement->cash_flow === 'IN' ? 'IN' : 'OUT';
@@ -248,6 +256,7 @@ class ShiftService
             'sales' => 0,
             'additions' => 0,
             'expenses' => 0,
+            'cashier_topups' => 0,
             'withdrawals' => 0,
             'expected' => 0,
         ];

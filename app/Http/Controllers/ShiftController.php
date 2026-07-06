@@ -34,6 +34,7 @@ class ShiftController extends Controller
             'openShift' => $openShift,
             'expenses' => $expenses,
             'cashSummary' => $cashSummary,
+            'standardOpeningCash' => ShiftService::STANDARD_OPENING_CASH,
         ]);
     }
 
@@ -97,6 +98,10 @@ class ShiftController extends Controller
             $expenseByCategory[$cat] += $exp->amount;
         }
 
+        $cashierTopups = (float) ($cashSummary['cash']['cashier_topups'] ?? 0);
+        $totalOperatingExpenses = max(0, (float) $cashSummary['cash']['expenses'] - $cashierTopups)
+            + (float) $cashSummary['qris']['expenses'];
+
         return response()->json([
             'shift' => $shift,
             'duration' => "{$durationHours}j {$durationMins}m",
@@ -109,7 +114,7 @@ class ShiftController extends Controller
             'avg_transaction' => round($avgTransaction),
             'product_breakdown' => array_slice($categoryBreakdown, 0, 15),
             'expense_by_category' => $expenseByCategory,
-            'total_expenses' => $cashSummary['cash']['expenses'] + $cashSummary['qris']['expenses'],
+            'total_expenses' => $totalOperatingExpenses,
             'cash_summary' => $cashSummary,
         ]);
     }
@@ -123,11 +128,11 @@ class ShiftController extends Controller
 
         $data = $request->validate([
             'name' => 'required|string|max:255',
-            'opening_cash' => 'required|numeric|min:0',
+            'opening_cash' => 'nullable|numeric|min:0',
         ]);
 
         try {
-            $this->shiftService->openShift($outletId, $data['opening_cash'], $data['name'] ?? null);
+            $this->shiftService->openShift($outletId, $data['opening_cash'] ?? ShiftService::STANDARD_OPENING_CASH, $data['name'] ?? null);
             return redirect()->back()->with('success', 'Shift berhasil dibuka.');
         } catch (\Throwable $e) {
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);

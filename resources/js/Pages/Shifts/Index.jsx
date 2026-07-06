@@ -13,9 +13,18 @@ function defaultShiftName() {
     return `Shift ${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }) {
+function isCashierFundMovement(item) {
+    return item.category === 'Tambah Kas' || item.category === 'Tambah Modal';
+}
+
+function isIncomingMovement(item) {
+    return item.cash_flow === 'IN' && !isCashierFundMovement(item);
+}
+
+export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, standardOpeningCash = 50000 }) {
     const { auth } = usePage().props;
     const isOwner = auth?.user?.role === 'OWNER';
+    const cashierStandardCash = Number(standardOpeningCash) || 50000;
     const [isClosing, setIsClosing] = useState(false);
     const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
     const [movementTitle, setMovementTitle] = useState('Catat Pengeluaran');
@@ -28,7 +37,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
     
     const { data: openData, setData: setOpenData, post: postOpen, processing: opening } = useForm({
         name: defaultShiftName(),
-        opening_cash: '',
+        opening_cash: cashierStandardCash,
     });
 
     const { data: closeData, setData: setCloseData, post: postClose, processing: closing } = useForm({
@@ -84,8 +93,8 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
                 amount: '',
                 category: 'Tambah Kas',
                 payment_method: 'CASH',
-                cash_flow: 'IN',
-                description: '',
+                cash_flow: 'OUT',
+                description: 'Alokasi tambahan kas kasir dari kas kontainer',
             });
         } else {
             setMovementTitle('Catat Pengeluaran');
@@ -134,19 +143,19 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
         
         if (isOffline) {
             try {
-                const localId = await enqueueShift({ name: openData.name, opening_cash: openData.opening_cash }, 'open');
+                const localId = await enqueueShift({ name: openData.name, opening_cash: cashierStandardCash }, 'open');
                 // Create a local shift object for immediate UI update
                 const localShift = {
                     id: `local-${localId}`,
                     localId,
                     name: openData.name,
-                    opening_cash: Number(openData.opening_cash),
+                    opening_cash: cashierStandardCash,
                     opened_at: new Date().toISOString(),
                     isOffline: true
                 };
                 setLocalShifts(prev => [...prev, localShift]);
                 alert('Shift dibuka offline. Akan disinkronkan saat online.');
-                setOpenData({ name: defaultShiftName(), opening_cash: '' });
+                setOpenData({ name: defaultShiftName(), opening_cash: cashierStandardCash });
                 return;
             } catch (error) {
                 console.error('Failed to enqueue offline shift:', error);
@@ -156,7 +165,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
         }
 
         postOpen(route('shifts.store'), {
-            onSuccess: () => setOpenData({ name: defaultShiftName(), opening_cash: '' })
+            onSuccess: () => setOpenData({ name: defaultShiftName(), opening_cash: cashierStandardCash })
         });
     };
 
@@ -278,7 +287,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
                     <div className="bg-white rounded-lg border border-emerald-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-emerald-600">Saldo Cash Kasir</p>
                         <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.cash?.expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Penjualan {formatRupiah(cashSummary.cash?.sales)} - keluar {formatRupiah((cashSummary.cash?.expenses || 0) + (cashSummary.cash?.withdrawals || 0))}</p>
+                        <p className="mt-1 text-xs text-slate-500">Penjualan {formatRupiah(cashSummary.cash?.sales)} - keluar/alokasi {formatRupiah((cashSummary.cash?.expenses || 0) + (cashSummary.cash?.withdrawals || 0))}</p>
                     </div>
                     <div className="bg-white rounded-lg border border-blue-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-blue-600">Saldo QRIS</p>
@@ -288,7 +297,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
                     <div className="bg-white rounded-lg border border-indigo-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-indigo-600">Total Cash + QRIS</p>
                         <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.total_expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Sudah termasuk tambah kas, pengeluaran, dan penarikan.</p>
+                        <p className="mt-1 text-xs text-slate-500">Sudah termasuk alokasi kas kasir, pengeluaran, dan penarikan.</p>
                     </div>
                 </div>
             )}
@@ -366,15 +375,16 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Kas Awal (Uang di Laci) Rp</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Kas Awal Standar (Uang di Laci) Rp</label>
                                 <input
                                     type="number"
                                     min="0"
                                     value={openData.opening_cash}
-                                    onChange={e => setOpenData('opening_cash', e.target.value)}
-                                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                    readOnly
+                                    className="w-full border border-amber-200 bg-amber-50 rounded-md px-3 py-2 text-sm font-semibold text-amber-900"
                                     required
                                 />
+                                <p className="mt-1 text-xs text-slate-500">Kas awal selalu {formatRupiah(cashierStandardCash)} setiap buka shift. Jika hari ini ada top up tambahan, shift berikutnya tetap kembali ke standar ini.</p>
                             </div>
                             <button type="submit" disabled={opening} className="w-full bg-emerald-600 text-white font-medium py-2 rounded hover:bg-emerald-700 transition disabled:opacity-50">
                                 {opening ? 'Membuka...' : 'Buka Shift Baru'}
@@ -400,7 +410,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
                                 disabled={!openShift}
                                 className="bg-emerald-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
                             >
-                                Tambah Kas
+                                Top Up Kasir
                             </button>
                         </div>
                     </div>
@@ -429,25 +439,29 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
                                                 </td>
                                             </tr>
                                         ) : (
-                                            [...(expenses || []), ...localExpenses].map(e => (
-                                                <tr key={e.id} className="hover:bg-slate-50">
-                                                    <td className="px-3 py-2">
-                                                        <span className="font-medium text-slate-800 block text-xs">{e.category}</span>
-                                                        {e.description && <span className="text-[10px] text-slate-500 line-clamp-1">{e.description}</span>}
-                                                        {e.edited_by_owner_at && <span className="mt-1 inline-block text-[10px] text-amber-700 bg-amber-100 px-1 rounded">Edited owner</span>}
-                                                        {e.isOffline && <span className="text-[10px] text-amber-600 bg-amber-50 px-1 rounded">Offline</span>}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-xs">
-                                                        <span className={`px-1.5 py-0.5 rounded font-semibold ${e.payment_method === 'QRIS' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{e.payment_method || 'CASH'}</span>
-                                                    </td>
-                                                    <td className={`px-3 py-2 font-semibold text-xs ${e.cash_flow === 'IN' || e.category === 'Tambah Kas' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                        {e.cash_flow === 'IN' || e.category === 'Tambah Kas' ? '+' : '-'} {formatRupiah(e.amount)}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right">
-                                                        {isOwner && !e.isOffline && <button onClick={() => handleExpenseDelete(e.id)} className="text-rose-500 hover:text-rose-700 text-xs font-bold">&times;</button>}
-                                                    </td>
-                                                </tr>
-                                            ))
+                                            [...(expenses || []), ...localExpenses].map(e => {
+                                                const incoming = isIncomingMovement(e);
+                                                const cashierFund = isCashierFundMovement(e);
+                                                return (
+                                                    <tr key={e.id} className="hover:bg-slate-50">
+                                                        <td className="px-3 py-2">
+                                                            <span className="font-medium text-slate-800 block text-xs">{cashierFund ? 'Kas Kasir' : e.category}</span>
+                                                            {e.description && <span className="text-[10px] text-slate-500 line-clamp-1">{e.description}</span>}
+                                                            {e.edited_by_owner_at && <span className="mt-1 inline-block text-[10px] text-amber-700 bg-amber-100 px-1 rounded">Edited owner</span>}
+                                                            {e.isOffline && <span className="text-[10px] text-amber-600 bg-amber-50 px-1 rounded">Offline</span>}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-xs">
+                                                            <span className={`px-1.5 py-0.5 rounded font-semibold ${e.payment_method === 'QRIS' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{e.payment_method || 'CASH'}</span>
+                                                        </td>
+                                                        <td className={`px-3 py-2 font-semibold text-xs ${incoming ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                            {incoming ? '+' : '-'} {formatRupiah(e.amount)}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right">
+                                                            {isOwner && !e.isOffline && <button onClick={() => handleExpenseDelete(e.id)} className="text-rose-500 hover:text-rose-700 text-xs font-bold">&times;</button>}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
                                         )}
                                     </tbody>
                                 </table>
@@ -634,8 +648,8 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
                                             <span className="text-emerald-400">{formatRupiah(shiftDetail.shift?.total_sales_cash)}</span>
                                         </div>
                                         <div className="flex justify-between">
-                                            <span className="text-slate-400">+ Tambah Kas</span>
-                                            <span className="text-emerald-400">{formatRupiah(shiftDetail.cash_summary?.cash?.additions)}</span>
+                                            <span className="text-slate-400">- Alokasi Kas Kasir</span>
+                                            <span className="text-rose-400">{formatRupiah(shiftDetail.cash_summary?.cash?.cashier_topups)}</span>
                                         </div>
                                         <div className="flex justify-between">
                                             <span className="text-slate-400">+ Penjualan (QRIS)</span>
@@ -771,7 +785,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
                                     onChange={e => {
                                         const category = e.target.value;
                                         setExpenseData('category', category);
-                                        setExpenseData('cash_flow', category === 'Tambah Kas' ? 'IN' : 'OUT');
+                                        setExpenseData('cash_flow', 'OUT');
                                         if (category === 'Tambah Kas') setExpenseData('payment_method', 'CASH');
                                     }}
                                     className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
@@ -781,6 +795,9 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary }
                                         <option key={c} value={c}>{c}</option>
                                     ))}
                                 </select>
+                                {expenseData.category === 'Tambah Kas' && (
+                                    <p className="mt-1 text-xs text-amber-700">Top up kasir dicatat sebagai alokasi keluar dari kas kontainer.</p>
+                                )}
                             </div>
                             {expenseData.category === 'Penarikan' && (
                                 <div>
