@@ -211,7 +211,12 @@ class ShiftService
 
             if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
                 $summary['cash']['cashier_topups'] += $amount;
-                $summary['cash']['additions'] += $amount;
+                if ($movement->payment_method === 'PRIVATE') {
+                    $summary['cash']['outside_cashier_topups'] += $amount;
+                    $summary['cash']['additions'] += $amount;
+                } else {
+                    $summary['cash']['drawer_cashier_topups'] += $amount;
+                }
                 continue;
             }
 
@@ -285,6 +290,8 @@ class ShiftService
             'additions' => 0,
             'expenses' => 0,
             'cashier_topups' => 0,
+            'drawer_cashier_topups' => 0,
+            'outside_cashier_topups' => 0,
             'withdrawals' => 0,
             'expected' => 0,
         ];

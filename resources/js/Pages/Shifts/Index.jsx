@@ -17,8 +17,12 @@ function isCashierFundMovement(item) {
     return item.category === 'Tambah Kas' || item.category === 'Tambah Modal';
 }
 
+function isOutsideCashierTopup(item) {
+    return isCashierFundMovement(item) && item.payment_method === 'PRIVATE';
+}
+
 function isIncomingMovement(item) {
-    return item.cash_flow === 'IN';
+    return item.cash_flow === 'IN' && (!isCashierFundMovement(item) || isOutsideCashierTopup(item));
 }
 
 function paymentLabel(method) {
@@ -105,7 +109,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                 category: 'Tambah Kas',
                 payment_method: 'CASH',
                 cash_flow: 'IN',
-                description: 'Top up tambahan kas kasir dari keuangan outlet',
+                description: 'Top up tambahan kas kasir dari laci',
             });
         } else {
             setMovementTitle('Catat Pengeluaran');
@@ -453,16 +457,17 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                             [...(expenses || []), ...localExpenses].map(e => {
                                                 const incoming = isIncomingMovement(e);
                                                 const cashierFund = isCashierFundMovement(e);
+                                                const outsideTopup = isOutsideCashierTopup(e);
                                                 return (
                                                     <tr key={e.id} className="hover:bg-slate-50">
                                                         <td className="px-3 py-2">
-                                                            <span className="font-medium text-slate-800 block text-xs">{cashierFund ? 'Kas Kasir' : e.category}</span>
+                                                            <span className="font-medium text-slate-800 block text-xs">{cashierFund ? (outsideTopup ? 'Top Up Luar Laci' : 'Top Up Dari Laci') : e.category}</span>
                                                             {e.description && <span className="text-[10px] text-slate-500 line-clamp-1">{e.description}</span>}
                                                             {e.edited_by_owner_at && <span className="mt-1 inline-block text-[10px] text-amber-700 bg-amber-100 px-1 rounded">Edited owner</span>}
                                                             {e.isOffline && <span className="text-[10px] text-amber-600 bg-amber-50 px-1 rounded">Offline</span>}
                                                         </td>
                                                         <td className="px-3 py-2 text-xs">
-                                                            <span className={`px-1.5 py-0.5 rounded font-semibold ${paymentTone(e.payment_method)}`}>{paymentLabel(e.payment_method)}</span>
+                                                            <span className={`px-1.5 py-0.5 rounded font-semibold ${paymentTone(e.payment_method)}`}>{cashierFund ? (outsideTopup ? 'Luar Laci' : 'Dari Laci') : paymentLabel(e.payment_method)}</span>
                                                         </td>
                                                         <td className={`px-3 py-2 font-semibold text-xs ${incoming ? 'text-emerald-600' : 'text-rose-600'}`}>
                                                             {incoming ? '+' : '-'} {formatRupiah(e.amount)}
@@ -658,10 +663,18 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                             <span className="text-slate-400">+ Penjualan (Cash)</span>
                                             <span className="text-emerald-400">{formatRupiah(shiftDetail.shift?.total_sales_cash)}</span>
                                         </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-slate-400">+ Top Up Kasir</span>
-                                            <span className="text-emerald-400">{formatRupiah(shiftDetail.cash_summary?.cash?.cashier_topups)}</span>
-                                        </div>
+                                        {Number(shiftDetail.cash_summary?.cash?.drawer_cashier_topups || 0) > 0 && (
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-400">Alokasi top up dari laci</span>
+                                                <span className="text-amber-300">{formatRupiah(shiftDetail.cash_summary?.cash?.drawer_cashier_topups)}</span>
+                                            </div>
+                                        )}
+                                        {Number(shiftDetail.cash_summary?.cash?.outside_cashier_topups || 0) > 0 && (
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-400">+ Top up luar laci</span>
+                                                <span className="text-emerald-400">{formatRupiah(shiftDetail.cash_summary?.cash?.outside_cashier_topups)}</span>
+                                            </div>
+                                        )}
                                         <div className="flex justify-between">
                                             <span className="text-slate-400">+ Penjualan (QRIS)</span>
                                             <span className="text-blue-400">{formatRupiah(shiftDetail.shift?.total_sales_qris)}</span>
@@ -813,9 +826,38 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                     ))}
                                 </select>
                                 {expenseData.category === 'Tambah Kas' && (
-                                    <p className="mt-1 text-xs text-amber-700">Top up kasir menambah saldo laci, sekaligus menjadi alokasi keluar di Keuangan Outlet.</p>
+                                    <p className="mt-1 text-xs text-amber-700">Pilih sumber top up agar omzet laci tidak salah hitung.</p>
                                 )}
                             </div>
+                            {expenseData.category === 'Tambah Kas' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Sumber Top Up</label>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setExpenseData('payment_method', 'CASH');
+                                                setExpenseData('description', expenseData.description || 'Top up tambahan kas kasir dari laci');
+                                            }}
+                                            className={`rounded-md border p-3 text-left text-sm transition ${expenseData.payment_method === 'CASH' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                                        >
+                                            <span className="block font-semibold">Dari Laci</span>
+                                            <span className="mt-1 block text-xs">Mengurangi uang omzet laci.</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setExpenseData('payment_method', 'PRIVATE');
+                                                setExpenseData('description', expenseData.description || 'Top up tambahan kas kasir dari luar laci');
+                                            }}
+                                            className={`rounded-md border p-3 text-left text-sm transition ${expenseData.payment_method === 'PRIVATE' ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                                        >
+                                            <span className="block font-semibold">Dari Luar Laci</span>
+                                            <span className="mt-1 block text-xs">Menambah kas tanpa memotong omzet laci.</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             {expenseData.category === 'Penarikan' && (
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Sumber Saldo</label>
@@ -837,7 +879,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                     </div>
                                 </div>
                             )}
-                            {expenseData.category !== 'Penarikan' && (
+                            {expenseData.category !== 'Penarikan' && expenseData.category !== 'Tambah Kas' && (
                                 <input type="hidden" value={expenseData.payment_method} readOnly />
                             )}
                             <div>

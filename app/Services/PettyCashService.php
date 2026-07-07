@@ -68,13 +68,13 @@ class PettyCashService
     private function normalizeCashMovement(array $data): array
     {
         $category = $data['category'];
-        $paymentMethod = $data['payment_method'] ?? 'CASH';
+        $paymentMethod = strtoupper((string) ($data['payment_method'] ?? 'CASH'));
         $cashFlow = $data['cash_flow'] ?? 'OUT';
 
         if (in_array($category, ['Tambah Modal', 'Tambah Kas'], true)) {
             $category = 'Tambah Kas';
             $cashFlow = 'IN';
-            $paymentMethod = 'CASH';
+            $paymentMethod = $paymentMethod === 'PRIVATE' ? 'PRIVATE' : 'CASH';
         }
 
         if ($category === 'Penarikan') {

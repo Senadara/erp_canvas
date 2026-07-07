@@ -11,8 +11,12 @@ function isCashierFundMovement(item) {
     return item.category === 'Tambah Kas' || item.category === 'Tambah Modal';
 }
 
+function isOutsideCashierTopup(item) {
+    return isCashierFundMovement(item) && item.payment_method === 'PRIVATE';
+}
+
 function isIncomingMovement(item) {
-    return item.cash_flow === 'IN' && !isCashierFundMovement(item);
+    return item.cash_flow === 'IN' && (!isCashierFundMovement(item) || isOutsideCashierTopup(item));
 }
 
 function paymentLabel(method) {
@@ -148,19 +152,24 @@ export default function ExpensesIndex({ expenses, openShift }) {
                                 </td>
                             </tr>
                         ) : (
-                            expenses.map((e) => (
+                            expenses.map((e) => {
+                                const cashierFund = isCashierFundMovement(e);
+                                const outsideTopup = isOutsideCashierTopup(e);
+                                const incoming = isIncomingMovement(e);
+
+                                return (
                                 <tr key={e.id} className="hover:bg-slate-50 transition-colors">
                                     <td className="px-4 py-3 whitespace-nowrap">{new Date(e.created_at).toLocaleString('id-ID')}</td>
                                     <td className="px-4 py-3">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${isCashierFundMovement(e) ? 'bg-amber-100 text-amber-800' : isIncomingMovement(e) ? 'bg-emerald-100 text-emerald-800' : e.category === 'Penarikan' ? 'bg-slate-100 text-slate-700' : 'bg-rose-100 text-rose-800'}`}>
-                                            {isCashierFundMovement(e) ? 'Kas Kasir' : e.category}
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${cashierFund ? (outsideTopup ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800') : incoming ? 'bg-emerald-100 text-emerald-800' : e.category === 'Penarikan' ? 'bg-slate-100 text-slate-700' : 'bg-rose-100 text-rose-800'}`}>
+                                            {cashierFund ? (outsideTopup ? 'Top Up Luar Laci' : 'Top Up Dari Laci') : e.category}
                                         </span>
-                                        <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${paymentTone(e.payment_method)}`}>{paymentLabel(e.payment_method)}</span>
+                                        <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${paymentTone(e.payment_method)}`}>{cashierFund ? (outsideTopup ? 'Luar Laci' : 'Dari Laci') : paymentLabel(e.payment_method)}</span>
                                         {e.edited_by_owner_at && <span className="ml-2 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Edited owner</span>}
                                     </td>
                                     <td className="px-4 py-3">{e.description || '-'}</td>
-                                    <td className={`px-4 py-3 text-right font-semibold ${isIncomingMovement(e) ? 'text-emerald-600' : 'text-slate-900'}`}>
-                                        {isIncomingMovement(e) ? '+' : '-'} {formatRupiah(e.amount)}
+                                    <td className={`px-4 py-3 text-right font-semibold ${incoming ? 'text-emerald-600' : 'text-slate-900'}`}>
+                                        {incoming ? '+' : '-'} {formatRupiah(e.amount)}
                                     </td>
                                     <td className="px-4 py-3 text-center space-x-2">
                                         {isOwner ? (
@@ -171,7 +180,8 @@ export default function ExpensesIndex({ expenses, openShift }) {
                                         ) : '-'}
                                     </td>
                                 </tr>
-                            ))
+                                );
+                            })
                         )}
                     </tbody>
                 </table>
@@ -184,20 +194,25 @@ export default function ExpensesIndex({ expenses, openShift }) {
                         Belum ada catatan pengeluaran.
                     </div>
                 ) : (
-                    expenses.map((e) => (
+                    expenses.map((e) => {
+                        const cashierFund = isCashierFundMovement(e);
+                        const outsideTopup = isOutsideCashierTopup(e);
+                        const incoming = isIncomingMovement(e);
+
+                        return (
                         <div key={e.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col gap-3">
                             <div className="flex justify-between items-start">
                                 <div className="flex-1 pr-2">
                                     <div className="text-xs font-medium text-slate-500 mb-1">{new Date(e.created_at).toLocaleString('id-ID')}</div>
-                                    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide mb-2 ${isCashierFundMovement(e) ? 'bg-amber-100 text-amber-800' : isIncomingMovement(e) ? 'bg-emerald-100 text-emerald-800' : e.category === 'Penarikan' ? 'bg-slate-100 text-slate-700' : 'bg-rose-100 text-rose-800'}`}>
-                                        {isCashierFundMovement(e) ? 'Kas Kasir' : e.category}
+                                    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide mb-2 ${cashierFund ? (outsideTopup ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800') : incoming ? 'bg-emerald-100 text-emerald-800' : e.category === 'Penarikan' ? 'bg-slate-100 text-slate-700' : 'bg-rose-100 text-rose-800'}`}>
+                                        {cashierFund ? (outsideTopup ? 'Top Up Luar Laci' : 'Top Up Dari Laci') : e.category}
                                     </span>
-                                    <span className={`ml-2 inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide ${paymentTone(e.payment_method)}`}>{paymentLabel(e.payment_method)}</span>
+                                    <span className={`ml-2 inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide ${paymentTone(e.payment_method)}`}>{cashierFund ? (outsideTopup ? 'Luar Laci' : 'Dari Laci') : paymentLabel(e.payment_method)}</span>
                                     {e.edited_by_owner_at && <span className="ml-2 inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">Edited owner</span>}
                                     <p className="text-sm text-slate-700 leading-snug">{e.description || 'Tanpa keterangan'}</p>
                                 </div>
                                 <div className="text-right shrink-0">
-                                    <div className={`font-bold text-base ${isIncomingMovement(e) ? 'text-emerald-600' : 'text-slate-900'}`}>{isIncomingMovement(e) ? '+' : '-'} {formatRupiah(e.amount)}</div>
+                                    <div className={`font-bold text-base ${incoming ? 'text-emerald-600' : 'text-slate-900'}`}>{incoming ? '+' : '-'} {formatRupiah(e.amount)}</div>
                                 </div>
                             </div>
                             {isOwner && <div className="border-t border-slate-100 pt-3 flex justify-end gap-2 mt-1">
@@ -205,7 +220,8 @@ export default function ExpensesIndex({ expenses, openShift }) {
                                         <button onClick={() => handleDelete(e.id)} className="flex-1 sm:flex-none inline-flex items-center justify-center px-4 py-2.5 bg-rose-50 text-rose-700 rounded-lg text-sm font-semibold hover:bg-rose-100 transition-colors min-h-[44px] active:scale-[0.98]">Hapus</button>
                             </div>}
                         </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
 
@@ -268,9 +284,33 @@ export default function ExpensesIndex({ expenses, openShift }) {
                                 </select>
                                 {errors.category && <p className="text-rose-500 text-xs mt-1.5">{errors.category}</p>}
                                 {data.category === 'Tambah Kas' && (
-                                    <p className="text-xs text-amber-700 mt-1.5">Top up kasir dicatat sebagai alokasi keluar dari kas kontainer.</p>
+                                    <p className="text-xs text-amber-700 mt-1.5">Pilih sumber top up agar omzet laci tidak salah hitung.</p>
                                 )}
                             </div>
+
+                            {data.category === 'Tambah Kas' && (
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Sumber Top Up</label>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setData('payment_method', 'CASH')}
+                                            className={`rounded-lg border p-3 text-left text-sm transition ${data.payment_method === 'CASH' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                                        >
+                                            <span className="block font-semibold">Dari Laci</span>
+                                            <span className="mt-1 block text-xs">Mengurangi uang omzet laci.</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setData('payment_method', 'PRIVATE')}
+                                            className={`rounded-lg border p-3 text-left text-sm transition ${data.payment_method === 'PRIVATE' ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                                        >
+                                            <span className="block font-semibold">Dari Luar Laci</span>
+                                            <span className="mt-1 block text-xs">Menambah kas tanpa memotong omzet laci.</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
                             {data.category === 'Penarikan' && (
                                 <div>

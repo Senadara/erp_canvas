@@ -26,6 +26,10 @@ function isCashierFundMovement(item) {
     return item.category === 'Tambah Kas' || item.category === 'Tambah Modal';
 }
 
+function isOutsideCashierTopup(item) {
+    return isCashierFundMovement(item) && item.payment_method === 'PRIVATE';
+}
+
 function isIncomingMovement(item) {
     return item.cash_flow === 'IN';
 }
@@ -119,7 +123,7 @@ export default function FinanceIndex({
     const period = periodSummary || summary;
     const recentMovements = cashMovements.slice(0, 12);
     const resetLabel = 'Berjalan sejak awal hari';
-    const periodGenerated = (Number(period.omzet) || 0) - (Number(period.expenseTotal) || 0);
+    const periodGenerated = (Number(period.omzet) || 0) - (Number(period.expenseTotal) || 0) - (Number(period.drawerCashierTopups ?? period.cashierTopups) || 0);
     const historyTotals = useMemo(() => withdrawalHistory.reduce((totals, item) => ({
         amount: totals.amount + (Number(item.amount) || 0),
         omzet: totals.omzet + (Number(item.omzet) || 0),
@@ -183,7 +187,7 @@ export default function FinanceIndex({
             label: 'Rata-rata Pengeluaran',
             value: summary.dailyExpenseAverage,
             tone: 'text-amber-700',
-            sub: `${summary.periodDays || 1} hari berjalan. Top up kasir aktif ${formatRupiah(summary.activeCashierTopups ?? summary.cashierTopups)} dicatat sebagai modal laci.`,
+            sub: `Top up dari laci ${formatRupiah(summary.activeDrawerCashierTopups ?? summary.drawerCashierTopups)} | luar laci ${formatRupiah(summary.activeOutsideCashierTopups ?? summary.outsideCashierTopups)}.`,
         },
     ];
 
@@ -198,7 +202,7 @@ export default function FinanceIndex({
             label: 'Penghasilan Bersih Periode',
             value: periodGenerated,
             tone: signedTone(periodGenerated),
-            sub: 'Omzet lunas dikurangi total pengeluaran periode, sebelum penarikan owner.',
+            sub: 'Omzet lunas dikurangi pengeluaran dan top up dari laci, sebelum penarikan owner.',
         },
         {
             label: 'Total QRIS Masuk',
@@ -230,7 +234,7 @@ export default function FinanceIndex({
         { label: 'Total Ditarik', value: historyTotals.amount, tone: 'text-slate-800', sub: `${withdrawalHistory.length} penarikan tercatat` },
         { label: 'Omzet Direkap', value: historyTotals.omzet, tone: 'text-indigo-700', sub: 'Omzet pada periode yang ditutup' },
         { label: 'Pengeluaran Direkap', value: historyTotals.expenses, tone: 'text-rose-700', sub: 'Biaya operasional sebelum penarikan' },
-        { label: 'Keuntungan Direkap', value: historyTotals.profit, tone: signedTone(historyTotals.profit), sub: 'Setelah HPP, pengeluaran, dan top up' },
+        { label: 'Keuntungan Direkap', value: historyTotals.profit, tone: signedTone(historyTotals.profit), sub: 'Setelah HPP, pengeluaran, dan top up dari laci' },
     ];
 
     return (
@@ -314,15 +318,16 @@ export default function FinanceIndex({
                                             ) : recentMovements.map(item => {
                                                 const incoming = isIncomingMovement(item);
                                                 const cashierFund = isCashierFundMovement(item);
+                                                const outsideTopup = isOutsideCashierTopup(item);
                                                 const isWithdrawal = item.category === 'Penarikan';
-                                                const tone = cashierFund ? 'text-amber-700' : incoming ? 'text-emerald-600' : 'text-rose-600';
-                                                const sign = incoming ? '+' : '-';
+                                                const tone = cashierFund ? (outsideTopup ? 'text-emerald-700' : 'text-amber-700') : incoming ? 'text-emerald-600' : 'text-rose-600';
+                                                const sign = cashierFund ? (outsideTopup ? '+' : '-') : incoming ? '+' : '-';
                                                 return (
                                                     <tr key={item.id}>
                                                         <td className="py-3 pr-3">
                                                             <div className="flex flex-wrap items-center gap-2">
                                                                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${cashierFund ? 'bg-amber-100 text-amber-800' : isWithdrawal ? 'bg-slate-100 text-slate-700' : incoming ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                                                                    {cashierFund ? 'Top Up Kasir' : item.category}
+                                                                    {cashierFund ? (outsideTopup ? 'Top Up Luar Laci' : 'Top Up Dari Laci') : item.category}
                                                                 </span>
                                                                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${paymentTone(item.payment_method)}`}>
                                                                     {paymentLabel(item.payment_method)}
@@ -463,7 +468,7 @@ export default function FinanceIndex({
                                                 <td className="py-4 pr-4 text-right font-semibold text-indigo-700">{formatRupiah(item.omzet)}</td>
                                                 <td className="py-4 pr-4 text-right">
                                                     <div className="font-semibold text-rose-700">{formatRupiah(item.expense_total)}</div>
-                                                    <div className="text-xs text-slate-500">Top up {formatRupiah(item.cashier_topups)}</div>
+                                                    <div className="text-xs text-slate-500">Top up laci {formatRupiah(item.drawer_cashier_topups ?? item.cashier_topups)} | luar {formatRupiah(item.outside_cashier_topups)}</div>
                                                 </td>
                                                 <td className={`py-4 pr-4 text-right font-semibold ${signedTone(item.net_after_allocations)}`}>
                                                     {formatRupiah(item.net_after_allocations)}
@@ -540,14 +545,15 @@ export default function FinanceIndex({
                                         <DetailRow label="Pengeluaran cash" value={selectedWithdrawal.cash_expense} />
                                         <DetailRow label="Pengeluaran QRIS" value={selectedWithdrawal.qris_expense} />
                                         <DetailRow label="Pengeluaran uang pribadi" value={selectedWithdrawal.outside_expense} />
-                                        <DetailRow label="Top up kasir" value={selectedWithdrawal.cashier_topups} tone="text-amber-700" />
+                                        <DetailRow label="Top up dari laci" value={selectedWithdrawal.drawer_cashier_topups ?? selectedWithdrawal.cashier_topups} tone="text-amber-700" />
+                                        <DetailRow label="Top up luar laci" value={selectedWithdrawal.outside_cashier_topups} tone="text-emerald-700" />
                                     </DetailSection>
 
                                     <DetailSection title="Keuntungan Rekap">
                                         <DetailRow label="HPP" value={selectedWithdrawal.hpp} />
                                         <DetailRow label="Laba kotor" value={selectedWithdrawal.gross_profit} tone={signedTone(selectedWithdrawal.gross_profit)} />
                                         <DetailRow label="Laba operasional" value={selectedWithdrawal.net_profit} tone={signedTone(selectedWithdrawal.net_profit)} />
-                                        <DetailRow label="Setelah top up kasir" value={selectedWithdrawal.net_after_allocations} tone={signedTone(selectedWithdrawal.net_after_allocations)} />
+                                        <DetailRow label="Setelah top up dari laci" value={selectedWithdrawal.net_after_allocations} tone={signedTone(selectedWithdrawal.net_after_allocations)} />
                                     </DetailSection>
 
                                     <DetailSection title="Saldo Aktual">

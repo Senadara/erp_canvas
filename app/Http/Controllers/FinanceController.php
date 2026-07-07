@@ -166,6 +166,7 @@ class FinanceController extends Controller
                 'cash_net' => 0,
                 'qris_balance' => 0,
                 'cashier_topups' => 0,
+                'outside_cashier_topups' => 0,
             ],
         ];
     }
@@ -223,6 +224,7 @@ class FinanceController extends Controller
                 'cash_net' => 0,
                 'qris_balance' => 0,
                 'cashier_topups' => 0,
+                'outside_cashier_topups' => 0,
             ],
         ];
     }
@@ -309,6 +311,8 @@ class FinanceController extends Controller
                     'cash_restock_expense' => $summary['cashRestockExpense'],
                     'qris_restock_expense' => $summary['qrisRestockExpense'],
                     'private_restock_expense' => $summary['privateRestockExpense'],
+                    'drawer_cashier_topups' => $summary['drawerCashierTopups'],
+                    'outside_cashier_topups' => $summary['outsideCashierTopups'],
                 ],
             ]
         );
@@ -373,6 +377,8 @@ class FinanceController extends Controller
             'qris_expense' => (float) $snapshot->qris_expense,
             'outside_expense' => (float) $snapshot->outside_expense,
             'cashier_topups' => (float) $snapshot->cashier_topups,
+            'drawer_cashier_topups' => (float) ($snapshot->meta['drawer_cashier_topups'] ?? $snapshot->cashier_topups),
+            'outside_cashier_topups' => (float) ($snapshot->meta['outside_cashier_topups'] ?? 0),
             'net_profit' => (float) $snapshot->net_profit,
             'net_after_allocations' => (float) $snapshot->net_after_allocations,
             'cash_balance_before' => (float) $snapshot->cash_balance_before,
@@ -406,6 +412,8 @@ class FinanceController extends Controller
             'qris_expense' => (float) $summary['qrisExpense'],
             'outside_expense' => (float) $summary['outsideExpense'],
             'cashier_topups' => (float) $summary['cashierTopups'],
+            'drawer_cashier_topups' => (float) $summary['drawerCashierTopups'],
+            'outside_cashier_topups' => (float) $summary['outsideCashierTopups'],
             'net_profit' => (float) $summary['netProfit'],
             'net_after_allocations' => (float) $summary['netAfterAllocations'],
             'cash_balance_before' => (float) $summary['cashBalanceBefore'],
@@ -448,6 +456,8 @@ class FinanceController extends Controller
         $withdrawCash = 0;
         $withdrawQris = 0;
         $cashierTopups = 0;
+        $drawerCashierTopups = 0;
+        $outsideCashierTopups = 0;
         $standardOpeningCash = ShiftService::STANDARD_OPENING_CASH;
 
         foreach ($cashMovements as $movement) {
@@ -456,6 +466,11 @@ class FinanceController extends Controller
 
             if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
                 $cashierTopups += $amount;
+                if ($method === 'PRIVATE') {
+                    $outsideCashierTopups += $amount;
+                } else {
+                    $drawerCashierTopups += $amount;
+                }
                 continue;
             }
 
@@ -493,7 +508,7 @@ class FinanceController extends Controller
 
         $grossProfit = $omzet - $hpp;
         $netProfit = $grossProfit - $expenseTotal;
-        $netAfterAllocations = $netProfit - $cashierTopups;
+        $netAfterAllocations = $netProfit - $drawerCashierTopups;
 
         return [
             'omzet' => $omzet,
@@ -513,7 +528,9 @@ class FinanceController extends Controller
             'cashAdditions' => $cashAdditions,
             'standardOpeningCash' => $standardOpeningCash,
             'cashierTopups' => $cashierTopups,
-            'allocationTotal' => $cashierTopups,
+            'drawerCashierTopups' => $drawerCashierTopups,
+            'outsideCashierTopups' => $outsideCashierTopups,
+            'allocationTotal' => $drawerCashierTopups,
             'withdrawCash' => $withdrawCash,
             'withdrawQris' => $withdrawQris,
             'withdrawTotal' => $withdrawCash + $withdrawQris,
@@ -531,12 +548,15 @@ class FinanceController extends Controller
         $carryCashNet = (float) ($carry['cash_net'] ?? 0);
         $carryQrisBalance = (float) ($carry['qris_balance'] ?? 0);
         $carryCashierTopups = (float) ($carry['cashier_topups'] ?? 0);
+        $carryOutsideCashierTopups = (float) ($carry['outside_cashier_topups'] ?? 0);
         $cashierTopups = (float) $summary['cashierTopups'];
         $activeCashierTopups = $carryCashierTopups + $cashierTopups;
+        $activeOutsideCashierTopups = $carryOutsideCashierTopups + (float) $summary['outsideCashierTopups'];
+        $activeDrawerCashierTopups = $activeCashierTopups - $activeOutsideCashierTopups;
         $cashDrawerActual = $standardOpeningCash
             + $carryCashNet
             + (float) $summary['cashSales']
-            + $activeCashierTopups
+            + $activeOutsideCashierTopups
             + (float) $summary['cashAdditions']
             - (float) $summary['cashExpense']
             - (float) $summary['withdrawCash'];
@@ -560,6 +580,8 @@ class FinanceController extends Controller
             'carryQrisBalance' => $carryQrisBalance,
             'carryCashierTopups' => $carryCashierTopups,
             'activeCashierTopups' => $activeCashierTopups,
+            'activeDrawerCashierTopups' => $activeDrawerCashierTopups,
+            'activeOutsideCashierTopups' => $activeOutsideCashierTopups,
             'dailySalesAverage' => (float) $summary['omzet'] / $periodDays,
             'dailyExpenseAverage' => (float) $summary['expenseTotal'] / $periodDays,
         ]);
@@ -571,7 +593,15 @@ class FinanceController extends Controller
         $cursor = $start->copy();
         while ($cursor->lte($end)) {
             $key = $cursor->toDateString();
-            $days[$key] = ['date' => $key, 'omzet' => 0, 'expenses' => 0, 'cashier_topups' => 0, 'profit' => 0];
+            $days[$key] = [
+                'date' => $key,
+                'omzet' => 0,
+                'expenses' => 0,
+                'cashier_topups' => 0,
+                'drawer_cashier_topups' => 0,
+                'outside_cashier_topups' => 0,
+                'profit' => 0,
+            ];
             $cursor->addDay();
         }
 
@@ -597,6 +627,11 @@ class FinanceController extends Controller
 
             if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
                 $days[$key]['cashier_topups'] += (float) $movement->amount;
+                if ($this->normalizePaymentMethod($movement) === 'PRIVATE') {
+                    $days[$key]['outside_cashier_topups'] += (float) $movement->amount;
+                } else {
+                    $days[$key]['drawer_cashier_topups'] += (float) $movement->amount;
+                }
                 continue;
             }
 
@@ -606,7 +641,7 @@ class FinanceController extends Controller
         }
 
         foreach ($days as &$day) {
-            $day['profit'] += $day['omzet'] - $day['expenses'] - $day['cashier_topups'];
+            $day['profit'] += $day['omzet'] - $day['expenses'] - $day['drawer_cashier_topups'];
         }
 
         return array_values($days);

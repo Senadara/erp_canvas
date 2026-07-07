@@ -24,7 +24,7 @@ class FinanceCashierFundTest extends TestCase
 
     public function test_cashier_topup_increases_shift_cash_but_reduces_outlet_finance_allocation(): void
     {
-        Carbon::setTestNow(Carbon::parse('2026-07-06 10:00:00'));
+        Carbon::setTestNow(Carbon::parse('2026-07-06 08:00:00'));
 
         try {
             $outlet = Outlet::create(['name' => 'Outlet Utama']);
@@ -37,6 +37,17 @@ class FinanceCashierFundTest extends TestCase
             ]);
 
             $shift = app(ShiftService::class)->openShift($outlet->id, 50000, 'Shift Pagi');
+            Carbon::setTestNow(Carbon::parse('2026-07-06 10:00:00'));
+            Transaction::create([
+                'outlet_id' => $outlet->id,
+                'invoice_number' => 'INV-TOPUP-001',
+                'total_amount' => 100000,
+                'payment_method' => 'CASH',
+                'payment_status' => 'PAID',
+                'paid_at' => Carbon::parse('2026-07-06 09:00:00'),
+                'created_at' => Carbon::parse('2026-07-06 09:00:00'),
+            ]);
+
             $topup = app(PettyCashService::class)->createExpense([
                 'outlet_id' => $outlet->id,
                 'amount' => 20000,
@@ -51,8 +62,8 @@ class FinanceCashierFundTest extends TestCase
             $shiftSummary = app(ShiftService::class)->moneySummary($shift->fresh());
 
             $this->assertSame(20000.0, $shiftSummary['cash']['cashier_topups']);
-            $this->assertSame(20000.0, $shiftSummary['cash']['additions']);
-            $this->assertSame(70000.0, $shiftSummary['cash']['expected']);
+            $this->assertSame(0, $shiftSummary['cash']['additions']);
+            $this->assertSame(150000.0, $shiftSummary['cash']['expected']);
 
             $this->actingAs($owner)
                 ->withSession(['outlet_id' => $outlet->id])
@@ -62,12 +73,81 @@ class FinanceCashierFundTest extends TestCase
                 ]))
                 ->assertOk()
                 ->assertInertia(fn (Assert $page) => $page
-                    ->where('summary.omzet', 0)
+                    ->where('summary.omzet', 100000)
                     ->where('summary.cashierTopups', 20000)
                     ->where('summary.expenseTotal', 0)
-                    ->where('summary.netAfterAllocations', -20000)
-                    ->where('summary.cashDrawerNet', 0)
-                    ->where('summary.cleanFinance', 0)
+                    ->where('summary.netAfterAllocations', 80000)
+                    ->where('summary.cashDrawerActual', 150000)
+                    ->where('summary.cashDrawerNet', 80000)
+                    ->where('summary.cleanFinance', 80000)
+                );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_outside_cashier_topup_increases_cashier_cash_without_reducing_drawer_omzet(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-06 08:00:00'));
+
+        try {
+            $outlet = Outlet::create(['name' => 'Outlet Utama']);
+            $owner = User::create([
+                'email' => 'owner-outside-topup@karsa.local',
+                'password_hash' => Hash::make('password'),
+                'display_name' => 'Owner Outside Topup',
+                'role' => 'OWNER',
+                'is_active' => true,
+            ]);
+
+            $shift = app(ShiftService::class)->openShift($outlet->id, 50000, 'Shift Pagi');
+            Carbon::setTestNow(Carbon::parse('2026-07-06 10:00:00'));
+            Transaction::create([
+                'outlet_id' => $outlet->id,
+                'invoice_number' => 'INV-TOPUP-OUTSIDE-001',
+                'total_amount' => 100000,
+                'payment_method' => 'CASH',
+                'payment_status' => 'PAID',
+                'paid_at' => Carbon::parse('2026-07-06 09:00:00'),
+                'created_at' => Carbon::parse('2026-07-06 09:00:00'),
+            ]);
+
+            $topup = app(PettyCashService::class)->createExpense([
+                'outlet_id' => $outlet->id,
+                'amount' => 20000,
+                'category' => 'Tambah Kas',
+                'payment_method' => 'PRIVATE',
+                'cash_flow' => 'OUT',
+                'description' => 'Top up dari luar laci',
+            ]);
+
+            $this->assertSame('IN', $topup->cash_flow);
+            $this->assertSame('PRIVATE', $topup->payment_method);
+
+            $shiftSummary = app(ShiftService::class)->moneySummary($shift->fresh());
+
+            $this->assertSame(20000.0, $shiftSummary['cash']['cashier_topups']);
+            $this->assertSame(0, $shiftSummary['cash']['drawer_cashier_topups']);
+            $this->assertSame(20000.0, $shiftSummary['cash']['outside_cashier_topups']);
+            $this->assertSame(20000.0, $shiftSummary['cash']['additions']);
+            $this->assertSame(170000.0, $shiftSummary['cash']['expected']);
+
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->get(route('finance', [
+                    'date_from' => '2026-07-06',
+                    'date_to' => '2026-07-06',
+                ]))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->where('summary.omzet', 100000)
+                    ->where('summary.cashierTopups', 20000)
+                    ->where('summary.drawerCashierTopups', 0)
+                    ->where('summary.outsideCashierTopups', 20000)
+                    ->where('summary.netAfterAllocations', 100000)
+                    ->where('summary.cashDrawerActual', 170000)
+                    ->where('summary.cashDrawerNet', 100000)
+                    ->where('summary.cleanFinance', 100000)
                 );
         } finally {
             Carbon::setTestNow();
