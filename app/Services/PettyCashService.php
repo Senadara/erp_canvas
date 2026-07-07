@@ -73,7 +73,7 @@ class PettyCashService
 
         if (in_array($category, ['Tambah Modal', 'Tambah Kas'], true)) {
             $category = 'Tambah Kas';
-            $cashFlow = 'OUT';
+            $cashFlow = 'IN';
             $paymentMethod = 'CASH';
         }
 

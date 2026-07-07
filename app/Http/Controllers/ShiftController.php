@@ -98,8 +98,7 @@ class ShiftController extends Controller
             $expenseByCategory[$cat] += $exp->amount;
         }
 
-        $cashierTopups = (float) ($cashSummary['cash']['cashier_topups'] ?? 0);
-        $totalOperatingExpenses = max(0, (float) $cashSummary['cash']['expenses'] - $cashierTopups)
+        $totalOperatingExpenses = (float) $cashSummary['cash']['expenses']
             + (float) $cashSummary['qris']['expenses']
             + (float) ($cashSummary['outside']['expenses'] ?? 0);
 

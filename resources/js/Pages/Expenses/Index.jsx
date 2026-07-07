@@ -76,7 +76,7 @@ export default function ExpensesIndex({ expenses, openShift }) {
             amount: expense.amount,
             category: expense.category,
             payment_method: expense.payment_method || 'CASH',
-            cash_flow: expense.category === 'Tambah Kas' ? 'OUT' : (expense.cash_flow || 'OUT'),
+            cash_flow: expense.category === 'Tambah Kas' ? 'IN' : (expense.cash_flow || 'OUT'),
             description: expense.description || '',
             date: d.toISOString().slice(0, 16),
         });
@@ -256,7 +256,7 @@ export default function ExpensesIndex({ expenses, openShift }) {
                                     onChange={e => {
                                         const category = e.target.value;
                                         setData('category', category);
-                                        setData('cash_flow', 'OUT');
+                                        setData('cash_flow', category === 'Tambah Kas' ? 'IN' : 'OUT');
                                         if (category === 'Tambah Kas') setData('payment_method', 'CASH');
                                     }}
                                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all bg-slate-50 focus:bg-white"

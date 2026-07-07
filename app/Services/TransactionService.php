@@ -49,7 +49,9 @@ class TransactionService
         $shiftId = $payload['shift_id'] ?? null;
         $items = $payload['items'];
         $paymentStatus = $payload['payment_status'] ?? 'PAID';
-        $paymentMethod = $payload['payment_method'] ?? null;
+        $paymentMethod = isset($payload['payment_method']) && $payload['payment_method'] !== null
+            ? strtoupper((string) $payload['payment_method'])
+            : null;
         $note = $payload['note'] ?? null;
         $cashReceived = $payload['cash_received'] ?? null;
 
@@ -214,6 +216,8 @@ class TransactionService
 
     public function payDebt(string $transactionId, string $outletId, string $paymentMethod, ?float $cashReceived)
     {
+        $paymentMethod = strtoupper($paymentMethod);
+
         return DB::transaction(function () use ($transactionId, $outletId, $paymentMethod, $cashReceived) {
             $transaction = Transaction::where('id', $transactionId)
                 ->where('outlet_id', $outletId)

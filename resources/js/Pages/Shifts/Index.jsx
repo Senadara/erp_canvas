@@ -18,7 +18,7 @@ function isCashierFundMovement(item) {
 }
 
 function isIncomingMovement(item) {
-    return item.cash_flow === 'IN' && !isCashierFundMovement(item);
+    return item.cash_flow === 'IN';
 }
 
 function paymentLabel(method) {
@@ -104,8 +104,8 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                 amount: '',
                 category: 'Tambah Kas',
                 payment_method: 'CASH',
-                cash_flow: 'OUT',
-                description: 'Alokasi tambahan kas kasir dari kas kontainer',
+                cash_flow: 'IN',
+                description: 'Top up tambahan kas kasir dari keuangan outlet',
             });
         } else {
             setMovementTitle('Catat Pengeluaran');
@@ -659,8 +659,8 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                             <span className="text-emerald-400">{formatRupiah(shiftDetail.shift?.total_sales_cash)}</span>
                                         </div>
                                         <div className="flex justify-between">
-                                            <span className="text-slate-400">- Alokasi Kas Kasir</span>
-                                            <span className="text-rose-400">{formatRupiah(shiftDetail.cash_summary?.cash?.cashier_topups)}</span>
+                                            <span className="text-slate-400">+ Top Up Kasir</span>
+                                            <span className="text-emerald-400">{formatRupiah(shiftDetail.cash_summary?.cash?.cashier_topups)}</span>
                                         </div>
                                         <div className="flex justify-between">
                                             <span className="text-slate-400">+ Penjualan (QRIS)</span>
@@ -802,7 +802,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                     onChange={e => {
                                         const category = e.target.value;
                                         setExpenseData('category', category);
-                                        setExpenseData('cash_flow', 'OUT');
+                                        setExpenseData('cash_flow', category === 'Tambah Kas' ? 'IN' : 'OUT');
                                         if (category === 'Tambah Kas') setExpenseData('payment_method', 'CASH');
                                     }}
                                     className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
@@ -813,7 +813,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                     ))}
                                 </select>
                                 {expenseData.category === 'Tambah Kas' && (
-                                    <p className="mt-1 text-xs text-amber-700">Top up kasir dicatat sebagai alokasi keluar dari kas kontainer.</p>
+                                    <p className="mt-1 text-xs text-amber-700">Top up kasir menambah saldo laci, sekaligus menjadi alokasi keluar di Keuangan Outlet.</p>
                                 )}
                             </div>
                             {expenseData.category === 'Penarikan' && (

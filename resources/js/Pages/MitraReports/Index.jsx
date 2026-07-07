@@ -60,7 +60,7 @@ export default function MitraReportsIndex({ reportData, startDate, endDate }) {
                         className="border border-slate-300 rounded-md px-3 py-2 text-sm font-medium bg-white focus:ring-indigo-500 focus:border-indigo-500"
                     >
                         <option value="RESTOCK">Restock (Qty Diambil)</option>
-                        <option value="SALES">Sales (Estimasi Qty Terjual)</option>
+                        <option value="SALES">Sales + Waste (Qty Terpakai)</option>
                     </select>
                 </div>
             </div>
@@ -74,7 +74,7 @@ export default function MitraReportsIndex({ reportData, startDate, endDate }) {
                             <th className="px-4 py-3 font-medium text-right">Harga Admin</th>
                             <th className="px-4 py-3 font-medium text-right">Stok Saat Ini</th>
                             <th className={`px-4 py-3 font-medium text-right ${calcMethod === 'RESTOCK' ? 'bg-amber-50' : ''}`}>Qty Restock</th>
-                            <th className={`px-4 py-3 font-medium text-right ${calcMethod === 'SALES' ? 'bg-amber-50' : ''}`}>Qty Terjual (Est)</th>
+                            <th className={`px-4 py-3 font-medium text-right ${calcMethod === 'SALES' ? 'bg-amber-50' : ''}`}>Qty Terpakai</th>
                             <th className="px-4 py-3 font-medium text-right">Telah Dibayar</th>
                             <th className="px-4 py-3 font-medium text-right bg-emerald-50">Sisa Belum Bayar</th>
                         </tr>
@@ -104,6 +104,11 @@ export default function MitraReportsIndex({ reportData, startDate, endDate }) {
                                         </td>
                                         <td className={`px-4 py-3 text-right ${calcMethod === 'SALES' ? 'bg-amber-50 font-semibold text-amber-700' : ''}`}>
                                             {formatQty(item.sales_qty, item.min_restock_qty, item.unit_name)}
+                                            {Number(item.waste_qty || 0) > 0 && (
+                                                <div className="text-[10px] font-normal text-amber-600">
+                                                    termasuk waste {formatQty(item.waste_qty, item.min_restock_qty, item.unit_name)}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-right text-slate-500 font-medium">
                                             {formatQty(item.settled_qty || 0, item.min_restock_qty, item.unit_name)}
@@ -122,7 +127,7 @@ export default function MitraReportsIndex({ reportData, startDate, endDate }) {
             {reportData.length > 0 && (
                 <div className="mt-6 bg-blue-50 border border-blue-200 p-4 rounded-lg">
                     <p className="text-sm text-blue-800">
-                        <span className="font-semibold">Catatan:</span> Qty Terjual (Estimasi) dihitung berdasarkan jumlah penjualan menu yang mengandung bahan stok Anda, dikalikan dengan rasio konversi resep yang telah diatur. Sisa Belum Bayar adalah total dari Qty dikurangi jumlah yang sudah disetorkan (status Lunas) pada periode ini.
+                        <span className="font-semibold">Catatan:</span> Qty Terpakai dihitung dari penjualan menu plus pengurangan stok non-penjualan yang dicatat di Waste, lalu dikalikan rasio konversi resep. Sisa Belum Bayar adalah total qty dikurangi jumlah yang sudah disetorkan (status Lunas) pada periode ini.
                     </p>
                 </div>
             )}

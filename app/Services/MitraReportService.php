@@ -14,6 +14,8 @@ class MitraReportService
 {
     public function getMitraReportData(string $outletId, User $mitra, Carbon $startDate, Carbon $endDate)
     {
+        $periodStart = $startDate->copy()->startOfDay();
+        $periodEnd = $endDate->copy()->endOfDay();
         $mitraStockItems = $mitra->mitraStockItems()->get()->keyBy('id');
         $mitraStockIds = $mitraStockItems->keys()->toArray();
 
@@ -25,7 +27,7 @@ class MitraReportService
         $restocks = DB::table('restock_logs')
             ->where('outlet_id', $outletId)
             ->whereIn('stock_item_id', $mitraStockIds)
-            ->whereBetween('created_at', [$startDate->startOfDay(), clone $endDate->endOfDay()])
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
             ->groupBy('stock_item_id')
             ->select('stock_item_id', DB::raw('SUM(qty_added) as total_restock'))
             ->get()
@@ -35,7 +37,7 @@ class MitraReportService
         $transactions = Transaction::with('items')
             ->where('outlet_id', $outletId)
             ->where('payment_status', 'PAID')
-            ->whereBetween('created_at', [$startDate->startOfDay(), clone $endDate->endOfDay()])
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
             ->get();
 
         $conversions = Conversion::whereIn('stock_item_id', $mitraStockIds)->get()->groupBy('product_id');
@@ -57,14 +59,26 @@ class MitraReportService
             }
         }
 
+        $wasteRows = DB::table('waste_logs')
+            ->where('outlet_id', $outletId)
+            ->whereIn('stock_item_id', $mitraStockIds)
+            ->where('affects_mitra_settlement', true)
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
+            ->groupBy('stock_item_id')
+            ->select('stock_item_id', DB::raw('SUM(qty_biji) as total_waste'))
+            ->get()
+            ->keyBy('stock_item_id');
+
         // 3. Calculate already-settled (PAID) qty per stock item in overlapping periods
-        $settledPerStock = $this->getSettledQtyPerStock($outletId, $mitra->id, $mitraStockIds, $startDate, $endDate);
+        $settledPerStock = $this->getSettledQtyPerStock($outletId, $mitra->id, $mitraStockIds, $periodStart, $periodEnd);
 
         // 4. Combine Data with proportional pricing
         $reportData = [];
         foreach ($mitraStockItems as $stockId => $stockItem) {
             $restockQty = $restocks->has($stockId) ? (float) $restocks->get($stockId)->total_restock : 0;
-            $salesQty = $salesPerStock[$stockId] ?? 0;
+            $soldQty = $salesPerStock[$stockId] ?? 0;
+            $wasteQty = $wasteRows->has($stockId) ? (float) $wasteRows->get($stockId)->total_waste : 0;
+            $salesQty = $soldQty + $wasteQty;
             $restockPrice = (float) ($stockItem->restock_price ?? 0);
             $minRestockQty = $stockItem->min_restock_qty > 0 ? (float) $stockItem->min_restock_qty : 1;
             $settledQty = $settledPerStock[$stockId] ?? 0;
@@ -81,6 +95,8 @@ class MitraReportService
                 'restock_price' => $restockPrice,
                 'min_restock_qty' => $minRestockQty,
                 'restock_qty' => round($restockQty, 2),
+                'sold_qty' => round($soldQty, 2),
+                'waste_qty' => round($wasteQty, 2),
                 'sales_qty' => round($salesQty, 2),
                 'settled_qty' => round($settledQty, 2),
                 'restock_subtotal' => round($restockSubtotal),

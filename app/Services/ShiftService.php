@@ -211,7 +211,7 @@ class ShiftService
 
             if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
                 $summary['cash']['cashier_topups'] += $amount;
-                $summary['cash']['expenses'] += $amount;
+                $summary['cash']['additions'] += $amount;
                 continue;
             }
 
@@ -255,7 +255,7 @@ class ShiftService
     private function resolveCashFlow(PettyCash $movement): string
     {
         if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
-            return 'OUT';
+            return 'IN';
         }
 
         return $movement->cash_flow === 'IN' ? 'IN' : 'OUT';
@@ -263,7 +263,7 @@ class ShiftService
 
     private function operatingExpenseTotal(array $summary): float
     {
-        return max(0, (float) $summary['cash']['expenses'] - (float) $summary['cash']['cashier_topups'])
+        return (float) $summary['cash']['expenses']
             + (float) $summary['qris']['expenses']
             + (float) $summary['outside']['expenses'];
     }

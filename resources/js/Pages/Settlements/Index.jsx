@@ -170,7 +170,7 @@ export default function SettlementsIndex({ mitras, selectedMitraId, startDate, e
                                         className="border border-slate-300 rounded-md px-3 py-1.5 text-sm font-medium bg-white"
                                     >
                                         <option value="RESTOCK">Berdasarkan Restock</option>
-                                        <option value="SALES">Berdasarkan Penjualan</option>
+                                        <option value="SALES">Berdasarkan Penjualan + Waste</option>
                                     </select>
                                 </div>
                             </div>
@@ -183,7 +183,7 @@ export default function SettlementsIndex({ mitras, selectedMitraId, startDate, e
                                             <th className="px-4 py-3 font-medium">Bahan</th>
                                             <th className="px-4 py-3 font-medium text-right">Harga / Paket</th>
                                             <th className={`px-4 py-3 font-medium text-right ${calcMethod === 'RESTOCK' ? 'bg-amber-50' : ''}`}>Qty Restock</th>
-                                            <th className={`px-4 py-3 font-medium text-right ${calcMethod === 'SALES' ? 'bg-amber-50' : ''}`}>Qty Terjual</th>
+                                            <th className={`px-4 py-3 font-medium text-right ${calcMethod === 'SALES' ? 'bg-amber-50' : ''}`}>Qty Terpakai</th>
                                             <th className="px-4 py-3 font-medium text-right">Sudah Dibayar</th>
                                             <th className="px-4 py-3 font-medium text-right bg-emerald-50">Sisa Tagihan</th>
                                             <th className="px-4 py-3 font-medium text-right bg-indigo-50">Subtotal</th>
@@ -206,6 +206,11 @@ export default function SettlementsIndex({ mitras, selectedMitraId, startDate, e
                                                     </td>
                                                     <td className={`px-4 py-3 text-right ${calcMethod === 'SALES' ? 'bg-amber-50 font-semibold text-amber-700' : ''}`}>
                                                         {formatQty(item.sales_qty, item.min_restock_qty, item.unit_name)}
+                                                        {Number(item.waste_qty || 0) > 0 && (
+                                                            <div className="text-[10px] font-normal text-amber-600">
+                                                                termasuk waste {formatQty(item.waste_qty, item.min_restock_qty, item.unit_name)}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     <td className="px-4 py-3 text-right text-slate-500">
                                                         {formatQty(item.settled_qty || 0, item.min_restock_qty, item.unit_name)}
@@ -345,7 +350,7 @@ export default function SettlementsIndex({ mitras, selectedMitraId, startDate, e
                                 <div className="col-span-2">
                                     <p className="text-slate-500 mb-1">Metode Perhitungan:</p>
                                     <p className="font-medium bg-slate-100 inline-block px-2 py-1 rounded text-xs">
-                                        {viewSettlement.calculation_method === 'RESTOCK' ? 'Berdasarkan Restock' : 'Berdasarkan Penjualan'}
+                                        {viewSettlement.calculation_method === 'RESTOCK' ? 'Berdasarkan Restock' : 'Berdasarkan Penjualan + Waste'}
                                     </p>
                                 </div>
                             </div>

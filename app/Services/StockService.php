@@ -88,10 +88,27 @@ class StockService
             return WasteLog::create([
                 'outlet_id' => $outletId,
                 'stock_item_id' => $stockItemId,
+                'source_type' => WasteLog::SOURCE_STOCK,
                 'qty_biji' => $qtyBiji,
                 'reason' => $reason,
+                'waste_type' => WasteLog::TYPE_OTHER,
+                'loss_amount' => $this->stockLossAmount($row, $qtyBiji),
+                'affects_mitra_settlement' => true,
+                'created_at' => now(),
             ]);
         });
+    }
+
+    private function stockLossAmount(StockItem $stockItem, float $qty): float
+    {
+        $minQty = (float) $stockItem->min_restock_qty;
+        $price = (float) $stockItem->restock_price;
+
+        if ($minQty <= 0 || $price <= 0) {
+            return 0;
+        }
+
+        return ($qty / $minQty) * $price;
     }
 
     public function getStockInPorsi(string $outletId, string $productId): int
