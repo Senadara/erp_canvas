@@ -3,10 +3,10 @@
 namespace App\Services;
 
 use App\Models\PettyCash;
+use App\Models\Product;
 use App\Models\StockItem;
 use App\Models\Transaction;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
 class ReportService
 {
@@ -186,5 +186,168 @@ class ReportService
             }
         }
         return $n;
+    }
+
+    public function getProductPerformance(
+        string $outletId,
+        Carbon $startDate,
+        Carbon $endDate,
+        ?array $mitraProductIds = null,
+        ?string $selectedProductId = null
+    ): array {
+        $productQuery = Product::where('outlet_id', $outletId)
+            ->orderBy('name');
+
+        if ($mitraProductIds !== null) {
+            $productQuery->whereIn('id', $mitraProductIds);
+        }
+
+        $products = $productQuery->get(['id', 'name', 'hpp', 'is_active']);
+        $productsById = $products->keyBy('id');
+        $allowedProductIds = $products->pluck('id')->all();
+        $selectedProduct = $products->firstWhere('id', $selectedProductId);
+
+        if ($selectedProductId && ! $selectedProduct) {
+            $selectedProductId = null;
+        }
+
+        $transactions = Transaction::where('outlet_id', $outletId)
+            ->where('payment_status', 'PAID')
+            ->whereBetween('created_at', [
+                $startDate->copy()->startOfDay(),
+                $endDate->copy()->endOfDay(),
+            ])
+            ->whereHas('items', function ($query) use ($allowedProductIds) {
+                $query->whereIn('product_id', $allowedProductIds);
+            })
+            ->with(['items' => function ($query) use ($allowedProductIds) {
+                $query->whereIn('product_id', $allowedProductIds);
+            }])
+            ->orderBy('created_at')
+            ->get();
+
+        $performance = [];
+        $dailySales = [];
+
+        foreach ($transactions as $transaction) {
+            foreach ($transaction->items as $item) {
+                $product = $productsById->get($item->product_id);
+                if (! $product) {
+                    continue;
+                }
+
+                if (! isset($performance[$item->product_id])) {
+                    $performance[$item->product_id] = [
+                        'id' => $item->product_id,
+                        'name' => $product->name ?: $item->product_name,
+                        'is_active' => (bool) $product->is_active,
+                        'quantity_sold' => 0,
+                        'revenue' => 0.0,
+                        'estimated_hpp' => 0.0,
+                        'gross_profit' => 0.0,
+                        'transaction_ids' => [],
+                    ];
+                }
+
+                $quantity = (int) $item->qty_porsi;
+                $revenue = (float) $item->subtotal;
+                $estimatedHpp = (float) $product->hpp * $quantity;
+                $grossProfit = $revenue - $estimatedHpp;
+
+                $performance[$item->product_id]['quantity_sold'] += $quantity;
+                $performance[$item->product_id]['revenue'] += $revenue;
+                $performance[$item->product_id]['estimated_hpp'] += $estimatedHpp;
+                $performance[$item->product_id]['gross_profit'] += $grossProfit;
+                $performance[$item->product_id]['transaction_ids'][$transaction->id] = true;
+
+                if ($selectedProductId === $item->product_id) {
+                    $date = $transaction->created_at->format('Y-m-d');
+
+                    if (! isset($dailySales[$date])) {
+                        $dailySales[$date] = [
+                            'date' => $date,
+                            'quantity_sold' => 0,
+                            'revenue' => 0.0,
+                            'estimated_hpp' => 0.0,
+                            'gross_profit' => 0.0,
+                            'transaction_ids' => [],
+                        ];
+                    }
+
+                    $dailySales[$date]['quantity_sold'] += $quantity;
+                    $dailySales[$date]['revenue'] += $revenue;
+                    $dailySales[$date]['estimated_hpp'] += $estimatedHpp;
+                    $dailySales[$date]['gross_profit'] += $grossProfit;
+                    $dailySales[$date]['transaction_ids'][$transaction->id] = true;
+                }
+            }
+        }
+
+        $performance = collect($performance)
+            ->map(function (array $row) {
+                $row['transaction_count'] = count($row['transaction_ids']);
+                $row['margin_percent'] = $row['revenue'] > 0
+                    ? round(($row['gross_profit'] / $row['revenue']) * 100, 1)
+                    : 0.0;
+                unset($row['transaction_ids']);
+
+                return $row;
+            })
+            ->values();
+
+        $rankedProducts = $performance
+            ->sort(function (array $a, array $b) {
+                return [$b['quantity_sold'], $b['revenue']] <=> [$a['quantity_sold'], $a['revenue']];
+            })
+            ->values();
+
+        $mostProfitable = $performance
+            ->sort(function (array $a, array $b) {
+                return [$b['gross_profit'], $b['revenue']] <=> [$a['gross_profit'], $a['revenue']];
+            })
+            ->first();
+
+        $selectedSummary = $selectedProductId
+            ? $performance->firstWhere('id', $selectedProductId)
+            : null;
+
+        $dailySales = collect($dailySales)
+            ->map(function (array $row) {
+                $row['transaction_count'] = count($row['transaction_ids']);
+                unset($row['transaction_ids']);
+
+                return $row;
+            })
+            ->sortByDesc('date')
+            ->values()
+            ->all();
+
+        return [
+            'start_date' => $startDate->format('Y-m-d'),
+            'end_date' => $endDate->format('Y-m-d'),
+            'products' => $products->map(fn (Product $product) => [
+                'id' => $product->id,
+                'name' => $product->name,
+                'is_active' => (bool) $product->is_active,
+            ])->values()->all(),
+            'ranking' => $rankedProducts->all(),
+            'best_seller' => $rankedProducts->first(),
+            'most_profitable' => $mostProfitable,
+            'selected_product_id' => $selectedProductId,
+            'selected_product' => $selectedProduct ? [
+                'id' => $selectedProduct->id,
+                'name' => $selectedProduct->name,
+                'is_active' => (bool) $selectedProduct->is_active,
+                'summary' => $selectedSummary ?: [
+                    'quantity_sold' => 0,
+                    'revenue' => 0.0,
+                    'estimated_hpp' => 0.0,
+                    'gross_profit' => 0.0,
+                    'transaction_count' => 0,
+                    'margin_percent' => 0.0,
+                ],
+                'daily_sales' => $dailySales,
+            ] : null,
+        ];
     }
 }
