@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Conversion;
 use App\Models\MitraSettlement;
 use App\Models\MitraStockDelivery;
+use App\Models\Outlet;
 use App\Models\RestockLog;
 use App\Models\StockItem;
 use App\Models\Transaction;
@@ -15,6 +16,37 @@ use Illuminate\Support\Facades\DB;
 
 class MitraReportService
 {
+    public function getMitraReportDataAcrossOutlets(User $mitra, Carbon $startDate, Carbon $endDate): array
+    {
+        $outletIds = $mitra->mitraStockItems()
+            ->pluck('stock_items.outlet_id')
+            ->unique()
+            ->values();
+        $outlets = Outlet::whereIn('id', $outletIds)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return $outlets
+            ->flatMap(function (Outlet $outlet) use ($mitra, $startDate, $endDate) {
+                return collect($this->getMitraReportData(
+                    $outlet->id,
+                    $mitra,
+                    $startDate->copy(),
+                    $endDate->copy(),
+                ))->map(fn (array $item) => [
+                    ...$item,
+                    'outlet_id' => $outlet->id,
+                    'outlet_name' => $outlet->name,
+                ]);
+            })
+            ->sortBy([
+                ['outlet_name', 'asc'],
+                ['name', 'asc'],
+            ])
+            ->values()
+            ->all();
+    }
+
     public function getMitraReportOverview(string $outletId, User $mitra, Carbon $startDate, Carbon $endDate): array
     {
         $reportData = $this->getMitraReportData($outletId, $mitra, $startDate, $endDate);
@@ -71,8 +103,7 @@ class MitraReportService
                     'created_at' => $log->created_at?->toIso8601String(),
                 ]);
 
-        $settlements = MitraSettlement::where('outlet_id', $outletId)
-            ->where('mitra_id', $mitra->id)
+        $settlements = MitraSettlement::where('mitra_id', $mitra->id)
             ->orderByDesc('created_at')
             ->take(50)
             ->get()
@@ -265,7 +296,10 @@ class MitraReportService
     {
         $periodStart = $startDate->copy()->startOfDay();
         $periodEnd = $endDate->copy()->endOfDay();
-        $mitraStockItems = $mitra->mitraStockItems()->get()->keyBy('id');
+        $mitraStockItems = $mitra->mitraStockItems()
+            ->where('stock_items.outlet_id', $outletId)
+            ->get()
+            ->keyBy('id');
         $mitraStockIds = $mitraStockItems->keys()->toArray();
 
         if (empty($mitraStockIds)) {
@@ -317,6 +351,20 @@ class MitraReportService
             ->select('stock_item_id', DB::raw('SUM(qty_biji) as total_waste'))
             ->get()
             ->keyBy('stock_item_id');
+        $wasteBreakdowns = DB::table('waste_logs')
+            ->where('outlet_id', $outletId)
+            ->whereIn('stock_item_id', $mitraStockIds)
+            ->where('affects_mitra_settlement', true)
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
+            ->groupBy('stock_item_id', 'waste_type', 'source_type')
+            ->select(
+                'stock_item_id',
+                'waste_type',
+                'source_type',
+                DB::raw('SUM(qty_biji) as total_qty')
+            )
+            ->get()
+            ->groupBy('stock_item_id');
 
         // 3. Track paid quantities and quantities reserved by active proposals.
         $settledPerStock = $this->getSettlementQtyPerStock(
@@ -342,6 +390,19 @@ class MitraReportService
             $restockQty = $restocks->has($stockId) ? (float) $restocks->get($stockId)->total_restock : 0;
             $soldQty = $salesPerStock[$stockId] ?? 0;
             $wasteQty = $wasteRows->has($stockId) ? (float) $wasteRows->get($stockId)->total_waste : 0;
+            $stockWasteBreakdown = collect($wasteBreakdowns->get($stockId, collect()))
+                ->map(fn ($row) => [
+                    'type' => $row->waste_type,
+                    'source_type' => $row->source_type,
+                    'quantity' => round((float) $row->total_qty, 2),
+                ])
+                ->values();
+            $wasteQtyByType = fn (string $type) => (float) $stockWasteBreakdown
+                ->where('type', $type)
+                ->sum('quantity');
+            $wasteQtyBySource = fn (string $source) => (float) $stockWasteBreakdown
+                ->where('source_type', $source)
+                ->sum('quantity');
             $salesQty = $soldQty + $wasteQty;
             $restockPrice = (float) ($stockItem->restock_price ?? 0);
             $minRestockQty = $stockItem->min_restock_qty > 0 ? (float) $stockItem->min_restock_qty : 1;
@@ -362,6 +423,13 @@ class MitraReportService
                 'restock_qty' => round($restockQty, 2),
                 'sold_qty' => round($soldQty, 2),
                 'waste_qty' => round($wasteQty, 2),
+                'personal_use_qty' => round($wasteQtyByType(WasteLog::TYPE_OWNER_REQUEST), 2),
+                'expired_waste_qty' => round($wasteQtyByType(WasteLog::TYPE_EXPIRED), 2),
+                'damaged_waste_qty' => round($wasteQtyByType(WasteLog::TYPE_DAMAGED), 2),
+                'other_waste_qty' => round($wasteQtyByType(WasteLog::TYPE_OTHER), 2),
+                'product_waste_qty' => round($wasteQtyBySource(WasteLog::SOURCE_PRODUCT), 2),
+                'stock_waste_qty' => round($wasteQtyBySource(WasteLog::SOURCE_STOCK), 2),
+                'waste_breakdown' => $stockWasteBreakdown->all(),
                 'sales_qty' => round($salesQty, 2),
                 'settled_qty' => round($settledQty, 2),
                 'pending_settlement_qty' => round($pendingSettlementQty, 2),
@@ -388,8 +456,7 @@ class MitraReportService
     {
         $settledPerStock = array_fill_keys($stockIds, 0);
 
-        $paidSettlements = MitraSettlement::where('outlet_id', $outletId)
-            ->where('mitra_id', $mitraId)
+        $paidSettlements = MitraSettlement::where('mitra_id', $mitraId)
             ->whereIn('status', $statuses)
             ->where(function ($q) use ($startDate, $endDate) {
                 // Settlements whose period overlaps with the report period

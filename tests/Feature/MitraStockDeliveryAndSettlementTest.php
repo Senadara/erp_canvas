@@ -11,6 +11,7 @@ use App\Models\StockItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class MitraStockDeliveryAndSettlementTest extends TestCase
@@ -190,6 +191,88 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
             ->withSession(['outlet_id' => $outlet->id])
             ->get(route('settlements.pdf', $settlement->id))
             ->assertNotFound();
+    }
+
+    public function test_settlement_combines_all_mitra_stock_across_outlets_and_keeps_outlet_origin(): void
+    {
+        [$firstOutlet, $owner, $staff, $mitra, $firstStock] = $this->createContext();
+        $secondOutlet = Outlet::create(['name' => 'Outlet Kedua']);
+        $mitra->outlets()->attach($secondOutlet->id);
+        $secondStock = StockItem::create([
+            'outlet_id' => $secondOutlet->id,
+            'name' => 'Dimsum Frozen',
+            'current_stock_biji' => 30,
+            'unit_name' => 'pcs',
+            'min_stock_alert' => 5,
+            'trackable' => true,
+            'counting_basis' => 'BIJI',
+            'min_restock_qty' => 10,
+            'restock_price' => 40000,
+        ]);
+        $mitra->mitraStockItems()->attach($secondStock->id, ['price' => 40000]);
+
+        RestockLog::create([
+            'outlet_id' => $firstOutlet->id,
+            'stock_item_id' => $firstStock->id,
+            'qty_added' => 20,
+            'stock_before' => 10,
+            'stock_after' => 30,
+            'fund_source' => RestockLog::FUND_SOURCE_MITRA_DELIVERY,
+            'restock_cost' => 100000,
+            'created_at' => now(),
+        ]);
+        RestockLog::create([
+            'outlet_id' => $secondOutlet->id,
+            'stock_item_id' => $secondStock->id,
+            'qty_added' => 30,
+            'stock_before' => 0,
+            'stock_after' => 30,
+            'fund_source' => RestockLog::FUND_SOURCE_MITRA_DELIVERY,
+            'restock_cost' => 120000,
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $firstOutlet->id])
+            ->post(route('settlements.store'), [
+                'mitra_id' => $mitra->id,
+                'start_date' => now()->startOfMonth()->format('Y-m-d'),
+                'end_date' => now()->endOfMonth()->format('Y-m-d'),
+                'calculation_method' => 'RESTOCK',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $settlement = MitraSettlement::firstOrFail();
+        $items = collect($settlement->receipt_data);
+        $this->assertCount(2, $items);
+        $this->assertEqualsCanonicalizing(
+            [$firstOutlet->name, $secondOutlet->name],
+            $items->pluck('outlet_name')->all()
+        );
+        $this->assertEqualsCanonicalizing(
+            [$firstOutlet->id, $secondOutlet->id],
+            $items->pluck('outlet_id')->all()
+        );
+        $this->assertSame(220000.0, (float) $settlement->total_amount);
+
+        $secondOutletReport = app(\App\Services\MitraReportService::class)->getMitraReportData(
+            $secondOutlet->id,
+            $mitra,
+            now()->startOfMonth(),
+            now()->endOfMonth(),
+        );
+        $this->assertSame(30.0, (float) $secondOutletReport[0]['pending_settlement_qty']);
+
+        $this->actingAs($mitra)
+            ->withSession(['outlet_id' => $secondOutlet->id])
+            ->get(route('settlements'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('settlements', 1)
+                ->where('settlements.0.id', $settlement->id)
+                ->has('settlements.0.receipt_data', 2)
+            );
     }
 
     private function createContext(): array

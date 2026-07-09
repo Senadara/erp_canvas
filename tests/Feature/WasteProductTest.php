@@ -131,6 +131,32 @@ class WasteProductTest extends TestCase
             $this->assertSame(4.0, (float) $overview['product_usage'][0]['materials'][0]['sold_usage']);
             $this->assertSame(6.0, (float) $overview['product_usage'][0]['materials'][0]['waste_usage']);
             $this->assertSame(10.0, (float) $overview['product_usage'][0]['materials'][0]['total_usage']);
+
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->post(route('settlements.store'), [
+                    'mitra_id' => $mitra->id,
+                    'start_date' => '2026-07-07',
+                    'end_date' => '2026-07-07',
+                    'calculation_method' => 'SALES',
+                ])
+                ->assertRedirect()
+                ->assertSessionHas('success');
+
+            $settlement = \App\Models\MitraSettlement::firstOrFail();
+            $settlementItem = $settlement->receipt_data[0];
+            $this->assertSame(4.0, (float) $settlementItem['sold_qty']);
+            $this->assertSame(6.0, (float) $settlementItem['waste_qty']);
+            $this->assertSame(6.0, (float) $settlementItem['personal_use_qty']);
+            $this->assertSame(10.0, (float) $settlementItem['sales_qty']);
+            $this->assertSame(50000.0, (float) $settlementItem['subtotal']);
+
+            $pdf = $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->get(route('settlements.pdf', $settlement->id))
+                ->assertOk()
+                ->assertHeader('content-type', 'application/pdf');
+            $this->assertStringStartsWith('%PDF-', $pdf->getContent());
         } finally {
             Carbon::setTestNow();
         }

@@ -272,7 +272,7 @@
 <div class="footer">
     <table style="width: 100%; border-collapse: collapse;">
         <tr>
-            <td>Dibuat {{ $generatedAt->format('d/m/Y H:i') }} - {{ $outlet?->name }}</td>
+            <td>Dibuat {{ $generatedAt->format('d/m/Y H:i') }} - {{ $documentOutletName ?? $outlet?->name }}</td>
             <td class="right">Halaman <span class="page-number"></span></td>
         </tr>
     </table>
@@ -283,7 +283,7 @@
         <td style="width: 52px;"><div class="brand-mark">K</div></td>
         <td>
             <h1 class="document-title">{{ $isSingle ? 'Detail Setoran Mitra' : 'Rekap Setoran Mitra' }}</h1>
-            <div class="muted">{{ $outlet?->name }}{{ $outlet?->address ? ' - '.$outlet->address : '' }}</div>
+            <div class="muted">{{ $documentOutletName ?? $outlet?->name }}</div>
         </td>
         <td class="right muted" style="width: 155px;">
             Dokumen Sistem<br>
@@ -327,7 +327,7 @@
 
 @forelse ($settlements as $settlement)
     @php
-        $items = collect($settlement->receipt_data ?? [])->filter(fn ($item) => (float) ($item['calculated_qty'] ?? 0) > 0);
+        $items = collect($settlement->receipt_data ?? []);
         $statusClass = strtolower($settlement->status);
         $isValidated = in_array($settlement->status, ['APPROVED', 'REJECTED', 'PAID'], true);
     @endphp
@@ -407,7 +407,21 @@
             <tbody>
                 @foreach ($items as $item)
                     <tr>
-                        <td><strong>{{ $item['name'] ?? 'Bahan' }}</strong></td>
+                        <td>
+                            <strong>{{ $item['name'] ?? 'Bahan' }}</strong>
+                            <div style="margin-top: 3px; color: #253b80; font-size: 8px; font-weight: bold;">
+                                Outlet: {{ $item['outlet_name'] ?? $outlet?->name ?? '-' }}
+                            </div>
+                            @if ($settlement->calculation_method === 'SALES')
+                                <div class="muted" style="margin-top: 3px; font-size: 8px;">
+                                    Terjual {{ $formatQty($item['sold_qty'] ?? 0, $item['unit_name'] ?? '') }}
+                                    | Waste {{ $formatQty($item['waste_qty'] ?? 0, $item['unit_name'] ?? '') }}
+                                    @if ((float) ($item['personal_use_qty'] ?? 0) > 0)
+                                        | Pribadi {{ $formatQty($item['personal_use_qty'], $item['unit_name'] ?? '') }}
+                                    @endif
+                                </div>
+                            @endif
+                        </td>
                         <td>
                             {{ $formatRupiah($item['restock_price'] ?? 0) }} /
                             {{ $formatQty($item['min_restock_qty'] ?? 1, $item['unit_name'] ?? '') }}

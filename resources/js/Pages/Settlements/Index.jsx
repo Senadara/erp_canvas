@@ -9,7 +9,6 @@ import {
     ClockIcon,
     DocumentMagnifyingGlassIcon,
     FunnelIcon,
-    ScaleIcon,
     XCircleIcon,
     XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -57,6 +56,7 @@ export default function SettlementsIndex({
     const [activeTab, setActiveTab] = useState(isOwner ? 'create' : (pendingSettlements.length > 0 ? 'pending' : 'history'));
     const [calcMethod, setCalcMethod] = useState('RESTOCK');
     const [viewSettlement, setViewSettlement] = useState(null);
+    const [viewUsageItem, setViewUsageItem] = useState(null);
     const [filterMitra, setFilterMitra] = useState(selectedMitraId || '');
     const [filterStart, setFilterStart] = useState(startDate);
     const [filterEnd, setFilterEnd] = useState(endDate);
@@ -80,7 +80,7 @@ export default function SettlementsIndex({
             remainingQuantity,
             subtotal: calcSubtotal(remainingQuantity, item.restock_price, item.min_restock_qty),
         };
-    }).filter((item) => item.remainingQuantity > 0), [reportData, calcMethod]);
+    }), [reportData, calcMethod]);
 
     const calculatedTotal = proposalItems.reduce((sum, item) => sum + item.subtotal, 0);
     const proposalQuantity = proposalItems.reduce((sum, item) => sum + item.remainingQuantity, 0);
@@ -254,14 +254,32 @@ export default function SettlementsIndex({
 
                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                     {proposalItems.map((item) => (
-                                        <article key={item.stock_item_id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                                        <button
+                                            key={item.stock_item_id}
+                                            type="button"
+                                            onClick={() => setViewUsageItem({ item, calculationMethod: calcMethod })}
+                                            className="w-full rounded-lg border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-indigo-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        >
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <h3 className="truncate font-semibold text-slate-900">{item.name}</h3>
+                                                    <p className="mt-1 inline-flex rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{item.outlet_name || 'Outlet'}</p>
                                                     <p className="mt-0.5 text-xs text-slate-500">{formatRupiah(item.restock_price)} per {formatQty(item.min_restock_qty, item.unit_name)}</p>
                                                 </div>
-                                                <ScaleIcon className="h-5 w-5 shrink-0 text-slate-400" />
+                                                <DocumentMagnifyingGlassIcon className="h-5 w-5 shrink-0 text-indigo-500" />
                                             </div>
+                                            {calcMethod === 'SALES' && (
+                                                <div className="mt-4 grid grid-cols-2 gap-2">
+                                                    <div className="rounded-md bg-emerald-50 px-3 py-2">
+                                                        <p className="text-xs text-emerald-700">Terjual</p>
+                                                        <p className="mt-0.5 font-bold text-emerald-900">{formatQty(item.sold_qty, item.unit_name)}</p>
+                                                    </div>
+                                                    <div className="rounded-md bg-rose-50 px-3 py-2">
+                                                        <p className="text-xs text-rose-700">Waste & pribadi</p>
+                                                        <p className="mt-0.5 font-bold text-rose-900">{formatQty(item.waste_qty, item.unit_name)}</p>
+                                                    </div>
+                                                </div>
+                                            )}
                                             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                                                 <div>
                                                     <p className="text-xs text-slate-500">Jumlah periode</p>
@@ -284,7 +302,8 @@ export default function SettlementsIndex({
                                                 </div>
                                                 <p className="text-lg font-bold text-slate-900">{formatRupiah(item.subtotal)}</p>
                                             </div>
-                                        </article>
+                                            <p className="mt-4 border-t border-slate-100 pt-3 text-xs font-semibold text-indigo-600">Klik untuk melihat rincian penggunaan</p>
+                                        </button>
                                     ))}
                                 </div>
                             </section>
@@ -406,6 +425,18 @@ export default function SettlementsIndex({
                     onValidate={validateSettlement}
                     onPay={() => markPaid(viewSettlement)}
                     pdfUrl={route('settlements.pdf', viewSettlement.id)}
+                    onUsageInspect={(item) => setViewUsageItem({
+                        item,
+                        calculationMethod: viewSettlement.calculation_method,
+                    })}
+                />
+            )}
+
+            {viewUsageItem && (
+                <UsageDetail
+                    item={viewUsageItem.item}
+                    calculationMethod={viewUsageItem.calculationMethod}
+                    onClose={() => setViewUsageItem(null)}
                 />
             )}
         </ErpLayout>
@@ -448,7 +479,9 @@ function Metric({ label, value, emphasis = false }) {
 function SettlementCard({ settlement, isOwner, submitting, onInspect, onPay, pdfUrl }) {
     const status = statusMeta(settlement.status);
     const StatusIcon = status.icon;
-    const itemCount = (settlement.receipt_data || []).filter((item) => Number(item.calculated_qty || 0) > 0).length;
+    const settlementItems = settlement.receipt_data || [];
+    const itemCount = settlementItems.length;
+    const outletCount = new Set(settlementItems.map((item) => item.outlet_id || item.outlet_name).filter(Boolean)).size;
     return (
         <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3">
@@ -463,7 +496,8 @@ function SettlementCard({ settlement, isOwner, submitting, onInspect, onPay, pdf
             </div>
             <div className="mt-4 space-y-2 border-y border-slate-100 py-3 text-sm text-slate-600">
                 <p className="flex items-center gap-2"><CalendarDaysIcon className="h-4 w-4 text-slate-400" /> {formatDate(settlement.period_start)} - {formatDate(settlement.period_end)}</p>
-                <p>{itemCount} bahan, {settlement.calculation_method === 'RESTOCK' ? 'berdasarkan stok diterima' : 'berdasarkan bahan terpakai'}</p>
+                <p>{itemCount} bahan dari {outletCount || 1} outlet</p>
+                <p>{settlement.calculation_method === 'RESTOCK' ? 'Berdasarkan stok diterima' : 'Berdasarkan bahan terpakai'}</p>
             </div>
             <SettlementProgress settlement={settlement} compact />
             {settlement.validation_note && <p className="mt-3 line-clamp-2 text-sm text-rose-700">Catatan: {settlement.validation_note}</p>}
@@ -487,9 +521,10 @@ function SettlementCard({ settlement, isOwner, submitting, onInspect, onPay, pdf
     );
 }
 
-function SettlementDetail({ settlement, isOwner, validationNote, setValidationNote, submitting, onClose, onValidate, onPay, pdfUrl }) {
+function SettlementDetail({ settlement, isOwner, validationNote, setValidationNote, submitting, onClose, onValidate, onPay, pdfUrl, onUsageInspect }) {
     const status = statusMeta(settlement.status);
-    const items = (settlement.receipt_data || []).filter((item) => Number(item.calculated_qty || 0) > 0);
+    const items = settlement.receipt_data || [];
+    const outletCount = new Set(items.map((item) => item.outlet_id || item.outlet_name).filter(Boolean)).size;
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 sm:p-5">
             <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
@@ -512,7 +547,7 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
                     <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 lg:grid-cols-4">
                         <Metric label="Mitra" value={settlement.mitra?.display_name || '-'} />
                         <Metric label="Status" value={status.label} />
-                        <Metric label="Jumlah Bahan" value={`${items.length} bahan`} />
+                        <Metric label="Cakupan" value={`${items.length} bahan / ${outletCount || 1} outlet`} />
                         <Metric label="Total Setoran" value={formatRupiah(settlement.total_amount)} emphasis />
                     </div>
 
@@ -524,10 +559,16 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
                     <h3 className="mb-3 font-semibold text-slate-900">Perincian Bahan</h3>
                     <div className="grid gap-3 sm:grid-cols-2">
                         {items.map((item, index) => (
-                            <div key={`${item.stock_item_id}-${index}`} className="rounded-lg border border-slate-200 p-4">
+                            <button
+                                key={`${item.stock_item_id}-${index}`}
+                                type="button"
+                                onClick={() => onUsageInspect(item)}
+                                className="rounded-lg border border-slate-200 p-4 text-left transition hover:border-indigo-300 hover:bg-indigo-50/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
                                         <p className="truncate font-semibold text-slate-900">{item.name}</p>
+                                        <p className="mt-1 inline-flex rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{item.outlet_name || 'Outlet'}</p>
                                         <p className="mt-0.5 text-xs text-slate-500">{formatRupiah(item.restock_price)} per {formatQty(item.min_restock_qty, item.unit_name)}</p>
                                     </div>
                                     <p className="shrink-0 font-bold text-indigo-700">{formatRupiah(item.subtotal)}</p>
@@ -536,7 +577,14 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
                                     <span className="text-slate-500">Jumlah dihitung</span>
                                     <span className="font-semibold text-slate-900">{formatQty(item.calculated_qty, item.unit_name)}</span>
                                 </div>
-                            </div>
+                                {settlement.calculation_method === 'SALES' && (
+                                    <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                                        <span className="font-medium text-emerald-700">Terjual {formatQty(item.sold_qty, item.unit_name)}</span>
+                                        <span className="font-medium text-rose-700">Waste {formatQty(item.waste_qty, item.unit_name)}</span>
+                                    </div>
+                                )}
+                                <p className="mt-3 text-xs font-semibold text-indigo-600">Lihat rincian</p>
+                            </button>
                         ))}
                     </div>
 
@@ -581,6 +629,120 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+function UsageDetail({ item, calculationMethod, onClose }) {
+    const isUsageMethod = calculationMethod === 'SALES';
+    const calculatedQuantity = Number(item.calculated_qty ?? item.remainingQuantity ?? 0);
+    const breakdown = [
+        { label: 'Penggunaan pribadi owner', value: item.personal_use_qty, tone: 'text-violet-700 bg-violet-50' },
+        { label: 'Basi / kedaluwarsa', value: item.expired_waste_qty, tone: 'text-amber-700 bg-amber-50' },
+        { label: 'Rusak', value: item.damaged_waste_qty, tone: 'text-rose-700 bg-rose-50' },
+        { label: 'Waste lainnya', value: item.other_waste_qty, tone: 'text-slate-700 bg-slate-100' },
+    ].filter((row) => Number(row.value || 0) > 0);
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-3 sm:p-5">
+            <div className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
+                <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+                    <div className="min-w-0">
+                        <h2 className="truncate text-lg font-semibold text-slate-900">{item.name}</h2>
+                        <p className="mt-1 inline-flex rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{item.outlet_name || 'Outlet'}</p>
+                        <p className="mt-1 text-sm text-slate-500">
+                            {formatRupiah(item.restock_price)} per {formatQty(item.min_restock_qty, item.unit_name)}
+                        </p>
+                    </div>
+                    <button type="button" onClick={onClose} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
+                        <XMarkIcon className="h-5 w-5" />
+                    </button>
+                </div>
+
+                <div className="overflow-y-auto p-5">
+                    {isUsageMethod ? (
+                        <>
+                            <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200">
+                                <UsageMetric label="Terjual" value={formatQty(item.sold_qty, item.unit_name)} tone="emerald" />
+                                <UsageMetric label="Waste & Pribadi" value={formatQty(item.waste_qty, item.unit_name)} tone="rose" />
+                                <UsageMetric label="Total Terpakai" value={formatQty(item.sales_qty, item.unit_name)} tone="slate" />
+                            </div>
+
+                            <div className="mt-5">
+                                <h3 className="text-sm font-semibold text-slate-900">Rincian Non-Penjualan</h3>
+                                {breakdown.length > 0 ? (
+                                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                        {breakdown.map((row) => (
+                                            <div key={row.label} className={`rounded-md px-3 py-3 ${row.tone}`}>
+                                                <p className="text-xs">{row.label}</p>
+                                                <p className="mt-1 font-bold">{formatQty(row.value, item.unit_name)}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="mt-2 rounded-md bg-slate-50 px-3 py-4 text-sm text-slate-500">Tidak ada waste atau penggunaan pribadi pada periode ini.</p>
+                                )}
+                            </div>
+
+                            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                                <div className="rounded-md border border-slate-200 p-3">
+                                    <p className="text-xs text-slate-500">Waste produk jadi</p>
+                                    <p className="mt-1 font-semibold text-slate-900">{formatQty(item.product_waste_qty, item.unit_name)}</p>
+                                </div>
+                                <div className="rounded-md border border-slate-200 p-3">
+                                    <p className="text-xs text-slate-500">Waste bahan langsung</p>
+                                    <p className="mt-1 font-semibold text-slate-900">{formatQty(item.stock_waste_qty, item.unit_name)}</p>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
+                            <p className="text-sm text-sky-700">Stok diterima outlet</p>
+                            <p className="mt-1 text-2xl font-bold text-sky-900">{formatQty(item.restock_qty, item.unit_name)}</p>
+                        </div>
+                    )}
+
+                    <div className="mt-5 border-t border-slate-200 pt-5">
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <p className="text-xs text-slate-500">Sudah lunas</p>
+                                <p className="mt-1 font-semibold text-slate-900">{formatQty(item.settled_qty, item.unit_name)}</p>
+                            </div>
+                            <div>
+                                <p className="text-xs text-slate-500">Sedang diajukan</p>
+                                <p className="mt-1 font-semibold text-amber-700">{formatQty(item.pending_settlement_qty, item.unit_name)}</p>
+                            </div>
+                        </div>
+                        <div className="mt-4 flex items-end justify-between rounded-lg bg-indigo-50 p-4">
+                            <div>
+                                <p className="text-xs font-medium text-indigo-700">Jumlah pada setoran ini</p>
+                                <p className="mt-1 text-xl font-bold text-indigo-900">{formatQty(calculatedQuantity, item.unit_name)}</p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs text-indigo-700">Nilai setoran</p>
+                                <p className="mt-1 text-xl font-bold text-indigo-900">
+                                    {formatRupiah(item.subtotal ?? (calculatedQuantity / Math.max(1, Number(item.min_restock_qty))) * Number(item.restock_price))}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function UsageMetric({ label, value, tone }) {
+    const tones = {
+        emerald: 'bg-emerald-50 text-emerald-900',
+        rose: 'bg-rose-50 text-rose-900',
+        slate: 'bg-slate-50 text-slate-900',
+    };
+
+    return (
+        <div className={`min-w-0 p-3 ${tones[tone]}`}>
+            <p className="truncate text-xs opacity-70">{label}</p>
+            <p className="mt-1 truncate font-bold" title={value}>{value}</p>
         </div>
     );
 }

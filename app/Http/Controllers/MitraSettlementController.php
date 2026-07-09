@@ -36,7 +36,6 @@ class MitraSettlementController extends Controller
                 'validator:id,display_name',
                 'payer:id,display_name',
             ])
-                ->where('outlet_id', $outletId)
                 ->where('mitra_id', $user->id)
                 ->orderByDesc('created_at')
                 ->get();
@@ -55,7 +54,7 @@ class MitraSettlementController extends Controller
         // Owner flow: full access
         $mitras = User::where('role', 'MITRA')
             ->where('is_active', true)
-            ->whereHas('mitraStockItems', fn ($query) => $query->where('stock_items.outlet_id', $outletId))
+            ->whereHas('mitraStockItems')
             ->orderBy('display_name')
             ->get(['id', 'display_name']);
 
@@ -67,7 +66,7 @@ class MitraSettlementController extends Controller
         if ($outletId && $selectedMitraId) {
             $mitra = User::find($selectedMitraId);
             if ($mitra) {
-                $reportData = $this->mitraReportService->getMitraReportData($outletId, $mitra, $startDate, $endDate);
+                $reportData = $this->mitraReportService->getMitraReportDataAcrossOutlets($mitra, $startDate, $endDate);
             }
         }
 
@@ -76,7 +75,6 @@ class MitraSettlementController extends Controller
             'validator:id,display_name',
             'payer:id,display_name',
         ])
-            ->where('outlet_id', $outletId)
             ->orderByDesc('created_at')
             ->get();
 
@@ -108,13 +106,13 @@ class MitraSettlementController extends Controller
         ]);
 
         $mitra = User::find($data['mitra_id']);
-        if (! $mitra || ! $mitra->isMitra() || ! $mitra->mitraStockItems()->where('stock_items.outlet_id', $outletId)->exists()) {
+        if (! $mitra || ! $mitra->isMitra() || ! $mitra->mitraStockItems()->exists()) {
             return redirect()->back()->withErrors(['mitra_id' => 'Pengguna tidak valid.']);
         }
 
         $startDate = Carbon::parse($data['start_date'])->startOfDay();
         $endDate = Carbon::parse($data['end_date'])->endOfDay();
-        $reportData = $this->mitraReportService->getMitraReportData($outletId, $mitra, $startDate, $endDate);
+        $reportData = $this->mitraReportService->getMitraReportDataAcrossOutlets($mitra, $startDate, $endDate);
         $receiptData = [];
         $totalAmount = 0.0;
 
@@ -125,10 +123,6 @@ class MitraSettlementController extends Controller
             $remainingQty = max(0, $rawQty - (float) ($item['committed_qty'] ?? $item['settled_qty'] ?? 0));
             $minQty = (float) $item['min_restock_qty'] > 0 ? (float) $item['min_restock_qty'] : 1;
             $subtotal = ($remainingQty / $minQty) * (float) $item['restock_price'];
-
-            if ($remainingQty <= 0) {
-                continue;
-            }
 
             $receiptData[] = [
                 ...$item,
@@ -166,9 +160,17 @@ class MitraSettlementController extends Controller
         $settlement = $this->settlementQueryForUser($request)
             ->where('id', $id)
             ->firstOrFail();
+        $outletNames = collect($settlement->receipt_data ?? [])
+            ->pluck('outlet_name')
+            ->filter()
+            ->unique()
+            ->values();
 
         $pdf = Pdf::loadView('pdf.mitra-settlements', [
             'outlet' => $settlement->outlet,
+            'documentOutletName' => $outletNames->count() === 1
+                ? $outletNames->first()
+                : "Gabungan {$outletNames->count()} Outlet",
             'settlements' => collect([$settlement]),
             'isSingle' => true,
             'reportStart' => $settlement->period_start,
@@ -210,6 +212,7 @@ class MitraSettlementController extends Controller
 
         $pdf = Pdf::loadView('pdf.mitra-settlements', [
             'outlet' => $outlet,
+            'documentOutletName' => 'Semua Outlet',
             'settlements' => $settlements,
             'isSingle' => false,
             'reportStart' => $startDate,
@@ -231,7 +234,6 @@ class MitraSettlementController extends Controller
         ]);
 
         $settlement = MitraSettlement::where('id', $id)
-            ->where('outlet_id', $request->session()->get('outlet_id'))
             ->where('mitra_id', $user->id)
             ->firstOrFail();
 
@@ -259,9 +261,11 @@ class MitraSettlementController extends Controller
             abort(403, 'Anda tidak memiliki akses ke halaman ini.');
         }
 
-        $settlement = MitraSettlement::where('id', $id)
-            ->where('outlet_id', $request->session()->get('outlet_id'))
-            ->firstOrFail();
+        $settlementQuery = MitraSettlement::where('id', $id);
+        if (! $user->isOwner()) {
+            $settlementQuery->where('outlet_id', $request->session()->get('outlet_id'));
+        }
+        $settlement = $settlementQuery->firstOrFail();
 
         if ($settlement->status !== MitraSettlement::STATUS_APPROVED) {
             return back()->withErrors(['settlement' => 'Setoran harus disetujui mitra sebelum ditandai lunas.']);
@@ -291,13 +295,19 @@ class MitraSettlementController extends Controller
     {
         $user = $request->user();
 
-        return MitraSettlement::with([
+        $query = MitraSettlement::with([
             'outlet:id,name,address,phone',
             'mitra:id,display_name',
             'validator:id,display_name',
             'payer:id,display_name',
-        ])
-            ->where('outlet_id', $request->session()->get('outlet_id'))
-            ->when($user->isMitra(), fn ($query) => $query->where('mitra_id', $user->id));
+        ]);
+
+        if ($user->isMitra()) {
+            $query->where('mitra_id', $user->id);
+        } elseif (! $user->isOwner()) {
+            $query->where('outlet_id', $request->session()->get('outlet_id'));
+        }
+
+        return $query;
     }
 }
