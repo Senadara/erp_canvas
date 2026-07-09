@@ -22,6 +22,52 @@ class FinanceCashierFundTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_opening_cash_defaults_to_fifty_thousand_but_accepts_a_lower_actual_amount(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-06 08:00:00'));
+
+        try {
+            $outlet = Outlet::create(['name' => 'Outlet Kas Fleksibel']);
+            $owner = User::create([
+                'email' => 'owner-flexible-cash@karsa.local',
+                'password_hash' => Hash::make('password'),
+                'display_name' => 'Owner Kas Fleksibel',
+                'role' => 'OWNER',
+                'is_active' => true,
+            ]);
+
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->post(route('shifts.store'), [
+                    'name' => 'Shift Kas Minim',
+                    'opening_cash' => 30000,
+                ])
+                ->assertRedirect()
+                ->assertSessionHas('success');
+
+            $shift = app(ShiftService::class)->getOpenShift($outlet->id);
+            $this->assertSame(30000.0, (float) $shift->opening_cash);
+            $this->assertSame(30000.0, app(ShiftService::class)->moneySummary($shift)['cash']['expected']);
+
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->get(route('finance', [
+                    'date_from' => '2026-07-06',
+                    'date_to' => '2026-07-06',
+                ]))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->where('summary.defaultOpeningCash', 50000)
+                    ->where('summary.openingCash', 30000)
+                    ->where('summary.cashDrawerActual', 30000)
+                    ->where('summary.cashDrawerNet', 0)
+                    ->where('summary.cleanFinance', 0)
+                );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_cashier_topup_increases_shift_cash_but_reduces_outlet_finance_allocation(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-06 08:00:00'));
@@ -560,7 +606,7 @@ class FinanceCashierFundTest extends TestCase
 
             $shift = app(ShiftService::class)->openShift($outlet->id, 125000, 'Shift Pagi');
 
-            $this->assertSame(ShiftService::STANDARD_OPENING_CASH, (int) $shift->opening_cash);
+            $this->assertSame(125000, (int) $shift->opening_cash);
 
             $stock = StockItem::create([
                 'outlet_id' => $outlet->id,
@@ -581,7 +627,7 @@ class FinanceCashierFundTest extends TestCase
 
             $this->assertSame(50000.0, $shiftSummary['cash']['expenses']);
             $this->assertSame(50000.0, $shiftSummary['outside']['expenses']);
-            $this->assertSame(0.0, $shiftSummary['cash']['expected']);
+            $this->assertSame(75000.0, $shiftSummary['cash']['expected']);
 
             $this->assertDatabaseHas('restock_logs', [
                 'stock_item_id' => $stock->id,
@@ -605,7 +651,9 @@ class FinanceCashierFundTest extends TestCase
                 ->assertOk()
                 ->assertInertia(fn (Assert $page) => $page
                     ->component('Finance/Index')
-                    ->where('summary.standardOpeningCash', 50000)
+                    ->where('summary.defaultOpeningCash', 50000)
+                    ->where('summary.openingCash', 125000)
+                    ->where('summary.standardOpeningCash', 125000)
                     ->where('summary.expenseTotal', 100000)
                     ->where('summary.cashExpense', 50000)
                     ->where('summary.outsideExpense', 50000)

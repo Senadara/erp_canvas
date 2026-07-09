@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Conversion;
+use App\Models\MitraStockDelivery;
 use App\Models\PettyCash;
 use App\Models\Product;
 use App\Models\RestockLog;
@@ -200,6 +201,7 @@ class StockService
         DB::transaction(function () use ($stockItemId, $item) {
             DB::table('mitra_stock_scopes')->where('stock_item_id', $stockItemId)->delete();
             WasteLog::where('stock_item_id', $stockItemId)->delete();
+            MitraStockDelivery::where('stock_item_id', $stockItemId)->delete();
             RestockLog::where('stock_item_id', $stockItemId)->delete();
             $item->delete();
         });

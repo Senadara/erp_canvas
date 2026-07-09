@@ -9,6 +9,7 @@ use App\Models\StockItem;
 use App\Models\User;
 use App\Models\WasteLog;
 use App\Services\MitraReportService;
+use App\Services\TransactionService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -101,6 +102,35 @@ class WasteProductTest extends TestCase
             $this->assertSame(6.0, (float) $report[0]['sales_qty']);
             $this->assertSame(30000.0, (float) $report[0]['sales_subtotal']);
             $this->assertSame(30000.0, (float) WasteLog::firstOrFail()->loss_amount);
+
+            app(TransactionService::class)->processSale([
+                'outlet_id' => $outlet->id,
+                'items' => [[
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                    'qty_porsi' => 2,
+                    'price_per_porsi' => 15000,
+                ]],
+                'payment_status' => 'PAID',
+                'payment_method' => 'CASH',
+                'cash_received' => 30000,
+            ]);
+
+            $overview = app(MitraReportService::class)->getMitraReportOverview(
+                $outlet->id,
+                $mitra,
+                Carbon::parse('2026-07-07'),
+                Carbon::parse('2026-07-07')
+            );
+
+            $this->assertCount(1, $overview['product_usage']);
+            $this->assertSame('Dimsum Isi 2', $overview['product_usage'][0]['name']);
+            $this->assertSame(2.0, (float) $overview['product_usage'][0]['sold_qty']);
+            $this->assertSame(3.0, (float) $overview['product_usage'][0]['waste_qty']);
+            $this->assertSame(5.0, (float) $overview['product_usage'][0]['total_usage_qty']);
+            $this->assertSame(4.0, (float) $overview['product_usage'][0]['materials'][0]['sold_usage']);
+            $this->assertSame(6.0, (float) $overview['product_usage'][0]['materials'][0]['waste_usage']);
+            $this->assertSame(10.0, (float) $overview['product_usage'][0]['materials'][0]['total_usage']);
         } finally {
             Carbon::setTestNow();
         }

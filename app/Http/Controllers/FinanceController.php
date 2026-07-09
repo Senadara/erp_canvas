@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\FinanceWithdrawalSnapshot;
 use App\Models\Outlet;
 use App\Models\PettyCash;
+use App\Models\ShiftRecord;
 use App\Models\Transaction;
 use App\Services\PettyCashService;
 use App\Services\ShiftService;
@@ -65,7 +66,9 @@ class FinanceController extends Controller
         $periodSummary = $this->enrichSummaryWithCashPosition(
             $this->buildSummary($paidTransactions, $unpaidTransactions, $canceledTransactions, $cashMovements),
             $start,
-            $end
+            $end,
+            [],
+            $outletId
         );
 
         $currentEnd = $this->financeNow();
@@ -86,7 +89,8 @@ class FinanceController extends Controller
             $this->buildSummary($currentPaidTransactions, collect(), collect(), $currentCashMovements),
             $currentPeriod['start'],
             $currentEnd,
-            $currentPeriod['carry']
+            $currentPeriod['carry'],
+            $outletId
         );
         $summary['lastWithdrawalAt'] = null;
         $summary['resetAfterWithdrawal'] = false;
@@ -265,7 +269,7 @@ class FinanceController extends Controller
             collect(),
             $movementQuery->orderByDesc('created_at')->get()
         );
-        $summary = $this->enrichSummaryWithCashPosition($summary, $periodStart, $periodEnd, $carry);
+        $summary = $this->enrichSummaryWithCashPosition($summary, $periodStart, $periodEnd, $carry, $outletId);
         $cashBalanceBefore = (float) $summary['cashDrawerActual'];
         $qrisBalanceBefore = (float) $summary['qrisBalanceActual'];
         $availableBefore = (float) $summary['cleanFinance'];
@@ -542,9 +546,19 @@ class FinanceController extends Controller
         ];
     }
 
-    private function enrichSummaryWithCashPosition(array $summary, Carbon $periodStart, Carbon $periodEnd, array $carry = []): array
+    private function enrichSummaryWithCashPosition(
+        array $summary,
+        Carbon $periodStart,
+        Carbon $periodEnd,
+        array $carry = [],
+        ?string $outletId = null
+    ): array
     {
-        $standardOpeningCash = (float) $summary['standardOpeningCash'];
+        $defaultOpeningCash = ShiftService::STANDARD_OPENING_CASH;
+        $openingCash = $this->resolveOpeningCash($outletId, $periodStart, $periodEnd);
+        $summary['standardOpeningCash'] = $openingCash;
+        $summary['defaultOpeningCash'] = $defaultOpeningCash;
+        $summary['openingCash'] = $openingCash;
         $carryCashNet = (float) ($carry['cash_net'] ?? 0);
         $carryQrisBalance = (float) ($carry['qris_balance'] ?? 0);
         $carryCashierTopups = (float) ($carry['cashier_topups'] ?? 0);
@@ -553,14 +567,14 @@ class FinanceController extends Controller
         $activeCashierTopups = $carryCashierTopups + $cashierTopups;
         $activeOutsideCashierTopups = $carryOutsideCashierTopups + (float) $summary['outsideCashierTopups'];
         $activeDrawerCashierTopups = $activeCashierTopups - $activeOutsideCashierTopups;
-        $cashDrawerActual = $standardOpeningCash
+        $cashDrawerActual = $openingCash
             + $carryCashNet
             + (float) $summary['cashSales']
             + $activeOutsideCashierTopups
             + (float) $summary['cashAdditions']
             - (float) $summary['cashExpense']
             - (float) $summary['withdrawCash'];
-        $cashDrawerNet = $cashDrawerActual - $standardOpeningCash - $activeCashierTopups;
+        $cashDrawerNet = $cashDrawerActual - $openingCash - $activeCashierTopups;
         $qrisBalanceActual = $carryQrisBalance
             + (float) $summary['qrisSales']
             - (float) $summary['qrisExpense']
@@ -585,6 +599,24 @@ class FinanceController extends Controller
             'dailySalesAverage' => (float) $summary['omzet'] / $periodDays,
             'dailyExpenseAverage' => (float) $summary['expenseTotal'] / $periodDays,
         ]);
+    }
+
+    private function resolveOpeningCash(?string $outletId, Carbon $periodStart, Carbon $periodEnd): float
+    {
+        if (! $outletId) {
+            return ShiftService::STANDARD_OPENING_CASH;
+        }
+
+        $shift = ShiftRecord::where('outlet_id', $outletId)
+            ->where('opened_at', '<=', $periodEnd)
+            ->where(function ($query) use ($periodStart) {
+                $query->whereNull('closed_at')
+                    ->orWhere('closed_at', '>=', $periodStart);
+            })
+            ->orderByDesc('opened_at')
+            ->first(['opening_cash']);
+
+        return $shift ? (float) $shift->opening_cash : ShiftService::STANDARD_OPENING_CASH;
     }
 
     private function buildDailySeries(Carbon $start, Carbon $end, $paidTransactions, $cashMovements): array

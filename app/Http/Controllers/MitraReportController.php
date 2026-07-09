@@ -29,12 +29,22 @@ class MitraReportController extends Controller
             : Carbon::now()->endOfMonth();
 
         $reportData = [];
+        $overview = [
+            'items' => [],
+            'summary' => [],
+            'product_usage' => [],
+            'deliveries' => [],
+            'restock_history' => [],
+            'settlements' => [],
+        ];
         if ($outletId) {
-            $reportData = $this->mitraReportService->getMitraReportData($outletId, $user, $startDate, $endDate);
+            $overview = $this->mitraReportService->getMitraReportOverview($outletId, $user, $startDate, $endDate);
+            $reportData = $overview['items'];
         }
 
         return Inertia::render('MitraReports/Index', [
             'reportData' => $reportData,
+            'overview' => $overview,
             'startDate' => $startDate->format('Y-m-d'),
             'endDate' => $endDate->format('Y-m-d'),
         ]);

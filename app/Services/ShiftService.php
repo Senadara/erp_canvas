@@ -37,7 +37,7 @@ class ShiftService
         return ShiftRecord::create([
             'outlet_id' => $outletId,
             'name' => $name,
-            'opening_cash' => self::STANDARD_OPENING_CASH,
+            'opening_cash' => $openingCash,
             'status' => 'OPEN',
             'opened_at' => Carbon::now(),
         ]);

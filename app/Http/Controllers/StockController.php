@@ -46,11 +46,23 @@ class StockController extends Controller
         }
 
         $restockLogs = $restockLogs->get();
+        $deliveries = \App\Models\MitraStockDelivery::with([
+            'stockItem:id,name,unit_name',
+            'mitra:id,display_name',
+            'receiver:id,display_name',
+        ])
+            ->where('outlet_id', $outletId)
+            ->when($user && $user->isMitra(), fn ($query) => $query->where('mitra_id', $user->id))
+            ->orderByRaw("CASE WHEN status = 'SENT' THEN 0 ELSE 1 END")
+            ->orderByDesc('sent_at')
+            ->take(150)
+            ->get();
 
         return Inertia::render('Stock/Index', [
             'stockItems' => $stockItems,
             'displayGroups' => $displayGroups,
             'restockLogs' => $restockLogs,
+            'deliveries' => $deliveries,
         ]);
     }
 

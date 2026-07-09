@@ -157,7 +157,7 @@ export default function FinanceIndex({
             label: 'Uang Laci',
             value: summary.cashDrawerNet,
             tone: signedTone(summary.cashDrawerNet, 'text-slate-900'),
-            sub: `Tanpa modal ${formatRupiah(summary.standardOpeningCash || 50000)} dan top up. Fisik laci ${formatRupiah(summary.cashDrawerActual)}.`,
+            sub: `Tanpa modal aktual ${formatRupiah(summary.openingCash ?? summary.standardOpeningCash ?? 50000)} dan top up. Fisik laci ${formatRupiah(summary.cashDrawerActual)}.`,
         },
         {
             label: 'Keuangan Bersih',
@@ -268,7 +268,7 @@ export default function FinanceIndex({
                         <BanknotesIcon className="mt-0.5 h-5 w-5 shrink-0" />
                         <div>
                             <p className="font-semibold">Omzet lunas hanya berasal dari transaksi PAID.</p>
-                            <p className="mt-1 text-amber-800">Modal kas shift {formatRupiah(summary.standardOpeningCash || 50000)} dan top up kasir tidak dihitung sebagai omzet. Setelah owner menarik uang, ringkasan aktual dimulai lagi dari sisa setelah penarikan tersebut.</p>
+                            <p className="mt-1 text-amber-800">Modal kas aktual shift {formatRupiah(summary.openingCash ?? summary.standardOpeningCash ?? 50000)} tidak dihitung sebagai omzet. Nilai default saat membuka shift adalah {formatRupiah(summary.defaultOpeningCash || 50000)} dan tetap dapat disesuaikan.</p>
                         </div>
                     </div>
                 </div>

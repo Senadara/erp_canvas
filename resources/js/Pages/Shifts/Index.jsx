@@ -158,13 +158,14 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
         
         if (isOffline) {
             try {
-                const localId = await enqueueShift({ name: openData.name, opening_cash: cashierStandardCash }, 'open');
+                const openingCash = Number(openData.opening_cash);
+                const localId = await enqueueShift({ name: openData.name, opening_cash: openingCash }, 'open');
                 // Create a local shift object for immediate UI update
                 const localShift = {
                     id: `local-${localId}`,
                     localId,
                     name: openData.name,
-                    opening_cash: cashierStandardCash,
+                    opening_cash: openingCash,
                     opened_at: new Date().toISOString(),
                     isOffline: true
                 };
@@ -390,16 +391,33 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Kas Awal Standar (Uang di Laci) Rp</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Kas Awal di Laci (Rp)</label>
                                 <input
                                     type="number"
                                     min="0"
+                                    step="1000"
                                     value={openData.opening_cash}
-                                    readOnly
-                                    className="w-full border border-amber-200 bg-amber-50 rounded-md px-3 py-2 text-sm font-semibold text-amber-900"
+                                    onChange={e => setOpenData('opening_cash', e.target.value)}
+                                    className="w-full border border-slate-300 bg-white rounded-md px-3 py-2 text-sm font-semibold text-slate-900 focus:border-emerald-500 focus:ring-emerald-500"
                                     required
                                 />
-                                <p className="mt-1 text-xs text-slate-500">Kas awal selalu {formatRupiah(cashierStandardCash)} setiap buka shift. Jika hari ini ada top up tambahan, shift berikutnya tetap kembali ke standar ini.</p>
+                                <div className="mt-2 grid grid-cols-3 gap-2">
+                                    {[0, cashierStandardCash, 100000].map((amount) => (
+                                        <button
+                                            key={amount}
+                                            type="button"
+                                            onClick={() => setOpenData('opening_cash', amount)}
+                                            className={`rounded-md border px-2 py-1.5 text-xs font-semibold ${
+                                                Number(openData.opening_cash) === amount
+                                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            {formatRupiah(amount)}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="mt-2 text-xs text-slate-500">Default {formatRupiah(cashierStandardCash)}, tetapi dapat disesuaikan dengan uang fisik saat shift dibuka. Shift berikutnya kembali menggunakan nilai default.</p>
                             </div>
                             <button type="submit" disabled={opening} className="w-full bg-emerald-600 text-white font-medium py-2 rounded hover:bg-emerald-700 transition disabled:opacity-50">
                                 {opening ? 'Membuka...' : 'Buka Shift Baru'}

@@ -80,6 +80,7 @@ class OutletController extends Controller
             \App\Models\ShiftRecord::where('outlet_id', $outlet->id)->delete();
             \App\Models\PettyCash::where('outlet_id', $outlet->id)->delete();
             \App\Models\WasteLog::where('outlet_id', $outlet->id)->delete();
+            \App\Models\MitraStockDelivery::where('outlet_id', $outlet->id)->delete();
             \Illuminate\Support\Facades\DB::table('restock_logs')->where('outlet_id', $outlet->id)->delete();
             \App\Models\Product::where('outlet_id', $outlet->id)->delete();
             \App\Models\StockItem::where('outlet_id', $outlet->id)->delete();

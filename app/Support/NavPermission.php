@@ -17,7 +17,7 @@ class NavPermission
         'reports' => false,
         'finance' => false,
         'mitra_reports' => false,
-        'settlements' => false,
+        'settlements' => true,
         'receipts' => true,
         'owner' => false,
         'users' => false,

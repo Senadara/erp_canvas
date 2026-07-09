@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, useForm, router, usePage } from '@inertiajs/react';
+import {
+    ArchiveBoxArrowDownIcon,
+    CheckCircleIcon,
+    ExclamationTriangleIcon,
+    PaperAirplaneIcon,
+    XMarkIcon,
+} from '@heroicons/react/24/outline';
 
 function formatRupiah(value) {
     const n = Number(value) || 0;
@@ -8,15 +15,29 @@ function formatRupiah(value) {
 }
 
 function fundSourceLabel(source) {
-    return source === 'PRIVATE_CASH' ? 'Uang Pribadi' : 'Kas Kasir';
+    if (source === 'PRIVATE_CASH') return 'Uang Pribadi';
+    if (source === 'MITRA_DELIVERY') return 'Kiriman Mitra';
+    return 'Kas Kasir';
 }
 
-export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
+function deliveryStatus(delivery) {
+    if (delivery.status === 'SENT') {
+        return { label: 'Menunggu Outlet', className: 'bg-amber-100 text-amber-800' };
+    }
+    if (delivery.status === 'RECEIVED_MATCH') {
+        return { label: 'Sesuai', className: 'bg-emerald-100 text-emerald-800' };
+    }
+    return { label: 'Ada Selisih', className: 'bg-rose-100 text-rose-800' };
+}
+
+export default function StockIndex({ stockItems, displayGroups, restockLogs, deliveries = [] }) {
     const [activeTab, setActiveTab] = useState('stock');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
+    const [deliveryItem, setDeliveryItem] = useState(null);
+    const [receivingDelivery, setReceivingDelivery] = useState(null);
     const [filterGroup, setFilterGroup] = useState('');
 
     const { data, setData, post, processing, errors, reset } = useForm({
@@ -41,6 +62,31 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
     const { data: groupData, setData: setGroupData, post: postGroup, processing: groupProcessing, reset: resetGroup } = useForm({
         name: '',
         context: 'STOCK',
+    });
+
+    const {
+        data: deliveryData,
+        setData: setDeliveryData,
+        post: postDelivery,
+        processing: deliveryProcessing,
+        reset: resetDelivery,
+        errors: deliveryErrors,
+    } = useForm({
+        stock_item_id: '',
+        qty_sent: '',
+        sender_note: '',
+    });
+
+    const {
+        data: receiveData,
+        setData: setReceiveData,
+        post: postReceive,
+        processing: receiveProcessing,
+        reset: resetReceive,
+        errors: receiveErrors,
+    } = useForm({
+        qty_received: '',
+        receiver_note: '',
     });
 
     const { auth } = usePage().props;
@@ -123,6 +169,52 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
         }
     };
 
+    const openDeliveryModal = (item) => {
+        setDeliveryItem(item);
+        setDeliveryData({
+            stock_item_id: item.id,
+            qty_sent: '',
+            sender_note: '',
+        });
+    };
+
+    const closeDeliveryModal = () => {
+        setDeliveryItem(null);
+        resetDelivery();
+    };
+
+    const submitDelivery = (event) => {
+        event.preventDefault();
+        postDelivery(route('mitra-stock-deliveries.store'), {
+            preserveScroll: true,
+            onSuccess: () => {
+                closeDeliveryModal();
+                setActiveTab('deliveries');
+            },
+        });
+    };
+
+    const openReceiveModal = (delivery) => {
+        setReceivingDelivery(delivery);
+        setReceiveData({
+            qty_received: String(Number(delivery.qty_sent)),
+            receiver_note: '',
+        });
+    };
+
+    const closeReceiveModal = () => {
+        setReceivingDelivery(null);
+        resetReceive();
+    };
+
+    const submitReceive = (event) => {
+        event.preventDefault();
+        postReceive(route('mitra-stock-deliveries.receive', receivingDelivery.id), {
+            preserveScroll: true,
+            onSuccess: closeReceiveModal,
+        });
+    };
+
     const handleUpdatePrice = (id, currentPrice) => {
         const priceStr = prompt("Masukkan harga mitra baru (contoh: 15000):", currentPrice);
         if (priceStr !== null) {
@@ -168,6 +260,17 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
                     className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'restock_logs' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Histori Restock
+                </button>
+                <button
+                    onClick={() => setActiveTab('deliveries')}
+                    className={`relative px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'deliveries' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                >
+                    Kiriman Mitra
+                    {deliveries.filter((delivery) => delivery.status === 'SENT').length > 0 && (
+                        <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
+                            {deliveries.filter((delivery) => delivery.status === 'SENT').length}
+                        </span>
+                    )}
                 </button>
             </div>
 
@@ -247,7 +350,14 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
                                     )}
                                     <td className="px-4 py-3 flex gap-2">
                                         {isMitra ? (
-                                            <span className="text-xs text-slate-400 italic">Harga dikelola admin</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => openDeliveryModal(item)}
+                                                className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100"
+                                            >
+                                                <PaperAirplaneIcon className="h-4 w-4" />
+                                                Catat Kiriman
+                                            </button>
                                         ) : (
                                             <>
                                                 <button onClick={() => openRestockModal(item)} className="inline-flex items-center justify-center px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md font-medium hover:bg-emerald-100 transition-colors min-h-[36px] active:scale-[0.98]">Restock</button>
@@ -308,6 +418,94 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
                         </tbody>
                     </table>
                 </div>
+            )}
+
+            {activeTab === 'deliveries' && (
+                <section aria-labelledby="delivery-title">
+                    <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+                        <div>
+                            <h2 id="delivery-title" className="text-lg font-semibold text-slate-900">Kiriman Stok Mitra</h2>
+                            <p className="mt-1 text-sm text-slate-500">
+                                {isMitra
+                                    ? 'Jumlah kiriman akan dibandingkan dengan hasil pemeriksaan petugas outlet.'
+                                    : 'Periksa jumlah fisik sebelum menambahkannya ke stok outlet.'}
+                            </p>
+                        </div>
+                        <span className="text-sm font-semibold text-slate-600">
+                            {deliveries.filter((delivery) => delivery.status === 'SENT').length} menunggu pemeriksaan
+                        </span>
+                    </div>
+
+                    {deliveries.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-12 text-center text-sm text-slate-500">
+                            Belum ada pengiriman stok dari mitra.
+                        </div>
+                    ) : (
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            {deliveries.map((delivery) => {
+                                const status = deliveryStatus(delivery);
+                                const difference = delivery.qty_received === null
+                                    ? null
+                                    : Number(delivery.qty_received) - Number(delivery.qty_sent);
+
+                                return (
+                                    <article key={delivery.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                                        <div className="mb-4 flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <p className="truncate font-semibold text-slate-900">{delivery.stock_item?.name}</p>
+                                                {!isMitra && <p className="mt-0.5 truncate text-sm text-slate-500">{delivery.mitra?.display_name}</p>}
+                                            </div>
+                                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${status.className}`}>
+                                                {status.label}
+                                            </span>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-slate-200 bg-slate-200">
+                                            <div className="bg-slate-50 px-3 py-3">
+                                                <p className="text-xs text-slate-500">Dikirim Mitra</p>
+                                                <p className="mt-1 font-bold text-slate-900">{Number(delivery.qty_sent).toLocaleString('id-ID')} {delivery.stock_item?.unit_name}</p>
+                                            </div>
+                                            <div className="bg-slate-50 px-3 py-3">
+                                                <p className="text-xs text-slate-500">Diterima Outlet</p>
+                                                <p className="mt-1 font-bold text-slate-900">
+                                                    {delivery.qty_received === null ? '-' : `${Number(delivery.qty_received).toLocaleString('id-ID')} ${delivery.stock_item?.unit_name}`}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {difference !== null && (
+                                            <div className={`mt-3 flex items-center gap-2 text-sm font-semibold ${Math.abs(difference) < 0.0001 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                                {Math.abs(difference) < 0.0001
+                                                    ? <CheckCircleIcon className="h-5 w-5" />
+                                                    : <ExclamationTriangleIcon className="h-5 w-5" />}
+                                                {Math.abs(difference) < 0.0001
+                                                    ? 'Jumlah sesuai'
+                                                    : `Selisih ${difference > 0 ? '+' : ''}${difference.toLocaleString('id-ID')} ${delivery.stock_item?.unit_name}`}
+                                            </div>
+                                        )}
+
+                                        <div className="mt-4 space-y-1 text-xs text-slate-500">
+                                            <p>{new Date(delivery.sent_at).toLocaleString('id-ID')}</p>
+                                            {delivery.sender_note && <p>Catatan mitra: {delivery.sender_note}</p>}
+                                            {delivery.receiver_note && <p>Catatan outlet: {delivery.receiver_note}</p>}
+                                        </div>
+
+                                        {!isMitra && delivery.status === 'SENT' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => openReceiveModal(delivery)}
+                                                className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
+                                            >
+                                                <ArchiveBoxArrowDownIcon className="h-5 w-5" />
+                                                Periksa dan Terima
+                                            </button>
+                                        )}
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
             )}
 
             {isModalOpen && (
@@ -432,6 +630,103 @@ export default function StockIndex({ stockItems, displayGroups, restockLogs }) {
                                 </button>
                                 <button type="submit" disabled={processing} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
                                     {processing ? 'Menyimpan...' : 'Simpan'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {deliveryItem && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+                    <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
+                        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                            <div>
+                                <h2 className="font-semibold text-slate-900">Catat Kiriman Stok</h2>
+                                <p className="mt-0.5 text-sm text-slate-500">{deliveryItem.name}</p>
+                            </div>
+                            <button type="button" onClick={closeDeliveryModal} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
+                                <XMarkIcon className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={submitDelivery} className="space-y-4 p-5">
+                            <label className="block">
+                                <span className="mb-1.5 block text-sm font-medium text-slate-700">Jumlah Dikirim ({deliveryItem.unit_name})</span>
+                                <input
+                                    type="number"
+                                    min="0.0001"
+                                    step="0.0001"
+                                    value={deliveryData.qty_sent}
+                                    onChange={(event) => setDeliveryData('qty_sent', event.target.value)}
+                                    className="w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    required
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="mb-1.5 block text-sm font-medium text-slate-700">Catatan</span>
+                                <textarea
+                                    rows="3"
+                                    value={deliveryData.sender_note}
+                                    onChange={(event) => setDeliveryData('sender_note', event.target.value)}
+                                    className="w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    placeholder="Nomor surat jalan atau keterangan kiriman"
+                                />
+                            </label>
+                            {deliveryErrors.delivery && <p className="text-sm text-rose-600">{deliveryErrors.delivery}</p>}
+                            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                                <button type="button" onClick={closeDeliveryModal} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
+                                <button type="submit" disabled={deliveryProcessing} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                                    {deliveryProcessing ? 'Menyimpan...' : 'Catat Pengiriman'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {receivingDelivery && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+                    <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
+                        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                            <div>
+                                <h2 className="font-semibold text-slate-900">Periksa Kiriman</h2>
+                                <p className="mt-0.5 text-sm text-slate-500">{receivingDelivery.stock_item?.name}</p>
+                            </div>
+                            <button type="button" onClick={closeReceiveModal} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
+                                <XMarkIcon className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={submitReceive} className="space-y-4 p-5">
+                            <div className="rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+                                Mitra mencatat <strong>{Number(receivingDelivery.qty_sent).toLocaleString('id-ID')} {receivingDelivery.stock_item?.unit_name}</strong>.
+                            </div>
+                            <label className="block">
+                                <span className="mb-1.5 block text-sm font-medium text-slate-700">Jumlah Fisik Diterima</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.0001"
+                                    value={receiveData.qty_received}
+                                    onChange={(event) => setReceiveData('qty_received', event.target.value)}
+                                    className="w-full rounded-md border-slate-300 text-sm focus:border-emerald-500 focus:ring-emerald-500"
+                                    required
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="mb-1.5 block text-sm font-medium text-slate-700">Catatan Pemeriksaan</span>
+                                <textarea
+                                    rows="3"
+                                    value={receiveData.receiver_note}
+                                    onChange={(event) => setReceiveData('receiver_note', event.target.value)}
+                                    className="w-full rounded-md border-slate-300 text-sm focus:border-emerald-500 focus:ring-emerald-500"
+                                    placeholder="Jelaskan kondisi atau penyebab selisih bila ada"
+                                />
+                            </label>
+                            {receiveErrors.delivery && <p className="text-sm text-rose-600">{receiveErrors.delivery}</p>}
+                            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                                <button type="button" onClick={closeReceiveModal} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
+                                <button type="submit" disabled={receiveProcessing} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                                    {receiveProcessing ? 'Memproses...' : 'Terima ke Stok Outlet'}
                                 </button>
                             </div>
                         </form>

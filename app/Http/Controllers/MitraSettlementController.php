@@ -5,8 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\MitraSettlement;
 use App\Models\User;
 use App\Services\MitraReportService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 class MitraSettlementController extends Controller
@@ -28,7 +31,11 @@ class MitraSettlementController extends Controller
 
         // Untuk Mitra: hanya melihat riwayat setoran miliknya sendiri
         if ($isMitra) {
-            $settlements = MitraSettlement::with('mitra:id,display_name')
+            $settlements = MitraSettlement::with([
+                'mitra:id,display_name',
+                'validator:id,display_name',
+                'payer:id,display_name',
+            ])
                 ->where('outlet_id', $outletId)
                 ->where('mitra_id', $user->id)
                 ->orderByDesc('created_at')
@@ -46,7 +53,11 @@ class MitraSettlementController extends Controller
         }
         
         // Owner flow: full access
-        $mitras = User::where('role', 'MITRA')->where('is_active', true)->orderBy('display_name')->get(['id', 'display_name']);
+        $mitras = User::where('role', 'MITRA')
+            ->where('is_active', true)
+            ->whereHas('mitraStockItems', fn ($query) => $query->where('stock_items.outlet_id', $outletId))
+            ->orderBy('display_name')
+            ->get(['id', 'display_name']);
 
         $selectedMitraId = $request->query('mitra_id');
         $startDate = $request->query('start_date') ? Carbon::parse($request->query('start_date')) : Carbon::now()->startOfMonth();
@@ -60,7 +71,11 @@ class MitraSettlementController extends Controller
             }
         }
 
-        $settlements = MitraSettlement::with('mitra:id,display_name')
+        $settlements = MitraSettlement::with([
+            'mitra:id,display_name',
+            'validator:id,display_name',
+            'payer:id,display_name',
+        ])
             ->where('outlet_id', $outletId)
             ->orderByDesc('created_at')
             ->get();
@@ -88,29 +103,153 @@ class MitraSettlementController extends Controller
         $data = $request->validate([
             'mitra_id' => 'required|exists:users,id',
             'start_date' => 'required|date',
-            'end_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
             'calculation_method' => 'required|in:SALES,RESTOCK',
-            'total_amount' => 'required|numeric|min:0',
-            'receipt_data' => 'required|array',
         ]);
 
         $mitra = User::find($data['mitra_id']);
-        if (!$mitra || !$mitra->isMitra()) {
+        if (! $mitra || ! $mitra->isMitra() || ! $mitra->mitraStockItems()->where('stock_items.outlet_id', $outletId)->exists()) {
             return redirect()->back()->withErrors(['mitra_id' => 'Pengguna tidak valid.']);
         }
 
-        MitraSettlement::create([
-            'outlet_id' => $outletId,
-            'mitra_id' => $data['mitra_id'],
-            'period_start' => Carbon::parse($data['start_date'])->startOfDay(),
-            'period_end' => Carbon::parse($data['end_date'])->endOfDay(),
-            'calculation_method' => $data['calculation_method'],
-            'total_amount' => $data['total_amount'],
-            'status' => 'PENDING',
-            'receipt_data' => $data['receipt_data'],
+        $startDate = Carbon::parse($data['start_date'])->startOfDay();
+        $endDate = Carbon::parse($data['end_date'])->endOfDay();
+        $reportData = $this->mitraReportService->getMitraReportData($outletId, $mitra, $startDate, $endDate);
+        $receiptData = [];
+        $totalAmount = 0.0;
+
+        foreach ($reportData as $item) {
+            $rawQty = $data['calculation_method'] === 'SALES'
+                ? (float) $item['sales_qty']
+                : (float) $item['restock_qty'];
+            $remainingQty = max(0, $rawQty - (float) ($item['committed_qty'] ?? $item['settled_qty'] ?? 0));
+            $minQty = (float) $item['min_restock_qty'] > 0 ? (float) $item['min_restock_qty'] : 1;
+            $subtotal = ($remainingQty / $minQty) * (float) $item['restock_price'];
+
+            if ($remainingQty <= 0) {
+                continue;
+            }
+
+            $receiptData[] = [
+                ...$item,
+                'calculated_qty' => round($remainingQty, 4),
+                'subtotal' => round($subtotal),
+            ];
+            $totalAmount += $subtotal;
+        }
+
+        if ($totalAmount <= 0 || empty($receiptData)) {
+            return back()->withErrors(['settlement' => 'Tidak ada sisa setoran yang dapat diajukan pada periode ini.']);
+        }
+
+        DB::transaction(function () use ($outletId, $data, $startDate, $endDate, $receiptData, $totalAmount) {
+            MitraSettlement::create([
+                'outlet_id' => $outletId,
+                'mitra_id' => $data['mitra_id'],
+                'period_start' => $startDate,
+                'period_end' => $endDate,
+                'calculation_method' => $data['calculation_method'],
+                'total_amount' => round($totalAmount),
+                'status' => MitraSettlement::STATUS_PENDING,
+                'receipt_data' => $receiptData,
+            ]);
+        });
+
+        return redirect()->back()->with('success', 'Pengajuan setoran dikirim dan menunggu validasi mitra.');
+    }
+
+    public function downloadPdf(Request $request, string $id)
+    {
+        $user = $request->user();
+        $this->authorizeSettlementAccess($user);
+
+        $settlement = $this->settlementQueryForUser($request)
+            ->where('id', $id)
+            ->firstOrFail();
+
+        $pdf = Pdf::loadView('pdf.mitra-settlements', [
+            'outlet' => $settlement->outlet,
+            'settlements' => collect([$settlement]),
+            'isSingle' => true,
+            'reportStart' => $settlement->period_start,
+            'reportEnd' => $settlement->period_end,
+            'generatedAt' => now(),
+        ])->setPaper('a4', 'portrait');
+
+        $filename = 'setoran-'.Str::slug($settlement->mitra?->display_name ?: 'mitra').'-'.$settlement->created_at->format('Ymd').'.pdf';
+
+        return $pdf->download($filename);
+    }
+
+    public function exportPdf(Request $request)
+    {
+        $user = $request->user();
+        $this->authorizeSettlementAccess($user);
+
+        $data = $request->validate([
+            'start_date' => ['required', 'date_format:Y-m-d'],
+            'end_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:start_date'],
+            'mitra_id' => ['nullable', 'string', 'max:36'],
+        ]);
+        $startDate = Carbon::createFromFormat('Y-m-d', $data['start_date'])->startOfDay();
+        $endDate = Carbon::createFromFormat('Y-m-d', $data['end_date'])->endOfDay();
+
+        $query = $this->settlementQueryForUser($request)
+            ->where('period_start', '<=', $endDate)
+            ->where('period_end', '>=', $startDate);
+
+        if (! $user->isMitra() && ! empty($data['mitra_id'])) {
+            $query->where('mitra_id', $data['mitra_id']);
+        }
+
+        $settlements = $query
+            ->orderBy('period_start')
+            ->orderBy('created_at')
+            ->get();
+        $outlet = \App\Models\Outlet::findOrFail($request->session()->get('outlet_id'));
+
+        $pdf = Pdf::loadView('pdf.mitra-settlements', [
+            'outlet' => $outlet,
+            'settlements' => $settlements,
+            'isSingle' => false,
+            'reportStart' => $startDate,
+            'reportEnd' => $endDate,
+            'generatedAt' => now(),
+        ])->setPaper('a4', 'portrait');
+
+        return $pdf->download("rekap-setoran-{$startDate->format('Ymd')}-{$endDate->format('Ymd')}.pdf");
+    }
+
+    public function validateByMitra(Request $request, string $id)
+    {
+        $user = $request->user();
+        abort_unless($user?->isMitra(), 403, 'Hanya mitra terkait yang dapat memvalidasi setoran.');
+
+        $data = $request->validate([
+            'decision' => ['required', 'in:APPROVE,REJECT'],
+            'validation_note' => ['nullable', 'string', 'max:255', 'required_if:decision,REJECT'],
         ]);
 
-        return redirect()->back()->with('success', 'Struk setoran berhasil dibuat.');
+        $settlement = MitraSettlement::where('id', $id)
+            ->where('outlet_id', $request->session()->get('outlet_id'))
+            ->where('mitra_id', $user->id)
+            ->firstOrFail();
+
+        if ($settlement->status !== MitraSettlement::STATUS_PENDING) {
+            return back()->withErrors(['settlement' => 'Pengajuan ini sudah pernah divalidasi.']);
+        }
+
+        $approved = $data['decision'] === 'APPROVE';
+        $settlement->update([
+            'status' => $approved ? MitraSettlement::STATUS_APPROVED : MitraSettlement::STATUS_REJECTED,
+            'validated_at' => now(),
+            'validated_by' => $user->id,
+            'validation_note' => $data['validation_note'] ?? null,
+        ]);
+
+        return back()->with('success', $approved
+            ? 'Pengajuan setoran disetujui. Owner dapat melanjutkan pembayaran.'
+            : 'Pengajuan setoran ditolak dan dikembalikan kepada owner.');
     }
 
     public function pay(Request $request, string $id)
@@ -120,9 +259,45 @@ class MitraSettlementController extends Controller
             abort(403, 'Anda tidak memiliki akses ke halaman ini.');
         }
 
-        $settlement = MitraSettlement::findOrFail($id);
-        $settlement->update(['status' => 'PAID']);
+        $settlement = MitraSettlement::where('id', $id)
+            ->where('outlet_id', $request->session()->get('outlet_id'))
+            ->firstOrFail();
+
+        if ($settlement->status !== MitraSettlement::STATUS_APPROVED) {
+            return back()->withErrors(['settlement' => 'Setoran harus disetujui mitra sebelum ditandai lunas.']);
+        }
+
+        $settlement->update([
+            'status' => MitraSettlement::STATUS_PAID,
+            'paid_at' => now(),
+            'paid_by' => $user->id,
+        ]);
 
         return redirect()->back()->with('success', 'Setoran berhasil ditandai Lunas.');
+    }
+
+    private function authorizeSettlementAccess(?User $user): void
+    {
+        $allowed = $user && (
+            $user->isOwner()
+            || $user->isMitra()
+            || ($user->feature_overrides['settlements'] ?? false)
+        );
+
+        abort_unless($allowed, 403, 'Anda tidak memiliki akses ke dokumen setoran.');
+    }
+
+    private function settlementQueryForUser(Request $request)
+    {
+        $user = $request->user();
+
+        return MitraSettlement::with([
+            'outlet:id,name,address,phone',
+            'mitra:id,display_name',
+            'validator:id,display_name',
+            'payer:id,display_name',
+        ])
+            ->where('outlet_id', $request->session()->get('outlet_id'))
+            ->when($user->isMitra(), fn ($query) => $query->where('mitra_id', $user->id));
     }
 }

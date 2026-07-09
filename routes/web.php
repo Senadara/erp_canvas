@@ -29,6 +29,8 @@ Route::middleware(['auth', 'outlet'])->group(function () {
     Route::post('/stock/{id}/add', [\App\Http\Controllers\StockController::class, 'addStock'])->name('stock.add');
     Route::post('/stock/{id}/waste', [\App\Http\Controllers\StockController::class, 'recordWaste'])->name('stock.waste');
     Route::put('/stock/{id}/mitra-price', [\App\Http\Controllers\StockController::class, 'updateMitraPrice'])->name('stock.update-mitra-price');
+    Route::post('/mitra-stock-deliveries', [\App\Http\Controllers\MitraStockDeliveryController::class, 'store'])->name('mitra-stock-deliveries.store');
+    Route::post('/mitra-stock-deliveries/{id}/receive', [\App\Http\Controllers\MitraStockDeliveryController::class, 'receive'])->name('mitra-stock-deliveries.receive');
 
     // Cashier (Kasir)
     Route::get('/cashier', [\App\Http\Controllers\CashierController::class, 'index'])->name('cashier');
@@ -63,7 +65,10 @@ Route::middleware(['auth', 'outlet'])->group(function () {
 
     // Settlements
     Route::get('/settlements', [\App\Http\Controllers\MitraSettlementController::class, 'index'])->name('settlements');
+    Route::get('/settlements/export/pdf', [\App\Http\Controllers\MitraSettlementController::class, 'exportPdf'])->name('settlements.export-pdf');
+    Route::get('/settlements/{id}/pdf', [\App\Http\Controllers\MitraSettlementController::class, 'downloadPdf'])->name('settlements.pdf');
     Route::post('/settlements', [\App\Http\Controllers\MitraSettlementController::class, 'store'])->name('settlements.store');
+    Route::post('/settlements/{id}/validate', [\App\Http\Controllers\MitraSettlementController::class, 'validateByMitra'])->name('settlements.validate');
     Route::post('/settlements/{id}/pay', [\App\Http\Controllers\MitraSettlementController::class, 'pay'])->name('settlements.pay');
 
     // Owner Dashboard
