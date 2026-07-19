@@ -9,6 +9,9 @@ use App\Models\PettyCash;
 use App\Models\RestockLog;
 use App\Models\StockItem;
 use App\Models\User;
+use App\Models\WarehouseStockItem;
+use App\Models\WarehouseStockTransfer;
+use App\Services\MitraStockDeliveryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -18,7 +21,7 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_mitra_delivery_is_received_once_and_records_quantity_difference_without_cash_expense(): void
+    public function test_mitra_delivery_enters_warehouse_then_outlet_takes_stock_without_cash_expense(): void
     {
         [$outlet, $owner, $staff, $mitra, $stock] = $this->createContext();
 
@@ -47,12 +50,11 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
         $delivery->refresh();
         $this->assertSame(MitraStockDelivery::STATUS_RECEIVED_DIFFERENCE, $delivery->status);
         $this->assertSame(98.0, (float) $delivery->qty_received);
-        $this->assertSame(108.0, (float) $stock->fresh()->current_stock_biji);
-        $this->assertDatabaseHas('restock_logs', [
-            'id' => $delivery->restock_log_id,
-            'fund_source' => RestockLog::FUND_SOURCE_MITRA_DELIVERY,
-            'qty_added' => 98,
-        ]);
+        $warehouseStock = WarehouseStockItem::findOrFail($delivery->warehouse_stock_item_id);
+        $this->assertSame(98.0, (float) $warehouseStock->current_stock);
+        $this->assertSame(10.0, (float) $stock->fresh()->current_stock_biji);
+        $this->assertNull($delivery->restock_log_id);
+        $this->assertSame(0, RestockLog::count());
         $this->assertSame(0, PettyCash::count());
 
         $this->actingAs($staff)
@@ -62,8 +64,45 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
             ])
             ->assertSessionHasErrors('delivery');
 
-        $this->assertSame(108.0, (float) $stock->fresh()->current_stock_biji);
-        $this->assertSame(1, RestockLog::count());
+        $this->assertSame(98.0, (float) $warehouseStock->fresh()->current_stock);
+
+        $this->actingAs($staff)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('stock.transfer-from-warehouse', $stock->id), [
+                'qty' => 50,
+                'note' => 'Kebutuhan hari ini',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame(48.0, (float) $warehouseStock->fresh()->current_stock);
+        $this->assertSame(60.0, (float) $stock->fresh()->current_stock_biji);
+        $this->assertSame(1, WarehouseStockTransfer::count());
+        $this->assertDatabaseHas('restock_logs', [
+            'stock_item_id' => $stock->id,
+            'fund_source' => RestockLog::FUND_SOURCE_WAREHOUSE_TRANSFER,
+            'qty_added' => 50,
+            'restock_cost' => 0,
+        ]);
+        $this->assertSame(0, PettyCash::count());
+
+        $this->actingAs($staff)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('stock.transfer-from-warehouse', $stock->id), ['qty' => 49])
+            ->assertSessionHasErrors('warehouse_transfer');
+        $this->assertSame(48.0, (float) $warehouseStock->fresh()->current_stock);
+        $this->assertSame(60.0, (float) $stock->fresh()->current_stock_biji);
+
+        $this->actingAs($staff)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->get(route('stock'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('warehouseItems', 1)
+                ->where('warehouseItems.0.current_stock', '48.0000')
+                ->has('transfers', 1)
+                ->where('transfers.0.outlet.id', $outlet->id)
+            );
     }
 
     public function test_mitra_cannot_send_stock_outside_its_scope_or_validate_another_mitra_settlement(): void
@@ -96,16 +135,9 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
     {
         [$outlet, $owner, $staff, $mitra, $stock] = $this->createContext();
 
-        RestockLog::create([
-            'outlet_id' => $outlet->id,
-            'stock_item_id' => $stock->id,
-            'qty_added' => 20,
-            'stock_before' => 10,
-            'stock_after' => 30,
-            'fund_source' => RestockLog::FUND_SOURCE_MITRA_DELIVERY,
-            'restock_cost' => 100000,
-            'created_at' => now(),
-        ]);
+        $deliveryService = app(MitraStockDeliveryService::class);
+        $delivery = $deliveryService->create($mitra, $stock->id, 20, null);
+        $deliveryService->receive($delivery->id, $staff, 20, null);
 
         $this->actingAs($owner)
             ->withSession(['outlet_id' => $outlet->id])
@@ -193,7 +225,7 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_settlement_combines_all_mitra_stock_across_outlets_and_keeps_outlet_origin(): void
+    public function test_restock_settlement_counts_one_central_warehouse_instead_of_each_outlet_transfer(): void
     {
         [$firstOutlet, $owner, $staff, $mitra, $firstStock] = $this->createContext();
         $secondOutlet = Outlet::create(['name' => 'Outlet Kedua']);
@@ -211,26 +243,18 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
         ]);
         $mitra->mitraStockItems()->attach($secondStock->id, ['price' => 40000]);
 
-        RestockLog::create([
-            'outlet_id' => $firstOutlet->id,
-            'stock_item_id' => $firstStock->id,
-            'qty_added' => 20,
-            'stock_before' => 10,
-            'stock_after' => 30,
-            'fund_source' => RestockLog::FUND_SOURCE_MITRA_DELIVERY,
-            'restock_cost' => 100000,
-            'created_at' => now(),
-        ]);
-        RestockLog::create([
-            'outlet_id' => $secondOutlet->id,
-            'stock_item_id' => $secondStock->id,
-            'qty_added' => 30,
-            'stock_before' => 0,
-            'stock_after' => 30,
-            'fund_source' => RestockLog::FUND_SOURCE_MITRA_DELIVERY,
-            'restock_cost' => 120000,
-            'created_at' => now(),
-        ]);
+        $deliveryService = app(MitraStockDeliveryService::class);
+        $delivery = $deliveryService->create($mitra, $firstStock->id, 50, null);
+        $deliveryService->receive($delivery->id, $staff, 50, null);
+
+        $this->actingAs($staff)
+            ->withSession(['outlet_id' => $firstOutlet->id])
+            ->post(route('stock.transfer-from-warehouse', $firstStock->id), ['qty' => 20])
+            ->assertSessionHas('success');
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $secondOutlet->id])
+            ->post(route('stock.transfer-from-warehouse', $secondStock->id), ['qty' => 30])
+            ->assertSessionHas('success');
 
         $this->actingAs($owner)
             ->withSession(['outlet_id' => $firstOutlet->id])
@@ -245,24 +269,20 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
 
         $settlement = MitraSettlement::firstOrFail();
         $items = collect($settlement->receipt_data);
-        $this->assertCount(2, $items);
-        $this->assertEqualsCanonicalizing(
-            [$firstOutlet->name, $secondOutlet->name],
-            $items->pluck('outlet_name')->all()
-        );
-        $this->assertEqualsCanonicalizing(
-            [$firstOutlet->id, $secondOutlet->id],
-            $items->pluck('outlet_id')->all()
-        );
-        $this->assertSame(220000.0, (float) $settlement->total_amount);
+        $this->assertCount(1, $items);
+        $this->assertSame('Gudang Pusat', $items->first()['outlet_name']);
+        $this->assertNull($items->first()['outlet_id']);
+        $this->assertNotNull($items->first()['warehouse_stock_item_id']);
+        $this->assertSame(50.0, (float) $items->first()['calculated_qty']);
+        $this->assertSame(250000.0, (float) $settlement->total_amount);
 
-        $secondOutletReport = app(\App\Services\MitraReportService::class)->getMitraReportData(
-            $secondOutlet->id,
+        $warehouseReport = app(\App\Services\MitraReportService::class)->getMitraWarehouseRestockData(
             $mitra,
             now()->startOfMonth(),
             now()->endOfMonth(),
         );
-        $this->assertSame(30.0, (float) $secondOutletReport[0]['pending_settlement_qty']);
+        $this->assertSame(50.0, (float) $warehouseReport[0]['pending_settlement_qty']);
+        $this->assertSame(0.0, (float) WarehouseStockItem::firstOrFail()->current_stock);
 
         $this->actingAs($mitra)
             ->withSession(['outlet_id' => $secondOutlet->id])
@@ -271,7 +291,7 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->has('settlements', 1)
                 ->where('settlements.0.id', $settlement->id)
-                ->has('settlements.0.receipt_data', 2)
+                ->has('settlements.0.receipt_data', 1)
             );
     }
 

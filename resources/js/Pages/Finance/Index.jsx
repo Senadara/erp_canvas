@@ -45,6 +45,25 @@ function paymentTone(method) {
     return 'bg-emerald-50 text-emerald-700';
 }
 
+function movementCategoryTone(item, incoming, cashierFund, isWithdrawal) {
+    if (cashierFund) return 'bg-amber-100 text-amber-800';
+    if (isWithdrawal) return 'bg-slate-100 text-slate-700';
+    if (item.payment_method === 'PRIVATE') return 'bg-amber-100 text-amber-800';
+    return incoming ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800';
+}
+
+function movementAmountTone(item, incoming, cashierFund, outsideTopup) {
+    if (item.payment_method === 'PRIVATE') return 'text-amber-700';
+    if (cashierFund) return outsideTopup ? 'text-emerald-700' : 'text-amber-700';
+    return incoming ? 'text-emerald-600' : 'text-rose-600';
+}
+
+function movementSign(item, incoming, cashierFund, outsideTopup) {
+    if (item.payment_method === 'PRIVATE') return '';
+    if (cashierFund) return outsideTopup ? '+' : '-';
+    return incoming ? '+' : '-';
+}
+
 function formatDateTime(value) {
     if (!value) return '-';
     return new Intl.DateTimeFormat('id-ID', {
@@ -72,15 +91,6 @@ function StatCard({ card }) {
     );
 }
 
-function DetailRow({ label, value, tone = 'text-slate-900' }) {
-    return (
-        <div className="grid gap-1 border-b border-slate-100 py-2.5 text-sm last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-            <span className="min-w-0 text-slate-500">{label}</span>
-            <span className={`min-w-0 break-words font-semibold sm:text-right ${tone}`}>{formatRupiah(value)}</span>
-        </div>
-    );
-}
-
 function CompactMetric({ label, value, sub, tone = 'text-slate-900' }) {
     return (
         <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -88,15 +98,6 @@ function CompactMetric({ label, value, sub, tone = 'text-slate-900' }) {
             <p className={`mt-2 break-words text-xl font-bold sm:text-2xl ${tone}`}>{formatRupiah(value)}</p>
             {sub && <p className="mt-1 text-xs leading-relaxed text-slate-500">{sub}</p>}
         </div>
-    );
-}
-
-function DetailSection({ title, children }) {
-    return (
-        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
-            <div className="mt-3">{children}</div>
-        </section>
     );
 }
 
@@ -111,6 +112,7 @@ export default function FinanceIndex({
 }) {
     const [activeView, setActiveView] = useState('current');
     const [selectedWithdrawal, setSelectedWithdrawal] = useState(null);
+    const [showWithdrawalForm, setShowWithdrawalForm] = useState(false);
     const [dateFrom, setDateFrom] = useState(filters.date_from);
     const [dateTo, setDateTo] = useState(filters.date_to);
     const { data, setData, post, processing, reset, errors } = useForm({
@@ -122,14 +124,32 @@ export default function FinanceIndex({
 
     const period = periodSummary || summary;
     const recentMovements = cashMovements.slice(0, 12);
-    const resetLabel = 'Berjalan sejak awal hari';
-    const periodGenerated = (Number(period.omzet) || 0) - (Number(period.expenseTotal) || 0) - (Number(period.drawerCashierTopups ?? period.cashierTopups) || 0);
+    const hasOpenShift = Boolean(summary.hasOpenShift);
+    const currentShiftName = summary.currentShift?.name || 'Shift aktif';
+    const withdrawableCash = Number(summary.withdrawableCash ?? Math.max(0, Number(summary.cashDrawerNet) || 0));
+    const withdrawableQris = Number(summary.withdrawableQris ?? Math.max(0, Number(summary.qrisBalanceActual) || 0));
+    const selectedWithdrawalBalance = data.payment_method === 'QRIS' ? withdrawableQris : withdrawableCash;
+    const withdrawalAmount = Number(data.amount) || 0;
+    const withdrawalTooHigh = withdrawalAmount > 0 && withdrawalAmount > selectedWithdrawalBalance;
+    const currentCashierExpense = (Number(summary.cashExpense) || 0) + (Number(summary.qrisExpense) || 0);
+    const currentPrivateExpense = Number(summary.outsideExpense) || 0;
+    const currentDailyCashierExpenseAverage = currentCashierExpense / Math.max(1, Number(summary.periodDays) || 1);
+    const periodCashierExpense = (Number(period.cashExpense) || 0) + (Number(period.qrisExpense) || 0);
+    const periodPrivateExpense = Number(period.outsideExpense) || 0;
+    const periodDailyCashierExpenseAverage = periodCashierExpense / Math.max(1, Number(period.periodDays) || 1);
+    const resetLabel = {
+        OPEN_SHIFT: `${currentShiftName} sejak ${formatDateTime(summary.currentShift?.opened_at)}`,
+        ALL_UNWITHDRAWN: 'Sejak aktivitas pertama, belum ada penarikan owner',
+        SINCE_LAST_WITHDRAWAL: `Sejak penarikan terakhir ${formatDateTime(summary.lastWithdrawalAt)}`,
+        TODAY_WITH_WITHDRAWAL: 'Hari ini, penarikan hari yang sama tetap terlihat',
+        TODAY: 'Berjalan sejak awal hari',
+    }[summary.currentPeriodMode] || 'Berjalan sejak awal hari';
+    const periodGenerated = (Number(period.omzet) || 0) - periodCashierExpense - (Number(period.drawerCashierTopups ?? period.cashierTopups) || 0);
     const historyTotals = useMemo(() => withdrawalHistory.reduce((totals, item) => ({
         amount: totals.amount + (Number(item.amount) || 0),
-        omzet: totals.omzet + (Number(item.omzet) || 0),
-        expenses: totals.expenses + (Number(item.expense_total) || 0),
-        profit: totals.profit + (Number(item.net_after_allocations) || 0),
-    }), { amount: 0, omzet: 0, expenses: 0, profit: 0 }), [withdrawalHistory]);
+        before: totals.before + (Number(item.available_before) || 0),
+        after: totals.after + (Number(item.remaining_after) || 0),
+    }), { amount: 0, before: 0, after: 0 }), [withdrawalHistory]);
 
     const applyFilter = (e) => {
         e.preventDefault();
@@ -143,6 +163,7 @@ export default function FinanceIndex({
             onSuccess: () => {
                 reset('amount', 'description');
                 setData('date', localDatetimeValue());
+                setShowWithdrawalForm(false);
                 setActiveView('current');
                 router.reload({
                     preserveScroll: true,
@@ -154,16 +175,18 @@ export default function FinanceIndex({
 
     const currentCards = [
         {
-            label: 'Uang Laci',
-            value: summary.cashDrawerNet,
-            tone: signedTone(summary.cashDrawerNet, 'text-slate-900'),
-            sub: `Tanpa modal aktual ${formatRupiah(summary.openingCash ?? summary.standardOpeningCash ?? 50000)} dan top up. Fisik laci ${formatRupiah(summary.cashDrawerActual)}.`,
+            label: 'Kas Kasir Aktual',
+            value: hasOpenShift ? summary.cashDrawerActual : 0,
+            tone: signedTone(hasOpenShift ? summary.cashDrawerActual : 0, 'text-slate-900'),
+            sub: hasOpenShift
+                ? `Termasuk modal buka shift ${formatRupiah(summary.openingCash ?? summary.standardOpeningCash ?? 50000)}. Hasil cash bersih ${formatRupiah(summary.cashDrawerNet)}.`
+                : 'Belum ada shift terbuka pada outlet ini.',
         },
         {
             label: 'Keuangan Bersih',
             value: summary.cleanFinance,
             tone: signedTone(summary.cleanFinance),
-            sub: 'Uang omzet yang tersisa di laci dan QRIS, tanpa uang kas/modal.',
+            sub: `Bisa ditarik: cash ${formatRupiah(withdrawableCash)} dan QRIS ${formatRupiah(withdrawableQris)}.`,
         },
         {
             label: 'Rata-rata Penjualan Harian',
@@ -178,16 +201,22 @@ export default function FinanceIndex({
             sub: `QRIS masuk hari ini ${formatRupiah(summary.qrisSales)}. Pengeluaran/penarikan QRIS ${formatRupiah((Number(summary.qrisExpense) || 0) + (Number(summary.withdrawQris) || 0))}.`,
         },
         {
-            label: 'Pengeluaran',
-            value: summary.expenseTotal,
+            label: 'Pengeluaran Kas/QRIS',
+            value: currentCashierExpense,
             tone: 'text-rose-700',
-            sub: `${resetLabel}. Kasir ${formatRupiah(summary.cashExpense)} | luar kasir ${formatRupiah(summary.outsideExpense)}.`,
+            sub: `${resetLabel}. Cash ${formatRupiah(summary.cashExpense)} | QRIS ${formatRupiah(summary.qrisExpense)}.`,
+        },
+        {
+            label: 'Uang Pribadi',
+            value: currentPrivateExpense,
+            tone: 'text-amber-700',
+            sub: 'Catatan luar kasir, tidak mengurangi saldo bersih cash/QRIS.',
         },
         {
             label: 'Rata-rata Pengeluaran',
-            value: summary.dailyExpenseAverage,
+            value: currentDailyCashierExpenseAverage,
             tone: 'text-amber-700',
-            sub: `Top up dari laci ${formatRupiah(summary.activeDrawerCashierTopups ?? summary.drawerCashierTopups)} | luar laci ${formatRupiah(summary.activeOutsideCashierTopups ?? summary.outsideCashierTopups)}.`,
+            sub: `Rata-rata kas/QRIS. Uang pribadi ${formatRupiah(currentPrivateExpense)} dicatat terpisah.`,
         },
     ];
 
@@ -202,7 +231,7 @@ export default function FinanceIndex({
             label: 'Penghasilan Bersih Periode',
             value: periodGenerated,
             tone: signedTone(periodGenerated),
-            sub: 'Omzet lunas dikurangi pengeluaran dan top up dari laci, sebelum penarikan owner.',
+            sub: 'Omzet lunas dikurangi pengeluaran kas/QRIS dan top up dari laci, sebelum penarikan owner.',
         },
         {
             label: 'Total QRIS Masuk',
@@ -211,10 +240,16 @@ export default function FinanceIndex({
             sub: `Cash ${formatRupiah(period.cashSales)} | QRIS ${formatRupiah(period.qrisSales)}.`,
         },
         {
-            label: 'Total Pengeluaran',
-            value: period.expenseTotal,
+            label: 'Total Pengeluaran Kas/QRIS',
+            value: periodCashierExpense,
             tone: 'text-rose-700',
-            sub: `Kasir ${formatRupiah(period.cashExpense)} | QRIS ${formatRupiah(period.qrisExpense)} | luar kasir ${formatRupiah(period.outsideExpense)}.`,
+            sub: `Cash ${formatRupiah(period.cashExpense)} | QRIS ${formatRupiah(period.qrisExpense)}.`,
+        },
+        {
+            label: 'Uang Pribadi Periode',
+            value: periodPrivateExpense,
+            tone: 'text-amber-700',
+            sub: 'Tidak mengurangi saldo kas/QRIS yang bisa direkap.',
         },
         {
             label: 'Penarikan Owner',
@@ -228,13 +263,18 @@ export default function FinanceIndex({
             tone: 'text-emerald-700',
             sub: `${period.periodDays || 1} hari dalam filter tanggal.`,
         },
+        {
+            label: 'Rata-rata Pengeluaran Kas/QRIS',
+            value: periodDailyCashierExpenseAverage,
+            tone: 'text-rose-700',
+            sub: `${period.periodDays || 1} hari dalam filter tanggal.`,
+        },
     ];
 
     const historyCards = [
         { label: 'Total Ditarik', value: historyTotals.amount, tone: 'text-slate-800', sub: `${withdrawalHistory.length} penarikan tercatat` },
-        { label: 'Omzet Direkap', value: historyTotals.omzet, tone: 'text-indigo-700', sub: 'Omzet pada periode yang ditutup' },
-        { label: 'Pengeluaran Direkap', value: historyTotals.expenses, tone: 'text-rose-700', sub: 'Biaya operasional sebelum penarikan' },
-        { label: 'Keuntungan Direkap', value: historyTotals.profit, tone: signedTone(historyTotals.profit), sub: 'Setelah HPP, pengeluaran, dan top up dari laci' },
+        { label: 'Saldo Sebelum', value: historyTotals.before, tone: 'text-indigo-700', sub: 'Total saldo yang tersedia sebelum penarikan' },
+        { label: 'Sisa Setelah', value: historyTotals.after, tone: signedTone(historyTotals.after), sub: 'Total saldo tersisa setelah penarikan' },
     ];
 
     return (
@@ -297,11 +337,61 @@ export default function FinanceIndex({
                             <span className="font-semibold text-slate-900">{resetLabel}</span>
                         </div>
 
+                        {!hasOpenShift && (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                Tidak ada shift terbuka untuk outlet ini. Card kas kasir aktual akan bernilai 0 sampai shift dibuka; keuangan bersih tetap menghitung saldo yang belum pernah ditarik owner.
+                            </div>
+                        )}
+
                         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                             {currentCards.map((card) => <StatCard key={card.label} card={card} />)}
                         </div>
 
-                        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
+                        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-stretch">
+                            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase text-emerald-700">Cash Net Bisa Ditarik</p>
+                                        <p className="mt-2 text-2xl font-bold text-emerald-900">{formatRupiah(withdrawableCash)}</p>
+                                    </div>
+                                    <BanknotesIcon className="h-6 w-6 text-emerald-600" />
+                                </div>
+                                <p className="mt-2 text-xs leading-relaxed text-emerald-800">
+                                    Dari penjualan cash dikurangi pengeluaran cash, top up dari laci, dan penarikan cash. Modal buka shift tidak ikut dihitung.
+                                </p>
+                            </div>
+                            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase text-blue-700">QRIS Net Bisa Ditarik</p>
+                                        <p className="mt-2 text-2xl font-bold text-blue-900">{formatRupiah(withdrawableQris)}</p>
+                                    </div>
+                                    <BanknotesIcon className="h-6 w-6 text-blue-600" />
+                                </div>
+                                <p className="mt-2 text-xs leading-relaxed text-blue-800">
+                                    Dari penjualan QRIS dikurangi pengeluaran QRIS dan penarikan QRIS. Penarikan cash tidak mengurangi saldo QRIS.
+                                </p>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:min-w-[260px]">
+                                <p className="text-xs font-semibold uppercase text-slate-500">Aksi Owner</p>
+                                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                                    Pilih saldo cash atau QRIS yang akan ditarik. Nominal dibatasi sesuai saldo net masing-masing.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setData('date', localDatetimeValue());
+                                        setShowWithdrawalForm(true);
+                                    }}
+                                    className="mt-4 inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                >
+                                    <BanknotesIcon className="h-4 w-4" />
+                                    Penarikan Uang
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid gap-6">
                             <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                                 <div className="mb-4 flex items-start justify-between gap-3">
                                     <div>
@@ -320,13 +410,13 @@ export default function FinanceIndex({
                                                 const cashierFund = isCashierFundMovement(item);
                                                 const outsideTopup = isOutsideCashierTopup(item);
                                                 const isWithdrawal = item.category === 'Penarikan';
-                                                const tone = cashierFund ? (outsideTopup ? 'text-emerald-700' : 'text-amber-700') : incoming ? 'text-emerald-600' : 'text-rose-600';
-                                                const sign = cashierFund ? (outsideTopup ? '+' : '-') : incoming ? '+' : '-';
+                                                const tone = movementAmountTone(item, incoming, cashierFund, outsideTopup);
+                                                const sign = movementSign(item, incoming, cashierFund, outsideTopup);
                                                 return (
                                                     <tr key={item.id}>
                                                         <td className="py-3 pr-3">
                                                             <div className="flex flex-wrap items-center gap-2">
-                                                                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${cashierFund ? 'bg-amber-100 text-amber-800' : isWithdrawal ? 'bg-slate-100 text-slate-700' : incoming ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                                                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${movementCategoryTone(item, incoming, cashierFund, isWithdrawal)}`}>
                                                                     {cashierFund ? (outsideTopup ? 'Top Up Luar Laci' : 'Top Up Dari Laci') : item.category}
                                                                 </span>
                                                                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${paymentTone(item.payment_method)}`}>
@@ -336,7 +426,7 @@ export default function FinanceIndex({
                                                             <div className="mt-1 text-xs text-slate-500">{new Date(item.created_at).toLocaleString('id-ID')} - {item.description || 'Tanpa catatan'}</div>
                                                         </td>
                                                         <td className={`py-3 text-right font-semibold ${tone}`}>
-                                                            {sign} {formatRupiah(item.amount)}
+                                                            {sign && `${sign} `}{formatRupiah(item.amount)}
                                                         </td>
                                                     </tr>
                                                 );
@@ -345,42 +435,6 @@ export default function FinanceIndex({
                                     </table>
                                 </div>
                             </div>
-
-                            <form onSubmit={submitWithdrawal} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                                <h2 className="text-lg font-semibold text-slate-900">Penarikan Owner</h2>
-                                <p className="mt-1 text-sm text-slate-500">Menyimpan rekap, lalu ringkasan aktual dimulai ulang setelah nominal ini ditarik.</p>
-                                <div className="mt-4 space-y-4">
-                                    <div>
-                                        <label className="mb-1 block text-sm font-medium text-slate-700">Nominal</label>
-                                        <input type="number" min="1" value={data.amount} onChange={e => setData('amount', e.target.value)} className="w-full rounded-md border-slate-300 text-sm" required />
-                                        {errors.amount && <p className="mt-1 text-xs text-rose-600">{errors.amount}</p>}
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {['CASH', 'QRIS'].map(method => (
-                                            <button
-                                                key={method}
-                                                type="button"
-                                                onClick={() => setData('payment_method', method)}
-                                                className={`rounded-md border py-2 text-sm font-semibold ${data.payment_method === method ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-600'}`}
-                                            >
-                                                {method}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-sm font-medium text-slate-700">Tanggal</label>
-                                        <input type="datetime-local" value={data.date} onChange={e => setData('date', e.target.value)} className="w-full rounded-md border-slate-300 text-sm" />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-sm font-medium text-slate-700">Catatan</label>
-                                        <textarea value={data.description} onChange={e => setData('description', e.target.value)} rows="2" className="w-full rounded-md border-slate-300 text-sm" placeholder="Contoh: Setoran owner / tarik kas harian" />
-                                    </div>
-                                    <button type="submit" disabled={processing} className="inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
-                                        <BanknotesIcon className="h-4 w-4" />
-                                        {processing ? 'Menyimpan...' : 'Catat Penarikan'}
-                                    </button>
-                                </div>
-                            </form>
                         </div>
                     </>
                 )}
@@ -407,8 +461,9 @@ export default function FinanceIndex({
                                         <YAxis tickFormatter={(v) => `Rp${v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${Math.round(v / 1000)}k` : v}`} tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} axisLine={false} />
                                         <Tooltip formatter={(value, name) => [formatRupiah(value), name]} />
                                         <Area type="monotone" dataKey="omzet" name="Omzet Lunas" stroke="#4f46e5" fill="#c7d2fe" strokeWidth={2} />
-                                        <Area type="monotone" dataKey="expenses" name="Pengeluaran" stroke="#e11d48" fill="#fecdd3" strokeWidth={2} />
-                                        <Area type="monotone" dataKey="cashier_topups" name="Top Up Kasir" stroke="#d97706" fill="#fde68a" strokeWidth={2} />
+                                        <Area type="monotone" dataKey="cashier_expenses" name="Pengeluaran Kas/QRIS" stroke="#e11d48" fill="#fecdd3" strokeWidth={2} />
+                                        <Area type="monotone" dataKey="private_expenses" name="Uang Pribadi" stroke="#d97706" fill="#fde68a" strokeWidth={2} />
+                                        <Area type="monotone" dataKey="drawer_cashier_topups" name="Top Up Dari Laci" stroke="#475569" fill="#e2e8f0" strokeWidth={2} />
                                         <Area type="monotone" dataKey="profit" name="Penghasilan Setelah Pengeluaran" stroke="#059669" fill="#bbf7d0" strokeWidth={2} />
                                     </AreaChart>
                                 </ResponsiveContainer>
@@ -419,7 +474,7 @@ export default function FinanceIndex({
 
                 {activeView === 'withdrawals' && (
                     <div className="space-y-5">
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid gap-4 md:grid-cols-3">
                             {historyCards.map((card) => <StatCard key={card.label} card={card} />)}
                         </div>
 
@@ -427,52 +482,45 @@ export default function FinanceIndex({
                             <div className="mb-4 flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-lg font-semibold text-slate-900">Histori Penarikan Owner</h2>
-                                    <p className="text-sm text-slate-500">Setiap penarikan menyimpan rekap sebelum reset. Buka detail untuk melihat pemasukan, pengeluaran, top up, dan saldo.</p>
+                                    <p className="text-sm text-slate-500">Ringkasan sederhana: saldo sebelum penarikan, nominal yang ditarik, dan sisa setelahnya.</p>
                                 </div>
                                 <ClipboardDocumentListIcon className="h-5 w-5 text-slate-400" />
                             </div>
 
                             <div className="overflow-x-auto">
-                                <table className="w-full min-w-[980px] text-sm">
+                                <table className="w-full min-w-[760px] text-sm">
                                     <thead>
                                         <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase text-slate-500">
                                             <th className="py-3 pr-4">Penarikan</th>
-                                            <th className="py-3 pr-4">Periode Direkap</th>
-                                            <th className="py-3 pr-4 text-right">Omzet</th>
-                                            <th className="py-3 pr-4 text-right">Pengeluaran</th>
-                                            <th className="py-3 pr-4 text-right">Keuntungan</th>
-                                            <th className="py-3 pr-4 text-right">Sisa Setelah</th>
+                                            <th className="py-3 pr-4">Metode</th>
+                                            <th className="py-3 pr-4 text-right">Sebelum</th>
+                                            <th className="py-3 pr-4 text-right">Ditarik</th>
+                                            <th className="py-3 pr-4 text-right">Sesudah</th>
                                             <th className="py-3 text-right">Detail</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {withdrawalHistory.length === 0 ? (
                                             <tr>
-                                                <td colSpan="7" className="py-8 text-center text-slate-500">Belum ada histori penarikan pada periode filter ini.</td>
+                                                <td colSpan="6" className="py-8 text-center text-slate-500">Belum ada histori penarikan pada periode filter ini.</td>
                                             </tr>
                                         ) : withdrawalHistory.map((item) => (
                                             <tr key={item.id} className="align-top">
                                                 <td className="py-4 pr-4">
-                                                    <div className="font-semibold text-slate-900">{formatRupiah(item.amount)}</div>
-                                                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                                                    <div className="font-semibold text-slate-900">{formatDateTime(item.date)}</div>
+                                                    {item.description && <div className="mt-1 max-w-xs text-xs text-slate-500">{item.description}</div>}
+                                                </td>
+                                                <td className="py-4 pr-4">
+                                                    <div className="flex flex-wrap items-center gap-2">
                                                         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${paymentTone(item.method)}`}>{paymentLabel(item.method)}</span>
                                                         {item.source === 'COMPUTED' && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Hitung ulang</span>}
                                                     </div>
-                                                    <div className="mt-1 text-xs text-slate-500">{formatDateTime(item.date)}</div>
                                                 </td>
-                                                <td className="py-4 pr-4 text-xs text-slate-600">
-                                                    {formatPeriod(item.period_start, item.period_end)}
-                                                    <div className="mt-1 text-slate-500">{item.transaction_count || 0} transaksi</div>
-                                                    <div className="mt-1 text-slate-500">Cash {formatRupiah(item.cash_sales)} | QRIS {formatRupiah(item.qris_sales)}</div>
+                                                <td className="py-4 pr-4 text-right font-semibold text-indigo-700">
+                                                    {formatRupiah(item.available_before)}
                                                 </td>
-                                                <td className="py-4 pr-4 text-right font-semibold text-indigo-700">{formatRupiah(item.omzet)}</td>
-                                                <td className="py-4 pr-4 text-right">
-                                                    <div className="font-semibold text-rose-700">{formatRupiah(item.expense_total)}</div>
-                                                    <div className="text-xs text-slate-500">Top up laci {formatRupiah(item.drawer_cashier_topups ?? item.cashier_topups)} | luar {formatRupiah(item.outside_cashier_topups)}</div>
-                                                </td>
-                                                <td className={`py-4 pr-4 text-right font-semibold ${signedTone(item.net_after_allocations)}`}>
-                                                    {formatRupiah(item.net_after_allocations)}
-                                                    <div className="text-xs font-normal text-slate-500">HPP {formatRupiah(item.hpp)}</div>
+                                                <td className="py-4 pr-4 text-right font-semibold text-rose-700">
+                                                    {formatRupiah(item.amount)}
                                                 </td>
                                                 <td className={`py-4 pr-4 text-right font-semibold ${signedTone(item.remaining_after, 'text-slate-800')}`}>
                                                     {formatRupiah(item.remaining_after)}
@@ -497,18 +545,153 @@ export default function FinanceIndex({
                 )}
             </div>
 
+            {showWithdrawalForm && (
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/55 p-2 sm:p-4">
+                    <div className="mx-auto flex min-h-full w-full max-w-2xl items-start justify-center py-2 sm:items-center sm:py-6">
+                        <form onSubmit={submitWithdrawal} className="w-full overflow-hidden rounded-lg bg-white shadow-2xl">
+                            <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <h2 className="text-lg font-semibold text-slate-900">Penarikan Uang</h2>
+                                        <p className="mt-1 text-sm text-slate-500">
+                                            Pilih saldo yang akan ditarik. Batas maksimal mengikuti Cash Net atau QRIS Net yang tersedia.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowWithdrawalForm(false)}
+                                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50"
+                                        aria-label="Tutup form penarikan"
+                                    >
+                                        <XMarkIcon className="h-5 w-5" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-5 p-4 sm:p-5">
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    {[
+                                        {
+                                            method: 'CASH',
+                                            label: 'Ambil Cash Net',
+                                            value: withdrawableCash,
+                                            description: 'Mengurangi saldo cash/laci bersih.',
+                                            tone: 'emerald',
+                                        },
+                                        {
+                                            method: 'QRIS',
+                                            label: 'Ambil QRIS Net',
+                                            value: withdrawableQris,
+                                            description: 'Mengurangi saldo QRIS saja.',
+                                            tone: 'blue',
+                                        },
+                                    ].map((option) => {
+                                        const selected = data.payment_method === option.method;
+                                        const selectedClass = option.tone === 'blue'
+                                            ? 'border-blue-500 bg-blue-50 text-blue-900'
+                                            : 'border-emerald-500 bg-emerald-50 text-emerald-900';
+                                        return (
+                                            <button
+                                                key={option.method}
+                                                type="button"
+                                                onClick={() => setData('payment_method', option.method)}
+                                                className={`rounded-lg border p-4 text-left transition ${selected ? selectedClass : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                                            >
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-xs font-semibold uppercase">{option.label}</p>
+                                                        <p className="mt-2 text-2xl font-bold">{formatRupiah(option.value)}</p>
+                                                    </div>
+                                                    <BanknotesIcon className="h-6 w-6 opacity-70" />
+                                                </div>
+                                                <p className="mt-2 text-xs leading-relaxed opacity-80">{option.description}</p>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span>Maksimal ambil {data.payment_method === 'QRIS' ? 'QRIS Net' : 'Cash Net'}</span>
+                                        <span className="font-semibold text-slate-900">{formatRupiah(selectedWithdrawalBalance)}</span>
+                                    </div>
+                                    {withdrawalTooHigh && (
+                                        <p className="mt-1 text-xs font-medium text-rose-600">
+                                            Nominal melebihi saldo {data.payment_method === 'QRIS' ? 'QRIS Net' : 'Cash Net'} yang bisa ditarik.
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-slate-700">Nominal Penarikan</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max={selectedWithdrawalBalance || undefined}
+                                        value={data.amount}
+                                        onChange={e => setData('amount', e.target.value)}
+                                        className="w-full rounded-md border-slate-300 text-sm"
+                                        required
+                                    />
+                                    {errors.amount && <p className="mt-1 text-xs text-rose-600">{errors.amount}</p>}
+                                </div>
+
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-slate-700">Tanggal</label>
+                                    <input
+                                        type="datetime-local"
+                                        value={data.date}
+                                        onChange={e => setData('date', e.target.value)}
+                                        className="w-full rounded-md border-slate-300 text-sm"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-slate-700">Catatan</label>
+                                    <textarea
+                                        value={data.description}
+                                        onChange={e => setData('description', e.target.value)}
+                                        rows="2"
+                                        className="w-full rounded-md border-slate-300 text-sm"
+                                        placeholder="Contoh: Setoran owner / tarik kas harian"
+                                    />
+                                </div>
+
+                                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowWithdrawalForm(false)}
+                                        className="inline-flex min-h-[40px] items-center justify-center rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Batal
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={processing || withdrawalTooHigh || selectedWithdrawalBalance <= 0}
+                                        className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                                    >
+                                        <BanknotesIcon className="h-4 w-4" />
+                                        {processing ? 'Menyimpan...' : `Tarik ${data.payment_method}`}
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {selectedWithdrawal && (
                 <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/55 p-2 sm:p-4">
-                    <div className="mx-auto flex min-h-full w-full max-w-5xl items-start justify-center py-2 sm:items-center sm:py-6">
+                    <div className="mx-auto flex min-h-full w-full max-w-2xl items-start justify-center py-2 sm:items-center sm:py-6">
                         <div className="flex max-h-none w-full flex-col overflow-hidden rounded-lg bg-slate-50 shadow-2xl sm:max-h-[92vh]">
                             <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <h2 className="text-lg font-semibold text-slate-900">Detail Rekap Penarikan</h2>
+                                            <h2 className="text-lg font-semibold text-slate-900">Detail Penarikan</h2>
                                             <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${paymentTone(selectedWithdrawal.method)}`}>{paymentLabel(selectedWithdrawal.method)}</span>
                                         </div>
-                                        <p className="mt-1 text-sm text-slate-500">{formatPeriod(selectedWithdrawal.period_start, selectedWithdrawal.period_end)}</p>
+                                        <p className="mt-1 text-sm text-slate-500">{formatDateTime(selectedWithdrawal.date)}</p>
                                     </div>
                                     <button
                                         type="button"
@@ -522,47 +705,29 @@ export default function FinanceIndex({
                             </div>
 
                             <div className="overflow-y-auto p-4 sm:p-5">
-                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                    <CompactMetric label="Nominal Ditarik" value={selectedWithdrawal.amount} tone="text-slate-900" sub={formatDateTime(selectedWithdrawal.date)} />
-                                    <CompactMetric label="Saldo Sebelum" value={selectedWithdrawal.available_before} tone="text-indigo-700" sub="Tanpa modal kas dan top up." />
-                                    <CompactMetric label="Sisa Setelah" value={selectedWithdrawal.remaining_after} tone={signedTone(selectedWithdrawal.remaining_after)} sub="Saldo aktual setelah ditarik." />
-                                    <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                                        <p className="truncate text-xs font-semibold uppercase text-slate-500">Transaksi</p>
-                                        <p className="mt-2 break-words text-xl font-bold text-emerald-700 sm:text-2xl">{selectedWithdrawal.transaction_count || 0}</p>
-                                        <p className="mt-1 text-xs leading-relaxed text-slate-500">{selectedWithdrawal.description || 'Tanpa catatan tambahan.'}</p>
-                                    </div>
+                                <div className="grid gap-3 sm:grid-cols-3">
+                                    <CompactMetric label="Sebelum" value={selectedWithdrawal.available_before} tone="text-indigo-700" sub="Saldo sebelum penarikan." />
+                                    <CompactMetric label="Ditarik" value={selectedWithdrawal.amount} tone="text-rose-700" sub={`Penarikan ${paymentLabel(selectedWithdrawal.method)}.`} />
+                                    <CompactMetric label="Sesudah" value={selectedWithdrawal.remaining_after} tone={signedTone(selectedWithdrawal.remaining_after)} sub="Saldo sisa setelah penarikan." />
                                 </div>
 
-                                <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                                    <DetailSection title="Pemasukan">
-                                        <DetailRow label="Omzet lunas" value={selectedWithdrawal.omzet} tone="text-indigo-700" />
-                                        <DetailRow label="Penjualan cash" value={selectedWithdrawal.cash_sales} />
-                                        <DetailRow label="Penjualan QRIS" value={selectedWithdrawal.qris_sales} />
-                                    </DetailSection>
-
-                                    <DetailSection title="Pengeluaran & Modal">
-                                        <DetailRow label="Total pengeluaran" value={selectedWithdrawal.expense_total} tone="text-rose-700" />
-                                        <DetailRow label="Pengeluaran cash" value={selectedWithdrawal.cash_expense} />
-                                        <DetailRow label="Pengeluaran QRIS" value={selectedWithdrawal.qris_expense} />
-                                        <DetailRow label="Pengeluaran uang pribadi" value={selectedWithdrawal.outside_expense} />
-                                        <DetailRow label="Top up dari laci" value={selectedWithdrawal.drawer_cashier_topups ?? selectedWithdrawal.cashier_topups} tone="text-amber-700" />
-                                        <DetailRow label="Top up luar laci" value={selectedWithdrawal.outside_cashier_topups} tone="text-emerald-700" />
-                                    </DetailSection>
-
-                                    <DetailSection title="Keuntungan Rekap">
-                                        <DetailRow label="HPP" value={selectedWithdrawal.hpp} />
-                                        <DetailRow label="Laba kotor" value={selectedWithdrawal.gross_profit} tone={signedTone(selectedWithdrawal.gross_profit)} />
-                                        <DetailRow label="Laba operasional" value={selectedWithdrawal.net_profit} tone={signedTone(selectedWithdrawal.net_profit)} />
-                                        <DetailRow label="Setelah top up dari laci" value={selectedWithdrawal.net_after_allocations} tone={signedTone(selectedWithdrawal.net_after_allocations)} />
-                                    </DetailSection>
-
-                                    <DetailSection title="Saldo Aktual">
-                                        <DetailRow label="Laci sebelum tarik" value={selectedWithdrawal.cash_balance_before} />
-                                        <DetailRow label="QRIS sebelum tarik" value={selectedWithdrawal.qris_balance_before} />
-                                        <DetailRow label="Saldo bisa direkap" value={selectedWithdrawal.available_before} tone="text-indigo-700" />
-                                        <DetailRow label="Penarikan owner" value={selectedWithdrawal.amount} tone="text-rose-700" />
-                                        <DetailRow label="Sisa setelah tarik" value={selectedWithdrawal.remaining_after} tone={signedTone(selectedWithdrawal.remaining_after)} />
-                                    </DetailSection>
+                                <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                        <div>
+                                            <p className="text-xs font-semibold uppercase text-slate-500">Waktu</p>
+                                            <p className="mt-1 font-semibold text-slate-900">{formatDateTime(selectedWithdrawal.date)}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-semibold uppercase text-slate-500">Metode</p>
+                                            <p className="mt-1 font-semibold text-slate-900">{paymentLabel(selectedWithdrawal.method)}</p>
+                                        </div>
+                                    </div>
+                                    {selectedWithdrawal.description && (
+                                        <div className="mt-4 border-t border-slate-100 pt-3">
+                                            <p className="text-xs font-semibold uppercase text-slate-500">Catatan</p>
+                                            <p className="mt-1 text-slate-700">{selectedWithdrawal.description}</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

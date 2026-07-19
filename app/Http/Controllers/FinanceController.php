@@ -12,6 +12,7 @@ use App\Services\ShiftService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class FinanceController extends Controller
@@ -40,7 +41,7 @@ class FinanceController extends Controller
         $paidTransactions = Transaction::query()
             ->where('outlet_id', $outletId)
             ->where('payment_status', 'PAID')
-            ->whereBetween('paid_at', [$start, $end])
+            ->tap(fn ($query) => $this->applyPaidTransactionWindow($query, $start, $end, false))
             ->with('items.product')
             ->get();
 
@@ -72,7 +73,8 @@ class FinanceController extends Controller
         );
 
         $currentEnd = $this->financeNow();
-        $currentPeriod = $this->resolveCurrentCashPeriod($currentEnd);
+        $openShift = $this->shiftService->getOpenShift($outletId);
+        $currentPeriod = $this->resolveCurrentCashPeriod($outletId, $currentEnd, $openShift);
         $currentPaidTransactions = $this->paidTransactionsBetween(
             $outletId,
             $currentPeriod['start'],
@@ -92,8 +94,16 @@ class FinanceController extends Controller
             $currentPeriod['carry'],
             $outletId
         );
-        $summary['lastWithdrawalAt'] = null;
+        $summary['lastWithdrawalAt'] = $currentPeriod['last_withdrawal_at']?->toIso8601String();
         $summary['resetAfterWithdrawal'] = false;
+        $summary['hasOpenShift'] = (bool) $openShift;
+        $summary['currentPeriodMode'] = $currentPeriod['mode'];
+        $summary['currentShift'] = $openShift ? [
+            'id' => $openShift->id,
+            'name' => $openShift->name,
+            'opened_at' => $openShift->opened_at?->toIso8601String(),
+            'opening_cash' => (float) $openShift->opening_cash,
+        ] : null;
 
         $daily = $this->buildDailySeries($start, $end, $paidTransactions, $cashMovements);
         $topProducts = $this->buildTopProducts($paidTransactions);
@@ -129,19 +139,31 @@ class FinanceController extends Controller
 
     private function paidTransactionsBetween(?string $outletId, Carbon $start, Carbon $end, bool $exclusiveStart)
     {
-        $query = Transaction::query()
+        return Transaction::query()
             ->where('outlet_id', $outletId)
             ->where('payment_status', 'PAID')
-            ->where('paid_at', '<=', $end)
-            ->with('items.product');
+            ->tap(fn ($query) => $this->applyPaidTransactionWindow($query, $start, $end, $exclusiveStart))
+            ->with('items.product')
+            ->get();
+    }
 
-        if ($exclusiveStart) {
-            $query->where('paid_at', '>', $start);
-        } else {
-            $query->where('paid_at', '>=', $start);
-        }
+    private function applyPaidTransactionWindow($query, Carbon $start, Carbon $end, bool $exclusiveStart): void
+    {
+        $operator = $exclusiveStart ? '>' : '>=';
 
-        return $query->get();
+        $query->where(function ($dateQuery) use ($start, $end, $operator) {
+            $dateQuery
+                ->where(function ($paidAtQuery) use ($start, $end, $operator) {
+                    $paidAtQuery->whereNotNull('paid_at')
+                        ->where('paid_at', '<=', $end)
+                        ->where('paid_at', $operator, $start);
+                })
+                ->orWhere(function ($legacyQuery) use ($start, $end, $operator) {
+                    $legacyQuery->whereNull('paid_at')
+                        ->where('created_at', '<=', $end)
+                        ->where('created_at', $operator, $start);
+                });
+        });
     }
 
     private function cashMovementsBetween(?string $outletId, Carbon $start, Carbon $end, bool $exclusiveStart)
@@ -159,20 +181,192 @@ class FinanceController extends Controller
         return $query->orderByDesc('created_at')->get();
     }
 
-    private function resolveCurrentCashPeriod(Carbon $periodEnd): array
+    private function resolveCurrentCashPeriod(?string $outletId, Carbon $periodEnd, ?ShiftRecord $openShift = null): array
     {
-        $dayStart = $periodEnd->copy()->startOfDay();
+        $baseCarry = $this->emptyCashCarry();
+
+        $lastWithdrawal = $outletId ? PettyCash::query()
+            ->where('outlet_id', $outletId)
+            ->where('category', 'Penarikan')
+            ->where('created_at', '<=', $periodEnd)
+            ->orderByDesc('created_at')
+            ->first() : null;
+
+        if ($lastWithdrawal) {
+            $withdrawalAt = Carbon::parse($lastWithdrawal->created_at, self::FINANCE_TIMEZONE);
+
+            return [
+                'start' => $withdrawalAt,
+                'exclusive_start' => true,
+                'mode' => 'SINCE_LAST_WITHDRAWAL',
+                'last_withdrawal_at' => $withdrawalAt,
+                'carry' => $this->carryAfterWithdrawal($lastWithdrawal, $outletId),
+            ];
+        }
+
+        $firstActivityAt = $this->firstFinanceActivityAt($outletId, $periodEnd);
+
+        if ($openShift && (! $firstActivityAt || Carbon::parse($openShift->opened_at, self::FINANCE_TIMEZONE)->lte($firstActivityAt))) {
+            return [
+                'start' => Carbon::parse($openShift->opened_at, self::FINANCE_TIMEZONE),
+                'exclusive_start' => false,
+                'mode' => 'OPEN_SHIFT',
+                'last_withdrawal_at' => null,
+                'carry' => $baseCarry,
+            ];
+        }
 
         return [
-            'start' => $dayStart,
+            'start' => $firstActivityAt ?: $periodEnd->copy()->startOfDay(),
             'exclusive_start' => false,
-            'carry' => [
-                'cash_net' => 0,
-                'qris_balance' => 0,
-                'cashier_topups' => 0,
-                'outside_cashier_topups' => 0,
-            ],
+            'mode' => $firstActivityAt ? 'ALL_UNWITHDRAWN' : 'TODAY',
+            'last_withdrawal_at' => null,
+            'carry' => $baseCarry,
         ];
+    }
+
+    private function emptyCashCarry(): array
+    {
+        return [
+            'cash_net' => 0,
+            'qris_balance' => 0,
+            'cashier_topups' => 0,
+            'outside_cashier_topups' => 0,
+        ];
+    }
+
+    private function latestWithdrawalBefore(?string $outletId, Carbon $date): ?PettyCash
+    {
+        if (! $outletId) {
+            return null;
+        }
+
+        return PettyCash::query()
+            ->where('outlet_id', $outletId)
+            ->where('category', 'Penarikan')
+            ->where('created_at', '<', $date)
+            ->orderByDesc('created_at')
+            ->first();
+    }
+
+    private function carryAfterWithdrawal(PettyCash $withdrawal, ?string $outletId): array
+    {
+        $snapshot = FinanceWithdrawalSnapshot::query()
+            ->where('petty_cash_id', $withdrawal->id)
+            ->first();
+
+        if ($snapshot) {
+            return $this->carryAfterWithdrawalSnapshot($snapshot);
+        }
+
+        $withdrawalAt = $withdrawal->created_at instanceof Carbon
+            ? $withdrawal->created_at
+            : Carbon::parse($withdrawal->created_at, self::FINANCE_TIMEZONE);
+        $previousWithdrawal = $this->latestWithdrawalBefore($outletId, $withdrawalAt);
+
+        if ($previousWithdrawal) {
+            $periodStart = Carbon::parse($previousWithdrawal->created_at, self::FINANCE_TIMEZONE);
+            $exclusiveStart = true;
+            $carry = $this->carryAfterWithdrawal($previousWithdrawal, $outletId);
+        } else {
+            $periodStart = $this->firstFinanceActivityAt($outletId, $withdrawalAt) ?: $withdrawalAt->copy()->startOfDay();
+            $exclusiveStart = false;
+            $carry = $this->emptyCashCarry();
+        }
+
+        $summary = $this->buildWithdrawalPeriodSummary(
+            $outletId,
+            $periodStart,
+            $withdrawalAt,
+            $exclusiveStart,
+            $withdrawal->id,
+            $carry
+        );
+
+        return $this->carryAfterWithdrawalSummary(
+            (float) $summary['cashDrawerNet'],
+            (float) $summary['qrisBalanceActual'],
+            $this->normalizePaymentMethod($withdrawal),
+            (float) $withdrawal->amount
+        );
+    }
+
+    private function carryAfterWithdrawalSnapshot(FinanceWithdrawalSnapshot $snapshot): array
+    {
+        $meta = $snapshot->meta ?? [];
+
+        if (array_key_exists('cash_net_after', $meta) && array_key_exists('qris_balance_after', $meta)) {
+            return array_merge($this->emptyCashCarry(), [
+                'cash_net' => (float) ($meta['cash_net_after'] ?? 0),
+                'qris_balance' => (float) ($meta['qris_balance_after'] ?? 0),
+            ]);
+        }
+
+        $openingCash = (float) ($meta['standard_opening_cash'] ?? ShiftService::STANDARD_OPENING_CASH);
+        $cashNetBefore = (float) $snapshot->cash_balance_before - $openingCash - (float) $snapshot->cashier_topups;
+
+        return $this->carryAfterWithdrawalSummary(
+            $cashNetBefore,
+            (float) $snapshot->qris_balance_before,
+            $snapshot->withdrawal_method,
+            (float) $snapshot->withdrawal_amount
+        );
+    }
+
+    private function carryAfterWithdrawalSummary(float $cashNetBefore, float $qrisBalanceBefore, string $method, float $amount): array
+    {
+        $cashNetAfter = $cashNetBefore;
+        $qrisBalanceAfter = $qrisBalanceBefore;
+
+        if ($method === 'QRIS') {
+            $qrisBalanceAfter -= $amount;
+        } else {
+            $cashNetAfter -= $amount;
+        }
+
+        return array_merge($this->emptyCashCarry(), [
+            'cash_net' => $cashNetAfter,
+            'qris_balance' => $qrisBalanceAfter,
+        ]);
+    }
+
+    private function firstFinanceActivityAt(?string $outletId, Carbon $periodEnd): ?Carbon
+    {
+        if (! $outletId) {
+            return null;
+        }
+
+        $dates = collect([
+            Transaction::query()
+                ->where('outlet_id', $outletId)
+                ->where('payment_status', 'PAID')
+                ->whereNotNull('paid_at')
+                ->where('paid_at', '<=', $periodEnd)
+                ->min('paid_at'),
+            Transaction::query()
+                ->where('outlet_id', $outletId)
+                ->where('payment_status', 'PAID')
+                ->whereNull('paid_at')
+                ->where('created_at', '<=', $periodEnd)
+                ->min('created_at'),
+            PettyCash::query()
+                ->where('outlet_id', $outletId)
+                ->where('created_at', '<=', $periodEnd)
+                ->min('created_at'),
+            ShiftRecord::query()
+                ->where('outlet_id', $outletId)
+                ->where('opened_at', '<=', $periodEnd)
+                ->min('opened_at'),
+        ])->filter();
+
+        if ($dates->isEmpty()) {
+            return null;
+        }
+
+        return $dates
+            ->map(fn ($date) => Carbon::parse($date, self::FINANCE_TIMEZONE))
+            ->sort()
+            ->first();
     }
 
     public function withdraw(Request $request)
@@ -202,6 +396,18 @@ class FinanceController extends Controller
                 $period['carry']
             );
 
+            $availableForMethod = $data['payment_method'] === 'QRIS'
+                ? (float) $periodSummary['withdrawableQris']
+                : (float) $periodSummary['withdrawableCash'];
+
+            if ((float) $data['amount'] > $availableForMethod) {
+                $label = $data['payment_method'] === 'QRIS' ? 'QRIS' : 'cash bersih';
+
+                throw ValidationException::withMessages([
+                    'amount' => "Nominal penarikan melebihi saldo {$label} yang tersedia.",
+                ]);
+            }
+
             $withdrawal = $this->pettyCashService->createExpense([
                 'outlet_id' => $outletId,
                 'amount' => $data['amount'],
@@ -220,17 +426,13 @@ class FinanceController extends Controller
 
     private function resolveWithdrawalPeriod(?string $outletId, Carbon $periodEnd): array
     {
-        $dayStart = $periodEnd->copy()->startOfDay();
-        return [
-            'start' => $dayStart,
-            'exclusive_start' => false,
-            'carry' => [
-                'cash_net' => 0,
-                'qris_balance' => 0,
-                'cashier_topups' => 0,
-                'outside_cashier_topups' => 0,
-            ],
-        ];
+        $openShift = $outletId ? $this->shiftService->getOpenShift($outletId) : null;
+
+        if ($openShift && Carbon::parse($openShift->opened_at, self::FINANCE_TIMEZONE)->gt($periodEnd)) {
+            $openShift = null;
+        }
+
+        return $this->resolveCurrentCashPeriod($outletId, $periodEnd, $openShift);
     }
 
     private function buildWithdrawalPeriodSummary(
@@ -244,20 +446,16 @@ class FinanceController extends Controller
         $paidQuery = Transaction::query()
             ->where('outlet_id', $outletId)
             ->where('payment_status', 'PAID')
-            ->where('paid_at', '<=', $periodEnd)
+            ->tap(fn ($query) => $this->applyPaidTransactionWindow($query, $periodStart, $periodEnd, $exclusiveStart))
             ->with('items.product');
 
         $movementQuery = PettyCash::query()
             ->where('outlet_id', $outletId)
             ->where('created_at', '<=', $periodEnd);
 
-        if ($exclusiveStart) {
-            $paidQuery->where('paid_at', '>', $periodStart);
-            $movementQuery->where('created_at', '>', $periodStart);
-        } else {
-            $paidQuery->where('paid_at', '>=', $periodStart);
-            $movementQuery->where('created_at', '>=', $periodStart);
-        }
+        $exclusiveStart
+            ? $movementQuery->where('created_at', '>', $periodStart)
+            : $movementQuery->where('created_at', '>=', $periodStart);
 
         if ($excludeMovementId) {
             $movementQuery->where('id', '!=', $excludeMovementId);
@@ -284,6 +482,15 @@ class FinanceController extends Controller
     private function storeWithdrawalSnapshot(PettyCash $withdrawal, Carbon $periodStart, Carbon $periodEnd, array $summary): void
     {
         $withdrawalAmount = (float) $withdrawal->amount;
+        $withdrawalMethod = $this->normalizePaymentMethod($withdrawal);
+        $cashNetBefore = (float) $summary['cashDrawerNet'];
+        $qrisBalanceBefore = (float) $summary['qrisBalanceActual'];
+        $afterCarry = $this->carryAfterWithdrawalSummary(
+            $cashNetBefore,
+            $qrisBalanceBefore,
+            $withdrawalMethod,
+            $withdrawalAmount
+        );
 
         FinanceWithdrawalSnapshot::updateOrCreate(
             ['petty_cash_id' => $withdrawal->id],
@@ -292,7 +499,7 @@ class FinanceController extends Controller
                 'period_start' => $periodStart,
                 'period_end' => $periodEnd,
                 'withdrawal_amount' => $withdrawalAmount,
-                'withdrawal_method' => $this->normalizePaymentMethod($withdrawal),
+                'withdrawal_method' => $withdrawalMethod,
                 'omzet_total' => $summary['omzet'],
                 'cash_sales' => $summary['cashSales'],
                 'qris_sales' => $summary['qrisSales'],
@@ -317,6 +524,10 @@ class FinanceController extends Controller
                     'private_restock_expense' => $summary['privateRestockExpense'],
                     'drawer_cashier_topups' => $summary['drawerCashierTopups'],
                     'outside_cashier_topups' => $summary['outsideCashierTopups'],
+                    'cash_net_before' => $cashNetBefore,
+                    'qris_balance_before' => $qrisBalanceBefore,
+                    'cash_net_after' => $afterCarry['cash_net'],
+                    'qris_balance_after' => $afterCarry['qris_balance'],
                 ],
             ]
         );
@@ -590,6 +801,9 @@ class FinanceController extends Controller
             'cashDrawerNet' => $cashDrawerNet,
             'qrisBalanceActual' => $qrisBalanceActual,
             'cleanFinance' => $cleanFinance,
+            'withdrawableCash' => max(0, $cashDrawerNet),
+            'withdrawableQris' => max(0, $qrisBalanceActual),
+            'withdrawableTotal' => max(0, $cashDrawerNet) + max(0, $qrisBalanceActual),
             'carryCashDrawerNet' => $carryCashNet,
             'carryQrisBalance' => $carryQrisBalance,
             'carryCashierTopups' => $carryCashierTopups,
@@ -629,6 +843,8 @@ class FinanceController extends Controller
                 'date' => $key,
                 'omzet' => 0,
                 'expenses' => 0,
+                'cashier_expenses' => 0,
+                'private_expenses' => 0,
                 'cashier_topups' => 0,
                 'drawer_cashier_topups' => 0,
                 'outside_cashier_topups' => 0,
@@ -638,7 +854,7 @@ class FinanceController extends Controller
         }
 
         foreach ($paidTransactions as $transaction) {
-            $key = Carbon::parse($transaction->paid_at)->toDateString();
+            $key = $this->transactionFinanceDate($transaction)->toDateString();
             if (isset($days[$key])) {
                 $days[$key]['omzet'] += (float) $transaction->total_amount;
                 foreach ($transaction->items as $item) {
@@ -668,15 +884,27 @@ class FinanceController extends Controller
             }
 
             if ($movement->cash_flow === 'OUT') {
-                $days[$key]['expenses'] += (float) $movement->amount;
+                $amount = (float) $movement->amount;
+                $days[$key]['expenses'] += $amount;
+
+                if ($this->normalizePaymentMethod($movement) === 'PRIVATE') {
+                    $days[$key]['private_expenses'] += $amount;
+                } else {
+                    $days[$key]['cashier_expenses'] += $amount;
+                }
             }
         }
 
         foreach ($days as &$day) {
-            $day['profit'] += $day['omzet'] - $day['expenses'] - $day['drawer_cashier_topups'];
+            $day['profit'] += $day['omzet'] - $day['cashier_expenses'] - $day['drawer_cashier_topups'];
         }
 
         return array_values($days);
+    }
+
+    private function transactionFinanceDate(Transaction $transaction): Carbon
+    {
+        return Carbon::parse($transaction->paid_at ?: $transaction->created_at, self::FINANCE_TIMEZONE);
     }
 
     private function buildTopProducts($paidTransactions): array

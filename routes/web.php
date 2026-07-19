@@ -27,6 +27,7 @@ Route::middleware(['auth', 'outlet'])->group(function () {
     Route::post('/stock', [\App\Http\Controllers\StockController::class, 'store'])->name('stock.store');
     Route::delete('/stock/{id}', [\App\Http\Controllers\StockController::class, 'destroy'])->name('stock.destroy');
     Route::post('/stock/{id}/add', [\App\Http\Controllers\StockController::class, 'addStock'])->name('stock.add');
+    Route::post('/stock/{id}/transfer-from-warehouse', [\App\Http\Controllers\StockController::class, 'transferFromWarehouse'])->name('stock.transfer-from-warehouse');
     Route::post('/stock/{id}/waste', [\App\Http\Controllers\StockController::class, 'recordWaste'])->name('stock.waste');
     Route::put('/stock/{id}/mitra-price', [\App\Http\Controllers\StockController::class, 'updateMitraPrice'])->name('stock.update-mitra-price');
     Route::post('/mitra-stock-deliveries', [\App\Http\Controllers\MitraStockDeliveryController::class, 'store'])->name('mitra-stock-deliveries.store');
@@ -57,6 +58,8 @@ Route::middleware(['auth', 'outlet'])->group(function () {
 
     // Reports (Laporan)
     Route::get('/reports', [\App\Http\Controllers\ReportController::class, 'index'])->name('reports');
+    Route::get('/reports/e-settlement', [\App\Http\Controllers\ReportController::class, 'eSettlement'])->name('reports.e-settlement');
+    Route::get('/reports/e-settlement/pdf', [\App\Http\Controllers\ReportController::class, 'eSettlementPdf'])->name('reports.e-settlement.pdf');
     Route::get('/finance', [\App\Http\Controllers\FinanceController::class, 'index'])->name('finance');
     Route::post('/finance/withdraw', [\App\Http\Controllers\FinanceController::class, 'withdraw'])->name('finance.withdraw');
     

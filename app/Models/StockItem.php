@@ -16,7 +16,7 @@ class StockItem extends Model
     protected $fillable = [
         'outlet_id', 'name', 'current_stock_biji', 'unit_name', 'min_stock_alert',
         'supplier_id', 'trackable', 'counting_basis', 'display_group_id',
-        'min_restock_qty', 'restock_price',
+        'min_restock_qty', 'restock_price', 'warehouse_stock_item_id',
     ];
 
     protected function casts(): array
@@ -58,5 +58,10 @@ class StockItem extends Model
     public function wasteLogs(): HasMany
     {
         return $this->hasMany(WasteLog::class);
+    }
+
+    public function warehouseStockItem(): BelongsTo
+    {
+        return $this->belongsTo(WarehouseStockItem::class);
     }
 }

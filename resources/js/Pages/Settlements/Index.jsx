@@ -49,6 +49,7 @@ export default function SettlementsIndex({
     startDate,
     endDate,
     reportData = [],
+    warehouseReportData = [],
     settlements = [],
     isOwner,
 }) {
@@ -72,7 +73,8 @@ export default function SettlementsIndex({
         return (Number(quantity) / baseQuantity) * Number(price);
     };
 
-    const proposalItems = useMemo(() => reportData.map((item) => {
+    const calculationData = calcMethod === 'RESTOCK' ? warehouseReportData : reportData;
+    const proposalItems = useMemo(() => calculationData.map((item) => {
         const rawQuantity = calcMethod === 'SALES' ? Number(item.sales_qty) : Number(item.restock_qty);
         const remainingQuantity = Math.max(0, rawQuantity - Number(item.committed_qty ?? item.settled_qty ?? 0));
         return {
@@ -80,7 +82,7 @@ export default function SettlementsIndex({
             remainingQuantity,
             subtotal: calcSubtotal(remainingQuantity, item.restock_price, item.min_restock_qty),
         };
-    }), [reportData, calcMethod]);
+    }), [calculationData, calcMethod]);
 
     const calculatedTotal = proposalItems.reduce((sum, item) => sum + item.subtotal, 0);
     const proposalQuantity = proposalItems.reduce((sum, item) => sum + item.remainingQuantity, 0);
@@ -219,7 +221,7 @@ export default function SettlementsIndex({
                         </div>
                     </section>
 
-                    {selectedMitraId && reportData.length > 0 && (
+                    {selectedMitraId && (reportData.length > 0 || warehouseReportData.length > 0) && (
                         <>
                             <section>
                                 <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
@@ -244,6 +246,11 @@ export default function SettlementsIndex({
                                         </button>
                                     </div>
                                 </div>
+                                <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                                    {calcMethod === 'RESTOCK'
+                                        ? 'Menghitung pasokan yang diterima satu kali di Gudang Pusat. Transfer gudang ke outlet tidak dihitung ulang.'
+                                        : 'Menghitung seluruh bahan terjual, waste, barang rusak/basi, dan penggunaan pribadi dari semua outlet.'}
+                                </div>
 
                                 <div className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 lg:grid-cols-4">
                                     <Metric label="Periode" value={`${formatDate(startDate)} - ${formatDate(endDate)}`} />
@@ -255,7 +262,7 @@ export default function SettlementsIndex({
                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                     {proposalItems.map((item) => (
                                         <button
-                                            key={item.stock_item_id}
+                                            key={item.item_key || item.stock_item_id}
                                             type="button"
                                             onClick={() => setViewUsageItem({ item, calculationMethod: calcMethod })}
                                             className="w-full rounded-lg border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-indigo-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -302,7 +309,9 @@ export default function SettlementsIndex({
                                                 </div>
                                                 <p className="text-lg font-bold text-slate-900">{formatRupiah(item.subtotal)}</p>
                                             </div>
-                                            <p className="mt-4 border-t border-slate-100 pt-3 text-xs font-semibold text-indigo-600">Klik untuk melihat rincian penggunaan</p>
+                                            <p className="mt-4 border-t border-slate-100 pt-3 text-xs font-semibold text-indigo-600">
+                                                Klik untuk melihat {calcMethod === 'RESTOCK' ? 'rincian penerimaan gudang' : 'rincian penggunaan'}
+                                            </p>
                                         </button>
                                     ))}
                                 </div>
@@ -323,7 +332,7 @@ export default function SettlementsIndex({
                         </>
                     )}
 
-                    {selectedMitraId && reportData.length === 0 && (
+                    {selectedMitraId && reportData.length === 0 && warehouseReportData.length === 0 && (
                         <EmptyState text="Tidak ada aktivitas stok mitra pada periode yang dipilih." />
                     )}
                 </div>
@@ -697,7 +706,7 @@ function UsageDetail({ item, calculationMethod, onClose }) {
                         </>
                     ) : (
                         <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
-                            <p className="text-sm text-sky-700">Stok diterima outlet</p>
+                            <p className="text-sm text-sky-700">Stok diterima gudang dari mitra</p>
                             <p className="mt-1 text-2xl font-bold text-sky-900">{formatQty(item.restock_qty, item.unit_name)}</p>
                         </div>
                     )}

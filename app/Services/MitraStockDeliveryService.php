@@ -3,14 +3,16 @@
 namespace App\Services;
 
 use App\Models\MitraStockDelivery;
-use App\Models\RestockLog;
 use App\Models\StockItem;
 use App\Models\User;
+use App\Models\WarehouseStockItem;
 use Illuminate\Support\Facades\DB;
 
 class MitraStockDeliveryService
 {
-    public function create(User $mitra, string $outletId, string $stockItemId, float $quantity, ?string $note): MitraStockDelivery
+    public function __construct(private WarehouseInventoryService $warehouseInventory) {}
+
+    public function create(User $mitra, string $stockItemId, float $quantity, ?string $note): MitraStockDelivery
     {
         if (! $mitra->isMitra()) {
             throw new \InvalidArgumentException('Hanya mitra yang dapat mencatat pengiriman.');
@@ -20,19 +22,15 @@ class MitraStockDeliveryService
             throw new \InvalidArgumentException('Jumlah kirim harus lebih dari 0.');
         }
 
-        $isScoped = $mitra->mitraStockItems()
-            ->where('stock_items.id', $stockItemId)
-            ->where('stock_items.outlet_id', $outletId)
-            ->exists();
-
-        if (! $isScoped) {
-            throw new \InvalidArgumentException('Bahan tidak terhubung ke mitra atau outlet aktif.');
-        }
+        $sourceItem = StockItem::findOrFail($stockItemId);
+        $warehouseStockItem = $this->warehouseInventory->ensureWarehouseStockItem($mitra, $sourceItem);
 
         return MitraStockDelivery::create([
-            'outlet_id' => $outletId,
+            'outlet_id' => null,
+            'warehouse_id' => $warehouseStockItem->warehouse_id,
+            'warehouse_stock_item_id' => $warehouseStockItem->id,
             'mitra_id' => $mitra->id,
-            'stock_item_id' => $stockItemId,
+            'stock_item_id' => $sourceItem->id,
             'qty_sent' => $quantity,
             'status' => MitraStockDelivery::STATUS_SENT,
             'sender_note' => $note,
@@ -42,7 +40,6 @@ class MitraStockDeliveryService
 
     public function receive(
         string $deliveryId,
-        string $outletId,
         User $receiver,
         float $quantityReceived,
         ?string $note
@@ -55,9 +52,8 @@ class MitraStockDeliveryService
             throw new \InvalidArgumentException('Jumlah diterima tidak boleh kurang dari 0.');
         }
 
-        return DB::transaction(function () use ($deliveryId, $outletId, $receiver, $quantityReceived, $note) {
+        return DB::transaction(function () use ($deliveryId, $receiver, $quantityReceived, $note) {
             $delivery = MitraStockDelivery::where('id', $deliveryId)
-                ->where('outlet_id', $outletId)
                 ->lockForUpdate()
                 ->firstOrFail();
 
@@ -65,32 +61,13 @@ class MitraStockDeliveryService
                 throw new \InvalidArgumentException('Pengiriman ini sudah pernah diperiksa.');
             }
 
-            $stockItem = StockItem::where('id', $delivery->stock_item_id)
-                ->where('outlet_id', $outletId)
+            $warehouseStockItem = WarehouseStockItem::where('id', $delivery->warehouse_stock_item_id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $before = (float) $stockItem->current_stock_biji;
+            $before = (float) $warehouseStockItem->current_stock;
             $after = $before + $quantityReceived;
-            $cost = 0.0;
-
-            if ((float) $stockItem->min_restock_qty > 0 && (float) $stockItem->restock_price > 0) {
-                $cost = ($quantityReceived / (float) $stockItem->min_restock_qty) * (float) $stockItem->restock_price;
-            }
-
-            $stockItem->update(['current_stock_biji' => $after]);
-
-            $restockLog = RestockLog::create([
-                'outlet_id' => $outletId,
-                'stock_item_id' => $stockItem->id,
-                'qty_added' => $quantityReceived,
-                'stock_before' => $before,
-                'stock_after' => $after,
-                'note' => 'Penerimaan kiriman mitra'.$this->appendNote($note),
-                'fund_source' => RestockLog::FUND_SOURCE_MITRA_DELIVERY,
-                'restock_cost' => $cost,
-                'created_at' => now(),
-            ]);
+            $warehouseStockItem->update(['current_stock' => $after]);
 
             $matches = abs((float) $delivery->qty_sent - $quantityReceived) < 0.0001;
             $delivery->update([
@@ -101,15 +78,10 @@ class MitraStockDeliveryService
                 'receiver_note' => $note,
                 'received_at' => now(),
                 'received_by' => $receiver->id,
-                'restock_log_id' => $restockLog->id,
+                'restock_log_id' => null,
             ]);
 
-            return $delivery->fresh(['stockItem', 'mitra', 'receiver']);
+            return $delivery->fresh(['warehouseStockItem', 'warehouse', 'mitra', 'receiver']);
         });
-    }
-
-    private function appendNote(?string $note): string
-    {
-        return $note ? " - {$note}" : '';
     }
 }

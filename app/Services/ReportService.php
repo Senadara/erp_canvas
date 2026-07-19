@@ -350,4 +350,271 @@ class ReportService
             ] : null,
         ];
     }
+
+    public function getESettlementReport(
+        string $outletId,
+        Carbon $startDate,
+        Carbon $endDate,
+        ?array $mitraProductIds = null
+    ): array {
+        $start = $startDate->copy()->startOfDay();
+        $end = $endDate->copy()->endOfDay();
+
+        $transactionQuery = Transaction::where('outlet_id', $outletId)
+            ->where('payment_status', 'PAID')
+            ->where(function ($query) use ($start, $end) {
+                $query->whereBetween('paid_at', [$start, $end])
+                    ->orWhere(function ($legacyQuery) use ($start, $end) {
+                        $legacyQuery->whereNull('paid_at')
+                            ->whereBetween('created_at', [$start, $end]);
+                    });
+            })
+            ->with('items');
+
+        if ($mitraProductIds !== null) {
+            $transactionQuery->whereHas('items', function ($query) use ($mitraProductIds) {
+                $query->whereIn('product_id', $mitraProductIds);
+            });
+        }
+
+        $transactions = $transactionQuery
+            ->orderBy('created_at')
+            ->get();
+
+        $movementQuery = PettyCash::where('outlet_id', $outletId)
+            ->whereBetween('created_at', [$start, $end])
+            ->orderBy('created_at');
+
+        $movements = $mitraProductIds === null ? $movementQuery->get() : collect();
+
+        $summary = [
+            'sales_total' => 0.0,
+            'cash_sales' => 0.0,
+            'qris_sales' => 0.0,
+            'transaction_count' => $transactions->count(),
+            'movement_count' => $movements->count(),
+            'cash_in' => 0.0,
+            'qris_in' => 0.0,
+            'outside_in' => 0.0,
+            'cash_out' => 0.0,
+            'qris_out' => 0.0,
+            'outside_out' => 0.0,
+            'operating_expenses' => 0.0,
+            'restock_expenses' => 0.0,
+            'cashier_topups' => 0.0,
+            'drawer_cashier_topups' => 0.0,
+            'outside_cashier_topups' => 0.0,
+            'withdraw_cash' => 0.0,
+            'withdraw_qris' => 0.0,
+        ];
+
+        $daily = [];
+        $categorySummary = [];
+        $ensureDay = function (Carbon $date) use (&$daily): string {
+            $key = $date->toDateString();
+
+            if (! isset($daily[$key])) {
+                $daily[$key] = [
+                    'date' => $key,
+                    'sales_total' => 0.0,
+                    'cash_sales' => 0.0,
+                    'qris_sales' => 0.0,
+                    'cash_in' => 0.0,
+                    'qris_in' => 0.0,
+                    'outside_in' => 0.0,
+                    'cash_out' => 0.0,
+                    'qris_out' => 0.0,
+                    'outside_out' => 0.0,
+                    'net_cash' => 0.0,
+                    'net_qris' => 0.0,
+                    'transaction_count' => 0,
+                    'movement_count' => 0,
+                ];
+            }
+
+            return $key;
+        };
+        $addCategorySummary = function (string $category, string $method, string $flow, float $amount) use (&$categorySummary): void {
+            $key = "{$category}|{$method}";
+
+            if (! isset($categorySummary[$key])) {
+                $categorySummary[$key] = [
+                    'category' => $category,
+                    'payment_method' => $method,
+                    'cash_in' => 0.0,
+                    'qris_in' => 0.0,
+                    'outside_in' => 0.0,
+                    'cash_out' => 0.0,
+                    'qris_out' => 0.0,
+                    'outside_out' => 0.0,
+                    'total_in' => 0.0,
+                    'total_out' => 0.0,
+                    'net' => 0.0,
+                    'count' => 0,
+                ];
+            }
+
+            $bucket = match ($method) {
+                'QRIS' => 'qris',
+                'PRIVATE' => 'outside',
+                default => 'cash',
+            };
+            $direction = $flow === 'IN' ? 'in' : 'out';
+
+            $categorySummary[$key]["{$bucket}_{$direction}"] += $amount;
+            $categorySummary[$key]["total_{$direction}"] += $amount;
+            $categorySummary[$key]['net'] += $flow === 'IN' ? $amount : -$amount;
+            $categorySummary[$key]['count']++;
+        };
+
+        $transactionRows = [];
+        foreach ($transactions as $transaction) {
+            $amount = 0.0;
+            foreach ($transaction->items as $item) {
+                if ($mitraProductIds === null || in_array($item->product_id, $mitraProductIds, true)) {
+                    $amount += (float) $item->subtotal;
+                }
+            }
+
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $method = $this->normalizePaymentMethod($transaction->payment_method);
+            $settledAt = $transaction->paid_at ?: $transaction->created_at;
+            $paidAt = Carbon::parse($settledAt);
+            $dayKey = $ensureDay($paidAt);
+
+            $summary['sales_total'] += $amount;
+            $daily[$dayKey]['sales_total'] += $amount;
+            $daily[$dayKey]['transaction_count']++;
+
+            if ($method === 'QRIS') {
+                $summary['qris_sales'] += $amount;
+                $daily[$dayKey]['qris_sales'] += $amount;
+                $daily[$dayKey]['net_qris'] += $amount;
+            } else {
+                $summary['cash_sales'] += $amount;
+                $daily[$dayKey]['cash_sales'] += $amount;
+                $daily[$dayKey]['net_cash'] += $amount;
+            }
+            $addCategorySummary('Penjualan', $method, 'IN', $amount);
+
+            $transactionRows[] = [
+                'id' => $transaction->id,
+                'invoice_number' => $transaction->invoice_number,
+                'paid_at' => $settledAt?->toIso8601String(),
+                'payment_method' => $method,
+                'amount' => $amount,
+            ];
+        }
+
+        $movementRows = [];
+        foreach ($movements as $movement) {
+            $amount = (float) $movement->amount;
+            $method = $this->normalizePaymentMethod($movement->payment_method);
+            $isCashierTopup = in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true);
+            $isDrawerCashierTopup = $isCashierTopup && $method !== 'PRIVATE';
+            $isWithdrawal = $movement->category === 'Penarikan';
+            $flow = $movement->cash_flow === 'IN' ? 'IN' : 'OUT';
+            $settlementFlow = $isDrawerCashierTopup ? 'OUT' : ($isCashierTopup ? 'IN' : $flow);
+            $createdAt = Carbon::parse($movement->created_at);
+            $dayKey = $ensureDay($createdAt);
+
+            $daily[$dayKey]['movement_count']++;
+
+            if ($isCashierTopup) {
+                $summary['cashier_topups'] += $amount;
+                if ($method === 'PRIVATE') {
+                    $summary['outside_cashier_topups'] += $amount;
+                } else {
+                    $summary['drawer_cashier_topups'] += $amount;
+                }
+            }
+
+            if ($isWithdrawal) {
+                if ($method === 'QRIS') {
+                    $summary['withdraw_qris'] += $amount;
+                } else {
+                    $summary['withdraw_cash'] += $amount;
+                }
+            }
+
+            if ($settlementFlow === 'IN') {
+                if ($method === 'QRIS') {
+                    $summary['qris_in'] += $amount;
+                    $daily[$dayKey]['qris_in'] += $amount;
+                    $daily[$dayKey]['net_qris'] += $amount;
+                } elseif ($method === 'PRIVATE') {
+                    $summary['outside_in'] += $amount;
+                    $daily[$dayKey]['outside_in'] += $amount;
+                } else {
+                    $summary['cash_in'] += $amount;
+                    $daily[$dayKey]['cash_in'] += $amount;
+                    $daily[$dayKey]['net_cash'] += $amount;
+                }
+            } else {
+                if (! $isWithdrawal && ! $isCashierTopup) {
+                    $summary['operating_expenses'] += $amount;
+                    if ($movement->category === 'RESTOCK') {
+                        $summary['restock_expenses'] += $amount;
+                    }
+                }
+
+                if ($method === 'QRIS') {
+                    $summary['qris_out'] += $amount;
+                    $daily[$dayKey]['qris_out'] += $amount;
+                    $daily[$dayKey]['net_qris'] -= $amount;
+                } elseif ($method === 'PRIVATE') {
+                    $summary['outside_out'] += $amount;
+                    $daily[$dayKey]['outside_out'] += $amount;
+                } else {
+                    $summary['cash_out'] += $amount;
+                    $daily[$dayKey]['cash_out'] += $amount;
+                    $daily[$dayKey]['net_cash'] -= $amount;
+                }
+            }
+            $addCategorySummary($movement->category, $method, $settlementFlow, $amount);
+
+            $movementRows[] = [
+                'id' => $movement->id,
+                'created_at' => $movement->created_at?->toIso8601String(),
+                'category' => $movement->category,
+                'payment_method' => $method,
+                'cash_flow' => $settlementFlow,
+                'amount' => $amount,
+                'description' => $movement->description,
+            ];
+        }
+
+        $summary['cash_net'] = $summary['cash_sales'] + $summary['cash_in'] - $summary['cash_out'];
+        $summary['qris_net'] = $summary['qris_sales'] + $summary['qris_in'] - $summary['qris_out'];
+        $summary['outside_net'] = $summary['outside_in'] - $summary['outside_out'];
+        $summary['settlement_net'] = $summary['cash_net'] + $summary['qris_net'];
+        $summary['money_in_total'] = $summary['cash_sales'] + $summary['qris_sales'] + $summary['cash_in'] + $summary['qris_in'] + $summary['outside_in'];
+        $summary['money_out_total'] = $summary['cash_out'] + $summary['qris_out'] + $summary['outside_out'];
+
+        return [
+            'start_date' => $start->format('Y-m-d'),
+            'end_date' => $end->format('Y-m-d'),
+            'summary' => $summary,
+            'category_summary' => collect($categorySummary)
+                ->sortBy([
+                    ['category', 'asc'],
+                    ['payment_method', 'asc'],
+                ])
+                ->values()
+                ->all(),
+            'daily' => collect($daily)->sortKeys()->values()->all(),
+            'transactions' => collect($transactionRows)->sortByDesc('paid_at')->values()->all(),
+            'movements' => collect($movementRows)->sortByDesc('created_at')->values()->all(),
+        ];
+    }
+
+    private function normalizePaymentMethod(?string $paymentMethod): string
+    {
+        return strtoupper((string) $paymentMethod) === 'QRIS'
+            ? 'QRIS'
+            : (strtoupper((string) $paymentMethod) === 'PRIVATE' ? 'PRIVATE' : 'CASH');
+    }
 }

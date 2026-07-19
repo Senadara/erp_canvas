@@ -1,0 +1,343 @@
+import { useState } from 'react';
+import ErpLayout from '@/Layouts/ErpLayout';
+import { Head, router } from '@inertiajs/react';
+import {
+    ArrowDownTrayIcon,
+    BanknotesIcon,
+    CalendarDaysIcon,
+    ClipboardDocumentListIcon,
+    CreditCardIcon,
+    FunnelIcon,
+} from '@heroicons/react/24/outline';
+
+function formatRupiah(value) {
+    const n = Number(value) || 0;
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
+}
+
+function formatNumber(value) {
+    return new Intl.NumberFormat('id-ID').format(Number(value) || 0);
+}
+
+function formatDate(value) {
+    if (!value) return '-';
+    return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${value}T00:00:00`));
+}
+
+function formatDateTime(value) {
+    if (!value) return '-';
+    return new Intl.DateTimeFormat('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    }).format(new Date(value));
+}
+
+function signedTone(value, positive = 'text-emerald-700') {
+    return (Number(value) || 0) >= 0 ? positive : 'text-rose-700';
+}
+
+function methodBadgeTone(method) {
+    if (method === 'QRIS') return 'bg-blue-100 text-blue-800';
+    if (method === 'PRIVATE') return 'bg-amber-100 text-amber-800';
+    return 'bg-emerald-100 text-emerald-800';
+}
+
+function moneyOutTone(method) {
+    return method === 'PRIVATE' ? 'text-amber-700' : 'text-rose-700';
+}
+
+function movementAmountTone(item, incoming) {
+    if (item.payment_method === 'PRIVATE') return 'text-amber-700';
+    return incoming ? 'text-emerald-700' : 'text-rose-700';
+}
+
+function movementSign(item, incoming) {
+    if (item.payment_method === 'PRIVATE') return '';
+    return incoming ? '+' : '-';
+}
+
+function MetricCard({ label, value, sub, icon: Icon, tone = 'text-slate-900', box = 'border-slate-200 bg-white' }) {
+    return (
+        <div className={`rounded-lg border p-4 shadow-sm ${box}`}>
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
+                    <p className={`mt-2 text-2xl font-bold ${tone}`}>{formatRupiah(value)}</p>
+                </div>
+                {Icon && <Icon className="h-6 w-6 text-slate-400" />}
+            </div>
+            {sub && <p className="mt-2 text-xs leading-relaxed text-slate-500">{sub}</p>}
+        </div>
+    );
+}
+
+export default function ESettlement({ filters, report = {} }) {
+    const [startDate, setStartDate] = useState(filters.start_date || report.start_date || '');
+    const [endDate, setEndDate] = useState(filters.end_date || report.end_date || '');
+    const invalidRange = Boolean(startDate && endDate && endDate < startDate);
+    const summary = report.summary || {};
+    const categorySummary = report.category_summary || [];
+    const daily = report.daily || [];
+    const transactions = report.transactions || [];
+    const movements = report.movements || [];
+    const cashierMoneyInTotal = (Number(summary.cash_sales) || 0)
+        + (Number(summary.qris_sales) || 0)
+        + (Number(summary.cash_in) || 0)
+        + (Number(summary.qris_in) || 0);
+    const cashierMoneyOutTotal = (Number(summary.cash_out) || 0) + (Number(summary.qris_out) || 0);
+    const privateMoneyUsage = Number(summary.outside_out) || 0;
+    const privateMoneyIn = Number(summary.outside_in) || 0;
+    const ownerWithdrawalTotal = (Number(summary.withdraw_cash) || 0) + (Number(summary.withdraw_qris) || 0);
+    const pdfUrl = route('reports.e-settlement.pdf', {
+        start_date: startDate,
+        end_date: endDate,
+    });
+
+    const applyFilter = (event) => {
+        event.preventDefault();
+        if (invalidRange) return;
+
+        router.get(route('reports.e-settlement'), {
+            start_date: startDate,
+            end_date: endDate,
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            replace: true,
+        });
+    };
+
+    return (
+        <ErpLayout title="E-Settlement Keuangan">
+            <Head title="E-Settlement Keuangan" />
+
+            <div className="space-y-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                        <h1 className="text-2xl font-semibold text-slate-900">E-Settlement Keuangan</h1>
+                        <p className="mt-1 text-sm text-slate-500">
+                            Rekap data penting keuangan periode {formatDate(report.start_date)} - {formatDate(report.end_date)}.
+                        </p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                        <button
+                            type="button"
+                            onClick={() => router.get(route('reports'))}
+                            className="inline-flex min-h-[40px] items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                            Kembali
+                        </button>
+                        <a
+                            href={pdfUrl}
+                            className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                        >
+                            <ArrowDownTrayIcon className="h-4 w-4" />
+                            Cetak PDF
+                        </a>
+                    </div>
+                </div>
+
+                <form onSubmit={applyFilter} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                    <label className="block">
+                        <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Mulai</span>
+                        <input
+                            type="date"
+                            value={startDate}
+                            onChange={(event) => setStartDate(event.target.value)}
+                            className="h-10 w-full rounded-md border-slate-300 text-sm"
+                        />
+                    </label>
+                    <label className="block">
+                        <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Sampai</span>
+                        <input
+                            type="date"
+                            value={endDate}
+                            min={startDate || undefined}
+                            onChange={(event) => setEndDate(event.target.value)}
+                            className={`h-10 w-full rounded-md text-sm ${invalidRange ? 'border-rose-400' : 'border-slate-300'}`}
+                        />
+                    </label>
+                    <button
+                        type="submit"
+                        disabled={invalidRange || !startDate || !endDate}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                        <FunnelIcon className="h-4 w-4" />
+                        Terapkan
+                    </button>
+                    {invalidRange && <p className="text-xs font-medium text-rose-600 sm:col-span-3">Tanggal akhir tidak boleh sebelum tanggal mulai.</p>}
+                </form>
+
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <MetricCard label="Total Penjualan" value={summary.sales_total} icon={ClipboardDocumentListIcon} tone="text-indigo-800" box="border-indigo-200 bg-indigo-50" sub={`${formatNumber(summary.transaction_count)} transaksi lunas`} />
+                    <MetricCard label="Cash Net" value={summary.cash_net} icon={BanknotesIcon} tone={signedTone(summary.cash_net, 'text-emerald-800')} box="border-emerald-200 bg-emerald-50" sub={`Cash sales ${formatRupiah(summary.cash_sales)} | keluar ${formatRupiah(summary.cash_out)}`} />
+                    <MetricCard label="QRIS Net" value={summary.qris_net} icon={CreditCardIcon} tone={signedTone(summary.qris_net, 'text-blue-800')} box="border-blue-200 bg-blue-50" sub={`QRIS sales ${formatRupiah(summary.qris_sales)} | keluar ${formatRupiah(summary.qris_out)}`} />
+                    <MetricCard label="Saldo Settlement" value={summary.settlement_net} tone={signedTone(summary.settlement_net, 'text-slate-900')} sub="Cash net + QRIS net, tanpa uang pribadi." />
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <MetricCard label="Uang Masuk Kas/QRIS" value={cashierMoneyInTotal} tone="text-slate-900" sub="Penjualan cash/QRIS dan mutasi masuk kas/QRIS." />
+                    <MetricCard label="Uang Keluar Kas/QRIS" value={cashierMoneyOutTotal} tone="text-rose-700" sub="Pengeluaran, restock, top up laci, dan penarikan." />
+                    <MetricCard label="Uang Pribadi" value={privateMoneyUsage} tone="text-amber-700" box="border-amber-200 bg-amber-50" sub={`Masuk/top up pribadi ${formatRupiah(privateMoneyIn)}. Tidak mengurangi settlement.`} />
+                    <MetricCard label="Top Up Kasir" value={summary.cashier_topups} tone="text-amber-700" sub={`Dari laci ${formatRupiah(summary.drawer_cashier_topups)} | luar ${formatRupiah(summary.outside_cashier_topups)}`} />
+                    <MetricCard label="Penarikan Owner" value={ownerWithdrawalTotal} tone="text-slate-900" sub={`Cash ${formatRupiah(summary.withdraw_cash)} | QRIS ${formatRupiah(summary.withdraw_qris)}`} />
+                </div>
+
+                <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-200 px-4 py-3">
+                        <h2 className="font-semibold text-slate-900">Kategori Keuangan</h2>
+                        <p className="text-xs text-slate-500">Semua kategori uang masuk dan keluar pada periode ini.</p>
+                    </div>
+                    {categorySummary.length > 0 ? (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-[980px] w-full text-sm">
+                                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                                    <tr>
+                                        <th className="px-4 py-3">Kategori</th>
+                                        <th className="px-4 py-3">Metode</th>
+                                        <th className="px-4 py-3 text-right">Masuk</th>
+                                        <th className="px-4 py-3 text-right">Keluar</th>
+                                        <th className="px-4 py-3 text-right">Net</th>
+                                        <th className="px-4 py-3 text-right">Jumlah</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {categorySummary.map((row) => (
+                                        <tr key={`${row.category}-${row.payment_method}`} className="hover:bg-slate-50">
+                                            <td className="px-4 py-3 font-semibold text-slate-900">{row.category}</td>
+                                            <td className="px-4 py-3">
+                                                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${methodBadgeTone(row.payment_method)}`}>
+                                                    {row.payment_method}
+                                                </span>
+                                            </td>
+                                            <td className={`whitespace-nowrap px-4 py-3 text-right ${row.payment_method === 'PRIVATE' ? 'text-amber-700' : 'text-emerald-700'}`}>{formatRupiah(row.total_in)}</td>
+                                            <td className={`whitespace-nowrap px-4 py-3 text-right ${moneyOutTone(row.payment_method)}`}>{formatRupiah(row.total_out)}</td>
+                                            <td className={`whitespace-nowrap px-4 py-3 text-right font-semibold ${row.payment_method === 'PRIVATE' ? 'text-amber-700' : signedTone(row.net, 'text-slate-900')}`}>{formatRupiah(row.net)}</td>
+                                            <td className="px-4 py-3 text-right text-slate-600">{formatNumber(row.count)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="px-4 py-10 text-center text-sm text-slate-500">Belum ada kategori keuangan pada periode ini.</div>
+                    )}
+                </section>
+
+                <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                        <h2 className="font-semibold text-slate-900">Rekap Harian</h2>
+                        <span className="text-xs text-slate-500">{daily.length} hari</span>
+                    </div>
+                    {daily.length > 0 ? (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-[980px] w-full text-sm">
+                                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                                    <tr>
+                                        <th className="px-4 py-3">Tanggal</th>
+                                        <th className="px-4 py-3 text-right">Penjualan</th>
+                                        <th className="px-4 py-3 text-right">Cash Sales</th>
+                                        <th className="px-4 py-3 text-right">QRIS Sales</th>
+                                        <th className="px-4 py-3 text-right">Cash Keluar</th>
+                                        <th className="px-4 py-3 text-right">QRIS Keluar</th>
+                                        <th className="px-4 py-3 text-right">Net Cash</th>
+                                        <th className="px-4 py-3 text-right">Net QRIS</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {daily.map((day) => (
+                                        <tr key={day.date} className="hover:bg-slate-50">
+                                            <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{formatDate(day.date)}</td>
+                                            <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-indigo-700">{formatRupiah(day.sales_total)}</td>
+                                            <td className="whitespace-nowrap px-4 py-3 text-right">{formatRupiah(day.cash_sales)}</td>
+                                            <td className="whitespace-nowrap px-4 py-3 text-right">{formatRupiah(day.qris_sales)}</td>
+                                            <td className="whitespace-nowrap px-4 py-3 text-right text-rose-700">{formatRupiah(day.cash_out)}</td>
+                                            <td className="whitespace-nowrap px-4 py-3 text-right text-rose-700">{formatRupiah(day.qris_out)}</td>
+                                            <td className={`whitespace-nowrap px-4 py-3 text-right font-semibold ${signedTone(day.net_cash, 'text-emerald-700')}`}>{formatRupiah(day.net_cash)}</td>
+                                            <td className={`whitespace-nowrap px-4 py-3 text-right font-semibold ${signedTone(day.net_qris, 'text-blue-700')}`}>{formatRupiah(day.net_qris)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="px-4 py-10 text-center text-sm text-slate-500">Belum ada data harian pada periode ini.</div>
+                    )}
+                </section>
+
+                <div className="grid gap-5 xl:grid-cols-2">
+                    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div className="border-b border-slate-200 px-4 py-3">
+                            <h2 className="font-semibold text-slate-900">Penjualan Lunas</h2>
+                            <p className="text-xs text-slate-500">Semua transaksi lunas pada periode yang dipilih.</p>
+                        </div>
+                        <div className="max-h-[420px] overflow-auto">
+                            {transactions.length > 0 ? (
+                                <table className="w-full min-w-[540px] text-sm">
+                                    <tbody className="divide-y divide-slate-100">
+                                        {transactions.map((item) => (
+                                            <tr key={item.id} className="hover:bg-slate-50">
+                                                <td className="px-4 py-3">
+                                                    <p className="font-semibold text-slate-900">{item.invoice_number}</p>
+                                                    <p className="text-xs text-slate-500">{formatDateTime(item.paid_at)}</p>
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${item.payment_method === 'QRIS' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                                        {item.payment_method}
+                                                    </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{formatRupiah(item.amount)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="px-4 py-10 text-center text-sm text-slate-500">Belum ada transaksi lunas.</div>
+                            )}
+                        </div>
+                    </section>
+
+                    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div className="border-b border-slate-200 px-4 py-3">
+                            <h2 className="font-semibold text-slate-900">Uang Keluar Masuk</h2>
+                            <p className="text-xs text-slate-500">Semua mutasi kas, QRIS, top up, restock, dan penarikan owner.</p>
+                        </div>
+                        <div className="max-h-[420px] overflow-auto">
+                            {movements.length > 0 ? (
+                                <table className="w-full min-w-[620px] text-sm">
+                                    <tbody className="divide-y divide-slate-100">
+                                        {movements.map((item) => {
+                                            const incoming = item.cash_flow === 'IN';
+                                            const sign = movementSign(item, incoming);
+                                            return (
+                                                <tr key={item.id} className="hover:bg-slate-50">
+                                                    <td className="px-4 py-3">
+                                                        <p className="font-semibold text-slate-900">{item.category}</p>
+                                                        <p className="text-xs text-slate-500">{formatDateTime(item.created_at)} - {item.description || 'Tanpa catatan'}</p>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center">
+                                                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${methodBadgeTone(item.payment_method)}`}>
+                                                            {item.payment_method}
+                                                        </span>
+                                                    </td>
+                                                    <td className={`whitespace-nowrap px-4 py-3 text-right font-semibold ${movementAmountTone(item, incoming)}`}>
+                                                        {sign && `${sign} `}{formatRupiah(item.amount)}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="px-4 py-10 text-center text-sm text-slate-500">Belum ada mutasi uang pada periode ini.</div>
+                            )}
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </ErpLayout>
+    );
+}

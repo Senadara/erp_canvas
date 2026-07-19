@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\DisplayGroupService;
 use App\Services\StockService;
+use App\Services\WarehouseInventoryService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -11,7 +12,8 @@ class StockController extends Controller
 {
     public function __construct(
         private StockService $stockService,
-        private DisplayGroupService $displayGroupService
+        private DisplayGroupService $displayGroupService,
+        private WarehouseInventoryService $warehouseInventoryService,
     ) {}
 
     public function index(Request $request)
@@ -46,15 +48,59 @@ class StockController extends Controller
         }
 
         $restockLogs = $restockLogs->get();
+        $warehouseItemsQuery = \App\Models\WarehouseStockItem::with([
+            'warehouse:id,name',
+            'mitra:id,display_name',
+            'outletStockItems:id,outlet_id,warehouse_stock_item_id,name,current_stock_biji',
+        ]);
+        if ($user && $user->isMitra()) {
+            $warehouseItemsQuery->where('mitra_id', $user->id);
+        } elseif (! $user?->isOwner()) {
+            $warehouseItemsQuery->whereHas(
+                'outletStockItems',
+                fn ($query) => $query->where('outlet_id', $outletId)
+            );
+        }
+        $warehouseItems = $warehouseItemsQuery
+            ->orderBy('name')
+            ->get()
+            ->map(function ($item) use ($user) {
+                if ($user && $user->isMitra()) {
+                    $item->source_stock_item_id = $item->outletStockItems->first()?->id;
+                }
+
+                return $item;
+            });
+
         $deliveries = \App\Models\MitraStockDelivery::with([
             'stockItem:id,name,unit_name',
+            'warehouse:id,name',
+            'warehouseStockItem:id,name,unit_name,current_stock',
             'mitra:id,display_name',
             'receiver:id,display_name',
         ])
-            ->where('outlet_id', $outletId)
             ->when($user && $user->isMitra(), fn ($query) => $query->where('mitra_id', $user->id))
             ->orderByRaw("CASE WHEN status = 'SENT' THEN 0 ELSE 1 END")
             ->orderByDesc('sent_at')
+            ->take(150)
+            ->get();
+        $transfers = \App\Models\WarehouseStockTransfer::with([
+            'warehouseStockItem:id,name,unit_name',
+            'outlet:id,name',
+            'transferredBy:id,display_name',
+        ])
+            ->when(
+                ! $user?->isOwner() && ! $user?->isMitra(),
+                fn ($query) => $query->where('outlet_id', $outletId)
+            )
+            ->when(
+                $user && $user->isMitra(),
+                fn ($query) => $query->whereHas(
+                    'warehouseStockItem',
+                    fn ($itemQuery) => $itemQuery->where('mitra_id', $user->id)
+                )
+            )
+            ->orderByDesc('created_at')
             ->take(150)
             ->get();
 
@@ -63,6 +109,8 @@ class StockController extends Controller
             'displayGroups' => $displayGroups,
             'restockLogs' => $restockLogs,
             'deliveries' => $deliveries,
+            'warehouseItems' => $warehouseItems,
+            'transfers' => $transfers,
         ]);
     }
 
@@ -137,6 +185,31 @@ class StockController extends Controller
         $outletId = $request->session()->get('outlet_id');
         $this->stockService->addStock($id, $data['qty'], $data['note'], $outletId, $data['fund_source'] ?? \App\Models\RestockLog::FUND_SOURCE_CASHIER);
         return redirect()->back()->with('success', 'Stok berhasil ditambahkan.');
+    }
+
+    public function transferFromWarehouse(Request $request, string $id)
+    {
+        $user = $request->user();
+        abort_if(! $user || $user->isMitra(), 403, 'Hanya petugas outlet yang dapat mengambil stok gudang.');
+
+        $data = $request->validate([
+            'qty' => ['required', 'numeric', 'min:0.0001'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            $this->warehouseInventoryService->transferToOutlet(
+                (string) $request->session()->get('outlet_id'),
+                $id,
+                $user,
+                (float) $data['qty'],
+                $data['note'] ?? null,
+            );
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['warehouse_transfer' => $exception->getMessage()]);
+        }
+
+        return back()->with('success', 'Stok berhasil diambil dari gudang dan ditambahkan ke outlet.');
     }
 
     public function recordWaste(Request $request, string $id)

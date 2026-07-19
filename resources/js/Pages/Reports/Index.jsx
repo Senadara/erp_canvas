@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import {
     ArrowTrendingUpIcon,
     CalendarDaysIcon,
+    ClipboardDocumentListIcon,
     FunnelIcon,
     InformationCircleIcon,
     TrophyIcon,
@@ -47,7 +48,6 @@ export default function ReportsIndex({
     currentYear,
     productPerformance = {},
 }) {
-    
     const months = [
         'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
         'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
@@ -155,6 +155,25 @@ export default function ReportsIndex({
                     </p>
                 </div>
             </div>
+
+            <section className="mb-10 rounded-lg border border-indigo-200 bg-indigo-50 p-5" aria-labelledby="e-settlement-entry-title">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="max-w-2xl">
+                        <h2 id="e-settlement-entry-title" className="text-lg font-semibold text-slate-900">E-Settlement Keuangan</h2>
+                        <p className="mt-1 text-sm leading-relaxed text-indigo-900">
+                            Buka halaman khusus untuk melihat rekap penjualan, cash net, QRIS net, uang masuk, uang keluar, kategori keuangan, histori mutasi, dan cetak PDF sesuai periode.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => router.get(route('reports.e-settlement'))}
+                        className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                    >
+                        <ClipboardDocumentListIcon className="h-4 w-4" />
+                        Buka E-Settlement
+                    </button>
+                </div>
+            </section>
 
             <section className="mb-10" aria-labelledby="product-performance-title">
                 <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">

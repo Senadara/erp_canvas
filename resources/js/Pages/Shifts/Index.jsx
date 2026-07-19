@@ -36,6 +36,16 @@ function paymentTone(method) {
     return 'bg-emerald-100 text-emerald-700';
 }
 
+function amountTone(item, incoming) {
+    if (item.payment_method === 'PRIVATE') return 'text-amber-700';
+    return incoming ? 'text-emerald-600' : 'text-rose-600';
+}
+
+function amountSign(item, incoming) {
+    if (item.payment_method === 'PRIVATE') return '';
+    return incoming ? '+' : '-';
+}
+
 export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, standardOpeningCash = 50000 }) {
     const { auth } = usePage().props;
     const isOwner = auth?.user?.role === 'OWNER';
@@ -487,8 +497,8 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                                         <td className="px-3 py-2 text-xs">
                                                             <span className={`px-1.5 py-0.5 rounded font-semibold ${paymentTone(e.payment_method)}`}>{cashierFund ? (outsideTopup ? 'Luar Laci' : 'Dari Laci') : paymentLabel(e.payment_method)}</span>
                                                         </td>
-                                                        <td className={`px-3 py-2 font-semibold text-xs ${incoming ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                            {incoming ? '+' : '-'} {formatRupiah(e.amount)}
+                                                        <td className={`px-3 py-2 font-semibold text-xs ${amountTone(e, incoming)}`}>
+                                                            {amountSign(e, incoming) && `${amountSign(e, incoming)} `}{formatRupiah(e.amount)}
                                                         </td>
                                                         <td className="px-3 py-2 text-right">
                                                             {isOwner && !e.isOffline && <button onClick={() => handleExpenseDelete(e.id)} className="text-rose-500 hover:text-rose-700 text-xs font-bold">&times;</button>}
@@ -689,8 +699,8 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                         )}
                                         {Number(shiftDetail.cash_summary?.cash?.outside_cashier_topups || 0) > 0 && (
                                             <div className="flex justify-between">
-                                                <span className="text-slate-400">+ Top up luar laci</span>
-                                                <span className="text-emerald-400">{formatRupiah(shiftDetail.cash_summary?.cash?.outside_cashier_topups)}</span>
+                                                <span className="text-slate-400">Top up luar laci</span>
+                                                <span className="text-amber-300">{formatRupiah(shiftDetail.cash_summary?.cash?.outside_cashier_topups)}</span>
                                             </div>
                                         )}
                                         <div className="flex justify-between">
@@ -698,12 +708,14 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                             <span className="text-blue-400">{formatRupiah(shiftDetail.shift?.total_sales_qris)}</span>
                                         </div>
                                         <div className="flex justify-between">
-                                            <span className="text-slate-400">- Pengeluaran</span>
-                                            <span className="text-rose-400">{formatRupiah(shiftDetail.total_expenses)}</span>
+                                            <span className="text-slate-400">- Pengeluaran kas/QRIS</span>
+                                            <span className="text-rose-400">
+                                                {formatRupiah((Number(shiftDetail.cash_summary?.cash?.expenses) || 0) + (Number(shiftDetail.cash_summary?.qris?.expenses) || 0))}
+                                            </span>
                                         </div>
                                         {Number(shiftDetail.cash_summary?.outside?.expenses || 0) > 0 && (
                                             <div className="flex justify-between">
-                                                <span className="text-slate-400">Termasuk uang pribadi</span>
+                                                <span className="text-slate-400">Uang pribadi</span>
                                                 <span className="text-amber-300">{formatRupiah(shiftDetail.cash_summary?.outside?.expenses)}</span>
                                             </div>
                                         )}
@@ -868,7 +880,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                                 setExpenseData('payment_method', 'PRIVATE');
                                                 setExpenseData('description', expenseData.description || 'Top up tambahan kas kasir dari luar laci');
                                             }}
-                                            className={`rounded-md border p-3 text-left text-sm transition ${expenseData.payment_method === 'PRIVATE' ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                                            className={`rounded-md border p-3 text-left text-sm transition ${expenseData.payment_method === 'PRIVATE' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
                                         >
                                             <span className="block font-semibold">Dari Luar Laci</span>
                                             <span className="mt-1 block text-xs">Menambah kas tanpa memotong omzet laci.</span>

@@ -43,7 +43,7 @@ function formatDate(value, withTime = false) {
 }
 
 function deliveryBadge(status) {
-    if (status === 'SENT') return { label: 'Menunggu Outlet', className: 'bg-amber-100 text-amber-800' };
+    if (status === 'SENT') return { label: 'Menunggu Gudang', className: 'bg-amber-100 text-amber-800' };
     if (status === 'RECEIVED_MATCH') return { label: 'Sesuai', className: 'bg-emerald-100 text-emerald-800' };
     return { label: 'Ada Selisih', className: 'bg-rose-100 text-rose-800' };
 }
@@ -222,13 +222,13 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                         <div className="grid gap-3 md:grid-cols-3">
                             <Notice
                                 icon={TruckIcon}
-                                label="Kiriman menunggu outlet"
+                                label="Pasokan menunggu gudang"
                                 value={summary.pending_deliveries || 0}
                                 tone="amber"
                             />
                             <Notice
                                 icon={ExclamationTriangleIcon}
-                                label="Kiriman memiliki selisih"
+                                label="Pasokan memiliki selisih"
                                 value={summary.different_deliveries || 0}
                                 tone="rose"
                             />
@@ -361,16 +361,16 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                     <section>
                         <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
                             <div>
-                                <h2 className="text-lg font-semibold text-slate-900">Pengiriman Mitra</h2>
-                                <p className="mt-1 text-sm text-slate-500">Perbandingan catatan kirim dengan penerimaan outlet.</p>
+                                <h2 className="text-lg font-semibold text-slate-900">Pasokan Mitra ke Gudang</h2>
+                                <p className="mt-1 text-sm text-slate-500">Perbandingan catatan pasokan dengan jumlah fisik yang diterima gudang.</p>
                             </div>
                             <Link href={route('stock')} className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-700">
                                 <TruckIcon className="h-4 w-4" />
-                                Catat Kiriman
+                                Catat Pasokan
                             </Link>
                         </div>
                         {deliveries.length === 0 ? (
-                            <EmptyState text="Belum ada pengiriman mitra pada periode ini." />
+                            <EmptyState text="Belum ada pasokan mitra ke gudang pada periode ini." />
                         ) : (
                             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                 {deliveries.map((delivery) => {
@@ -381,6 +381,7 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                                                 <div className="min-w-0">
                                                     <h3 className="truncate font-semibold text-slate-900">{delivery.stock_name}</h3>
                                                     <p className="mt-0.5 text-xs text-slate-500">{formatDate(delivery.sent_at, true)}</p>
+                                                    <p className="mt-0.5 text-xs font-medium text-indigo-600">{delivery.warehouse_name || 'Gudang Pusat'}</p>
                                                 </div>
                                                 <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${badge.className}`}>{badge.label}</span>
                                             </div>
@@ -410,7 +411,8 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                     </section>
 
                     <section>
-                        <h2 className="mb-4 text-lg font-semibold text-slate-900">Stok yang Masuk ke Outlet</h2>
+                        <h2 className="mb-1 text-lg font-semibold text-slate-900">Pengambilan Stok oleh Outlet</h2>
+                        <p className="mb-4 text-sm text-slate-500">Transfer gudang dan restok lain yang menambah persediaan outlet aktif.</p>
                         {restockHistory.length === 0 ? (
                             <EmptyState text="Belum ada stok yang diterima outlet pada periode ini." />
                         ) : (

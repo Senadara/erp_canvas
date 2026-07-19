@@ -13,6 +13,7 @@ class RestockLog extends Model
     public const FUND_SOURCE_CASHIER = 'CASHIER_CASH';
     public const FUND_SOURCE_PRIVATE = 'PRIVATE_CASH';
     public const FUND_SOURCE_MITRA_DELIVERY = 'MITRA_DELIVERY';
+    public const FUND_SOURCE_WAREHOUSE_TRANSFER = 'WAREHOUSE_TRANSFER';
 
     public const UPDATED_AT = null; // Only uses created_at
 

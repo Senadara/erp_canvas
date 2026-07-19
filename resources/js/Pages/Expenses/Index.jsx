@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, useForm, router, usePage } from '@inertiajs/react';
+import { ArrowPathIcon } from '@heroicons/react/24/outline';
 
 function formatRupiah(value) {
     const n = Number(value) || 0;
@@ -30,11 +31,119 @@ function paymentTone(method) {
     return 'bg-emerald-50 text-emerald-700';
 }
 
-export default function ExpensesIndex({ expenses, openShift }) {
+function categoryTone(item, cashierFund, outsideTopup, incoming) {
+    if (cashierFund) return 'bg-amber-100 text-amber-800';
+    if (item.payment_method === 'PRIVATE') return 'bg-amber-100 text-amber-800';
+    if (incoming) return 'bg-emerald-100 text-emerald-800';
+    if (item.category === 'Penarikan') return 'bg-slate-100 text-slate-700';
+    return 'bg-rose-100 text-rose-800';
+}
+
+function amountTone(item, incoming) {
+    if (item.payment_method === 'PRIVATE') return 'text-amber-700';
+    if (incoming) return 'text-emerald-600';
+    return 'text-slate-900';
+}
+
+function amountSign(item, incoming) {
+    if (item.payment_method === 'PRIVATE') return '';
+    return incoming ? '+' : '-';
+}
+
+function formatDateLabel(value) {
+    if (!value) return '';
+    return new Date(`${value}T00:00:00`).toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+    });
+}
+
+const ALL_CATEGORIES = 'ALL';
+const CUSTOM_CATEGORY = '__custom__';
+
+const FALLBACK_CATEGORIES = [
+    'Operasional',
+    'Bahan Baku',
+    'RESTOCK',
+    'Gaji',
+    'Listrik/Air',
+    'Sewa',
+    'Internet/Telepon',
+    'Transportasi',
+    'Peralatan',
+    'Maintenance',
+    'Kebersihan',
+    'Marketing',
+    'Pajak/Retribusi',
+    'Kasbon',
+    'Tambah Kas',
+    'Penarikan',
+    'Lainnya',
+];
+
+function uniqueCategories(values) {
+    const seen = new Set();
+    return values
+        .map(value => String(value || '').trim())
+        .filter(Boolean)
+        .filter(value => {
+            const key = value.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+}
+
+function emptyCategorySummary(category) {
+    return {
+        category,
+        movement_count: 0,
+        expense_count: 0,
+        outgoing_count: 0,
+        private_count: 0,
+        expense_total: 0,
+        cashier_expense_total: 0,
+        private_total: 0,
+        outgoing_total: 0,
+        incoming_total: 0,
+    };
+}
+
+function categoryPrimaryTotal(summary) {
+    return Number(summary?.cashier_expense_total || 0)
+        || Number(summary?.private_total || 0)
+        || Number(summary?.expense_total || 0)
+        || Number(summary?.outgoing_total || 0)
+        || Number(summary?.incoming_total || 0);
+}
+
+function categoryPrimaryLabel(summary) {
+    if (Number(summary?.cashier_expense_total || 0) > 0) return 'pengeluaran kasir';
+    if (Number(summary?.private_total || 0) > 0) return 'uang pribadi';
+    if (Number(summary?.expense_total || 0) > 0) return 'pengeluaran';
+    if (Number(summary?.outgoing_total || 0) > 0) return 'keluar';
+    if (Number(summary?.incoming_total || 0) > 0) return 'masuk';
+    return 'belum ada';
+}
+
+function categoryPrimaryTone(summary) {
+    if (Number(summary?.cashier_expense_total || 0) > 0) return 'text-rose-600';
+    if (Number(summary?.private_total || 0) > 0) return 'text-amber-700';
+    if (Number(summary?.incoming_total || 0) > 0) return 'text-emerald-700';
+    return 'text-slate-700';
+}
+
+export default function ExpensesIndex({ expenses = [], openShift, categoryOptions = [], categorySummaries = [], filters = {} }) {
     const { auth } = usePage().props;
     const isOwner = auth?.user?.role === 'OWNER';
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingId, setEditingId] = useState(null);
+    const [isCustomCategory, setIsCustomCategory] = useState(false);
+    const [dateFilters, setDateFilters] = useState({
+        date_from: filters?.date_from || '',
+        date_to: filters?.date_to || '',
+    });
 
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm({
         amount: '',
@@ -45,25 +154,85 @@ export default function ExpensesIndex({ expenses, openShift }) {
         date: '',
     });
 
-    const categories = [
-        'Operasional',
-        'Bahan Baku',
-        'Gaji',
-        'Listrik/Air',
-        'RESTOCK',
-        'Tambah Kas',
-        'Lainnya'
-    ];
+    const selectedCategory = filters?.category || ALL_CATEGORIES;
+    const selectedDateFrom = filters?.date_from || '';
+    const selectedDateTo = filters?.date_to || '';
+    const hasDateFilter = Boolean(selectedDateFrom || selectedDateTo);
+    const periodLabel = hasDateFilter
+        ? `${selectedDateFrom ? formatDateLabel(selectedDateFrom) : 'Awal'} - ${selectedDateTo ? formatDateLabel(selectedDateTo) : 'Sekarang'}`
+        : 'Semua tanggal';
+    const normalizedCategoryOptions = useMemo(() => uniqueCategories([
+        ...FALLBACK_CATEGORIES,
+        ...categoryOptions,
+        ...expenses.map(expense => expense.category),
+    ]), [categoryOptions, expenses]);
+    const editableCategoryOptions = useMemo(
+        () => normalizedCategoryOptions.filter(category => isOwner || category !== 'Penarikan'),
+        [isOwner, normalizedCategoryOptions]
+    );
+    const summaryRows = useMemo(() => {
+        const byCategory = new Map();
+        categorySummaries.forEach(row => {
+            byCategory.set(row.category, {
+                ...emptyCategorySummary(row.category),
+                ...row,
+            });
+        });
+
+        return normalizedCategoryOptions.map(category => (
+            byCategory.get(category) || emptyCategorySummary(category)
+        ));
+    }, [categorySummaries, normalizedCategoryOptions]);
+    const totalSummary = useMemo(() => summaryRows.reduce((total, row) => ({
+        ...total,
+        movement_count: total.movement_count + Number(row.movement_count || 0),
+        expense_count: total.expense_count + Number(row.expense_count || 0),
+        outgoing_count: total.outgoing_count + Number(row.outgoing_count || 0),
+        private_count: total.private_count + Number(row.private_count || 0),
+        expense_total: total.expense_total + Number(row.expense_total || 0),
+        cashier_expense_total: total.cashier_expense_total + Number(row.cashier_expense_total || 0),
+        private_total: total.private_total + Number(row.private_total || 0),
+        outgoing_total: total.outgoing_total + Number(row.outgoing_total || 0),
+        incoming_total: total.incoming_total + Number(row.incoming_total || 0),
+    }), emptyCategorySummary('Semua kategori')), [summaryRows]);
+    const selectedSummary = selectedCategory === ALL_CATEGORIES
+        ? totalSummary
+        : summaryRows.find(row => row.category === selectedCategory) || emptyCategorySummary(selectedCategory);
+    const categorySelectValue = isCustomCategory || !editableCategoryOptions.includes(data.category)
+        ? CUSTOM_CATEGORY
+        : data.category;
+    const emptyExpenseMessage = useMemo(() => {
+        const scopes = [];
+        if (selectedCategory !== ALL_CATEGORIES) scopes.push(`kategori ${selectedCategory}`);
+        if (hasDateFilter) scopes.push(`periode ${periodLabel}`);
+
+        return scopes.length
+            ? `Belum ada catatan untuk ${scopes.join(' dan ')}.`
+            : 'Belum ada catatan pengeluaran.';
+    }, [hasDateFilter, periodLabel, selectedCategory]);
+
+    useEffect(() => {
+        setDateFilters({
+            date_from: selectedDateFrom,
+            date_to: selectedDateTo,
+        });
+    }, [selectedDateFrom, selectedDateTo]);
 
     const handleOpenAdd = () => {
         setEditingId(null);
-        reset();
+        setIsCustomCategory(false);
         clearErrors();
         
-        // Default date to current local datetime in format YYYY-MM-DDTHH:mm
         const now = new Date();
         now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-        setData('date', now.toISOString().slice(0, 16));
+        setData({
+            amount: '',
+            category: 'Operasional',
+            payment_method: 'CASH',
+            cash_flow: 'OUT',
+            description: '',
+            date: now.toISOString().slice(0, 16),
+        });
         
         setIsModalOpen(true);
     };
@@ -71,8 +240,8 @@ export default function ExpensesIndex({ expenses, openShift }) {
     const handleOpenEdit = (expense) => {
         setEditingId(expense.id);
         clearErrors();
+        setIsCustomCategory(!editableCategoryOptions.includes(expense.category));
         
-        // Format the date for the datetime-local input
         const d = new Date(expense.created_at);
         d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
         
@@ -112,6 +281,47 @@ export default function ExpensesIndex({ expenses, openShift }) {
         }
     };
 
+    const buildFilterQuery = (overrides = {}) => {
+        const category = overrides.category ?? selectedCategory;
+        const dateFrom = overrides.date_from ?? selectedDateFrom;
+        const dateTo = overrides.date_to ?? selectedDateTo;
+        const query = {};
+
+        if (category && category !== ALL_CATEGORIES) query.category = category;
+        if (dateFrom) query.date_from = dateFrom;
+        if (dateTo) query.date_to = dateTo;
+
+        return query;
+    };
+
+    const visitFilters = (query) => {
+        router.get(route('expenses'), query, {
+            preserveScroll: true,
+            preserveState: true,
+            replace: true,
+        });
+    };
+
+    const handleCategoryFilterChange = (category) => {
+        visitFilters(buildFilterQuery({ category }));
+    };
+
+    const handleDateFilterSubmit = (e) => {
+        e.preventDefault();
+        visitFilters(buildFilterQuery(dateFilters));
+    };
+
+    const handleClearDateFilter = () => {
+        setDateFilters({ date_from: '', date_to: '' });
+        visitFilters(buildFilterQuery({ date_from: '', date_to: '' }));
+    };
+
+    const handleCategoryInputChange = (category) => {
+        setData('category', category);
+        setData('cash_flow', category === 'Tambah Kas' ? 'IN' : 'OUT');
+        if (category === 'Tambah Kas') setData('payment_method', 'CASH');
+    };
+
     return (
         <ErpLayout title="Pengeluaran & Kas">
             <Head title="Pengeluaran" />
@@ -132,6 +342,141 @@ export default function ExpensesIndex({ expenses, openShift }) {
                 </div>
             )}
 
+            <div className="mb-4 space-y-4">
+                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 sm:p-5">
+                    <div className="grid gap-4 lg:grid-cols-[minmax(220px,1fr)_minmax(0,2fr)]">
+                        <div>
+                            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Filter Kategori</label>
+                            <select
+                                value={selectedCategory}
+                                onChange={e => handleCategoryFilterChange(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
+                            >
+                                <option value={ALL_CATEGORIES}>Semua kategori</option>
+                                {normalizedCategoryOptions.map(category => (
+                                    <option key={category} value={category}>{category}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <form onSubmit={handleDateFilterSubmit}>
+                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Dari Tanggal</label>
+                                    <input
+                                        type="date"
+                                        value={dateFilters.date_from}
+                                        onChange={e => setDateFilters(prev => ({ ...prev, date_from: e.target.value }))}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Sampai Tanggal</label>
+                                    <input
+                                        type="date"
+                                        value={dateFilters.date_to}
+                                        onChange={e => setDateFilters(prev => ({ ...prev, date_to: e.target.value }))}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
+                                    />
+                                </div>
+                                <div className="flex gap-2 sm:col-span-2 lg:col-span-1">
+                                    <button
+                                        type="submit"
+                                        className="inline-flex min-h-[40px] flex-1 lg:flex-none items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 active:scale-[0.98]"
+                                    >
+                                        Terapkan Tanggal
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleClearDateFilter}
+                                        title="Reset tanggal"
+                                        aria-label="Reset filter tanggal"
+                                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98]"
+                                    >
+                                        <ArrowPathIcon className="h-5 w-5" />
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">
+                        {selectedCategory === ALL_CATEGORIES
+                            ? 'Menampilkan catatan dari semua kategori.'
+                            : `Menampilkan catatan kategori ${selectedCategory}.`}
+                        <span className="font-medium text-slate-600"> Periode: {periodLabel}.</span>
+                    </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="min-h-[116px] bg-white rounded-lg border border-rose-200 shadow-sm p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">Pengeluaran Kasir</p>
+                        <p className="mt-2 text-xl sm:text-2xl font-bold text-slate-900 break-words">{formatRupiah(selectedSummary.cashier_expense_total)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Cash/QRIS yang memengaruhi saldo kasir</p>
+                    </div>
+                    <div className="min-h-[116px] bg-white rounded-lg border border-amber-200 shadow-sm p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Uang Pribadi</p>
+                        <p className="mt-2 text-xl sm:text-2xl font-bold text-amber-700 break-words">{formatRupiah(selectedSummary.private_total)}</p>
+                        <p className="mt-1 text-xs text-slate-500">{Number(selectedSummary.private_count || 0)} catatan di luar saldo kasir</p>
+                    </div>
+                    <div className="min-h-[116px] bg-white rounded-lg border border-slate-200 shadow-sm p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Keluar</p>
+                        <p className="mt-2 text-xl sm:text-2xl font-bold text-slate-900 break-words">{formatRupiah(selectedSummary.outgoing_total)}</p>
+                        <p className="mt-1 text-xs text-slate-500">{Number(selectedSummary.outgoing_count || 0)} mutasi keluar termasuk penarikan</p>
+                    </div>
+                    <div className="min-h-[116px] bg-white rounded-lg border border-emerald-200 shadow-sm p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Total Masuk</p>
+                        <p className="mt-2 text-xl sm:text-2xl font-bold text-slate-900 break-words">{formatRupiah(selectedSummary.incoming_total)}</p>
+                        <p className="mt-1 text-xs text-slate-500">{Number(selectedSummary.movement_count || 0)} total catatan kategori</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 mb-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                        <h2 className="text-sm font-semibold text-slate-900">Rekap Semua Kategori</h2>
+                        <p className="text-xs text-slate-500">Kategori default, kategori sistem, dan kategori custom yang pernah dipakai akan muncul di sini.</p>
+                    </div>
+                    {selectedCategory !== ALL_CATEGORIES && (
+                        <button
+                            type="button"
+                            onClick={() => handleCategoryFilterChange(ALL_CATEGORIES)}
+                            className="text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                        >
+                            Tampilkan semua
+                        </button>
+                    )}
+                </div>
+                <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {summaryRows.map(row => {
+                        const selected = selectedCategory === row.category;
+                        const primaryTotal = categoryPrimaryTotal(row);
+
+                        return (
+                            <button
+                                key={row.category}
+                                type="button"
+                                onClick={() => handleCategoryFilterChange(row.category)}
+                                className={`min-h-[64px] rounded-lg border px-3 py-2 text-left transition ${
+                                    selected
+                                        ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
+                                        : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-slate-50'
+                                }`}
+                            >
+                                <span className="flex items-start justify-between gap-3">
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-sm font-semibold">{row.category}</span>
+                                        <span className="mt-0.5 block text-xs text-slate-500">
+                                            {Number(row.movement_count || 0)} catatan - {categoryPrimaryLabel(row)}
+                                        </span>
+                                    </span>
+                                    <span className={`shrink-0 text-sm font-bold ${categoryPrimaryTone(row)}`}>{formatRupiah(primaryTotal)}</span>
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
             {/* Desktop Table View */}
             <div className="hidden md:block bg-white shadow-sm rounded-lg border border-slate-200 overflow-x-auto">
                 <table className="w-full text-left text-sm text-slate-600">
@@ -148,7 +493,7 @@ export default function ExpensesIndex({ expenses, openShift }) {
                         {expenses.length === 0 ? (
                             <tr>
                                 <td colSpan="5" className="px-4 py-8 text-center text-slate-500">
-                                    Belum ada catatan pengeluaran.
+                                    {emptyExpenseMessage}
                                 </td>
                             </tr>
                         ) : (
@@ -161,15 +506,15 @@ export default function ExpensesIndex({ expenses, openShift }) {
                                 <tr key={e.id} className="hover:bg-slate-50 transition-colors">
                                     <td className="px-4 py-3 whitespace-nowrap">{new Date(e.created_at).toLocaleString('id-ID')}</td>
                                     <td className="px-4 py-3">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${cashierFund ? (outsideTopup ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800') : incoming ? 'bg-emerald-100 text-emerald-800' : e.category === 'Penarikan' ? 'bg-slate-100 text-slate-700' : 'bg-rose-100 text-rose-800'}`}>
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoryTone(e, cashierFund, outsideTopup, incoming)}`}>
                                             {cashierFund ? (outsideTopup ? 'Top Up Luar Laci' : 'Top Up Dari Laci') : e.category}
                                         </span>
                                         <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${paymentTone(e.payment_method)}`}>{cashierFund ? (outsideTopup ? 'Luar Laci' : 'Dari Laci') : paymentLabel(e.payment_method)}</span>
                                         {e.edited_by_owner_at && <span className="ml-2 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Edited owner</span>}
                                     </td>
                                     <td className="px-4 py-3">{e.description || '-'}</td>
-                                    <td className={`px-4 py-3 text-right font-semibold ${incoming ? 'text-emerald-600' : 'text-slate-900'}`}>
-                                        {incoming ? '+' : '-'} {formatRupiah(e.amount)}
+                                    <td className={`px-4 py-3 text-right font-semibold ${amountTone(e, incoming)}`}>
+                                        {amountSign(e, incoming) && `${amountSign(e, incoming)} `}{formatRupiah(e.amount)}
                                     </td>
                                     <td className="px-4 py-3 text-center space-x-2">
                                         {isOwner ? (
@@ -191,7 +536,7 @@ export default function ExpensesIndex({ expenses, openShift }) {
             <div className="md:hidden space-y-4">
                 {expenses.length === 0 ? (
                     <div className="bg-white rounded-lg border border-slate-200 p-8 text-center text-slate-500 text-sm">
-                        Belum ada catatan pengeluaran.
+                        {emptyExpenseMessage}
                     </div>
                 ) : (
                     expenses.map((e) => {
@@ -204,7 +549,7 @@ export default function ExpensesIndex({ expenses, openShift }) {
                             <div className="flex justify-between items-start">
                                 <div className="flex-1 pr-2">
                                     <div className="text-xs font-medium text-slate-500 mb-1">{new Date(e.created_at).toLocaleString('id-ID')}</div>
-                                    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide mb-2 ${cashierFund ? (outsideTopup ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800') : incoming ? 'bg-emerald-100 text-emerald-800' : e.category === 'Penarikan' ? 'bg-slate-100 text-slate-700' : 'bg-rose-100 text-rose-800'}`}>
+                                    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide mb-2 ${categoryTone(e, cashierFund, outsideTopup, incoming)}`}>
                                         {cashierFund ? (outsideTopup ? 'Top Up Luar Laci' : 'Top Up Dari Laci') : e.category}
                                     </span>
                                     <span className={`ml-2 inline-block px-2 py-0.5 rounded text-[11px] font-bold tracking-wide ${paymentTone(e.payment_method)}`}>{cashierFund ? (outsideTopup ? 'Luar Laci' : 'Dari Laci') : paymentLabel(e.payment_method)}</span>
@@ -212,7 +557,7 @@ export default function ExpensesIndex({ expenses, openShift }) {
                                     <p className="text-sm text-slate-700 leading-snug">{e.description || 'Tanpa keterangan'}</p>
                                 </div>
                                 <div className="text-right shrink-0">
-                                    <div className={`font-bold text-base ${incoming ? 'text-emerald-600' : 'text-slate-900'}`}>{incoming ? '+' : '-'} {formatRupiah(e.amount)}</div>
+                                    <div className={`font-bold text-base ${amountTone(e, incoming)}`}>{amountSign(e, incoming) && `${amountSign(e, incoming)} `}{formatRupiah(e.amount)}</div>
                                 </div>
                             </div>
                             {isOwner && <div className="border-t border-slate-100 pt-3 flex justify-end gap-2 mt-1">
@@ -268,21 +613,42 @@ export default function ExpensesIndex({ expenses, openShift }) {
                             <div>
                                 <label className="block text-sm font-semibold text-slate-700 mb-1.5">Kategori</label>
                                 <select
-                                    value={data.category}
+                                    value={categorySelectValue}
                                     onChange={e => {
                                         const category = e.target.value;
-                                        setData('category', category);
-                                        setData('cash_flow', category === 'Tambah Kas' ? 'IN' : 'OUT');
-                                        if (category === 'Tambah Kas') setData('payment_method', 'CASH');
+                                        if (category === CUSTOM_CATEGORY) {
+                                            setIsCustomCategory(true);
+                                            setData('category', '');
+                                            setData('cash_flow', 'OUT');
+                                            return;
+                                        }
+
+                                        setIsCustomCategory(false);
+                                        handleCategoryInputChange(category);
                                     }}
                                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all bg-slate-50 focus:bg-white"
                                     required
                                 >
-                                    {categories.map(c => (
+                                    {editableCategoryOptions.map(c => (
                                         <option key={c} value={c}>{c}</option>
                                     ))}
+                                    <option value={CUSTOM_CATEGORY}>+ Kategori custom</option>
                                 </select>
+                                {isCustomCategory && (
+                                    <input
+                                        type="text"
+                                        value={data.category}
+                                        onChange={e => handleCategoryInputChange(e.target.value)}
+                                        className="mt-2 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all bg-slate-50 focus:bg-white"
+                                        required
+                                        maxLength="80"
+                                        placeholder="Contoh: Laundry, Sewa Booth, Transport Vendor"
+                                    />
+                                )}
                                 {errors.category && <p className="text-rose-500 text-xs mt-1.5">{errors.category}</p>}
+                                {isCustomCategory && (
+                                    <p className="text-xs text-slate-500 mt-1.5">Kategori baru otomatis masuk daftar setelah transaksi disimpan.</p>
+                                )}
                                 {data.category === 'Tambah Kas' && (
                                     <p className="text-xs text-amber-700 mt-1.5">Pilih sumber top up agar omzet laci tidak salah hitung.</p>
                                 )}
@@ -303,7 +669,7 @@ export default function ExpensesIndex({ expenses, openShift }) {
                                         <button
                                             type="button"
                                             onClick={() => setData('payment_method', 'PRIVATE')}
-                                            className={`rounded-lg border p-3 text-left text-sm transition ${data.payment_method === 'PRIVATE' ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                                            className={`rounded-lg border p-3 text-left text-sm transition ${data.payment_method === 'PRIVATE' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
                                         >
                                             <span className="block font-semibold">Dari Luar Laci</span>
                                             <span className="mt-1 block text-xs">Menambah kas tanpa memotong omzet laci.</span>

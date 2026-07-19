@@ -46,6 +46,7 @@ class MitraSettlementController extends Controller
                 'startDate' => Carbon::now()->startOfMonth()->format('Y-m-d'),
                 'endDate' => Carbon::now()->endOfMonth()->format('Y-m-d'),
                 'reportData' => [],
+                'warehouseReportData' => [],
                 'settlements' => $settlements,
                 'isOwner' => false,
             ]);
@@ -63,10 +64,12 @@ class MitraSettlementController extends Controller
         $endDate = $request->query('end_date') ? Carbon::parse($request->query('end_date')) : Carbon::now()->endOfMonth();
 
         $reportData = [];
+        $warehouseReportData = [];
         if ($outletId && $selectedMitraId) {
             $mitra = User::find($selectedMitraId);
             if ($mitra) {
                 $reportData = $this->mitraReportService->getMitraReportDataAcrossOutlets($mitra, $startDate, $endDate);
+                $warehouseReportData = $this->mitraReportService->getMitraWarehouseRestockData($mitra, $startDate, $endDate);
             }
         }
 
@@ -84,6 +87,7 @@ class MitraSettlementController extends Controller
             'startDate' => $startDate->format('Y-m-d'),
             'endDate' => $endDate->format('Y-m-d'),
             'reportData' => $reportData,
+            'warehouseReportData' => $warehouseReportData,
             'settlements' => $settlements,
             'isOwner' => true,
         ]);
@@ -112,7 +116,9 @@ class MitraSettlementController extends Controller
 
         $startDate = Carbon::parse($data['start_date'])->startOfDay();
         $endDate = Carbon::parse($data['end_date'])->endOfDay();
-        $reportData = $this->mitraReportService->getMitraReportDataAcrossOutlets($mitra, $startDate, $endDate);
+        $reportData = $data['calculation_method'] === 'RESTOCK'
+            ? $this->mitraReportService->getMitraWarehouseRestockData($mitra, $startDate, $endDate)
+            : $this->mitraReportService->getMitraReportDataAcrossOutlets($mitra, $startDate, $endDate);
         $receiptData = [];
         $totalAmount = 0.0;
 

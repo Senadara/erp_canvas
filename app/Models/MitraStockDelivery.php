@@ -16,6 +16,8 @@ class MitraStockDelivery extends Model
 
     protected $fillable = [
         'outlet_id',
+        'warehouse_id',
+        'warehouse_stock_item_id',
         'mitra_id',
         'stock_item_id',
         'qty_sent',
@@ -42,6 +44,16 @@ class MitraStockDelivery extends Model
     public function outlet(): BelongsTo
     {
         return $this->belongsTo(Outlet::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
+    }
+
+    public function warehouseStockItem(): BelongsTo
+    {
+        return $this->belongsTo(WarehouseStockItem::class);
     }
 
     public function mitra(): BelongsTo

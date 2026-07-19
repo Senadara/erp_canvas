@@ -11,11 +11,94 @@ use App\Models\StockItem;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WasteLog;
+use App\Models\WarehouseStockItem;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class MitraReportService
 {
+    public function getMitraWarehouseRestockData(User $mitra, Carbon $startDate, Carbon $endDate): array
+    {
+        $periodStart = $startDate->copy()->startOfDay();
+        $periodEnd = $endDate->copy()->endOfDay();
+        $warehouseItems = WarehouseStockItem::with('warehouse:id,name')
+            ->where('mitra_id', $mitra->id)
+            ->orderBy('name')
+            ->get();
+        $warehouseItemIds = $warehouseItems->pluck('id')->all();
+
+        if (empty($warehouseItemIds)) {
+            return [];
+        }
+
+        $received = MitraStockDelivery::where('mitra_id', $mitra->id)
+            ->whereIn('warehouse_stock_item_id', $warehouseItemIds)
+            ->whereIn('status', [
+                MitraStockDelivery::STATUS_RECEIVED_MATCH,
+                MitraStockDelivery::STATUS_RECEIVED_DIFFERENCE,
+            ])
+            ->whereBetween('received_at', [$periodStart, $periodEnd])
+            ->groupBy('warehouse_stock_item_id')
+            ->select('warehouse_stock_item_id', DB::raw('SUM(qty_received) as total_received'))
+            ->get()
+            ->keyBy('warehouse_stock_item_id');
+        $settled = $this->getSettlementQtyPerReceiptKey(
+            $mitra->id,
+            $warehouseItemIds,
+            'warehouse_stock_item_id',
+            $periodStart,
+            $periodEnd,
+            [MitraSettlement::STATUS_PAID],
+            'RESTOCK',
+        );
+        $pending = $this->getSettlementQtyPerReceiptKey(
+            $mitra->id,
+            $warehouseItemIds,
+            'warehouse_stock_item_id',
+            $periodStart,
+            $periodEnd,
+            [MitraSettlement::STATUS_PENDING, MitraSettlement::STATUS_APPROVED],
+            'RESTOCK',
+        );
+
+        return $warehouseItems->map(function (WarehouseStockItem $item) use ($received, $settled, $pending) {
+            $receivedQty = (float) ($received->get($item->id)?->total_received ?? 0);
+            $settledQty = (float) ($settled[$item->id] ?? 0);
+            $pendingQty = (float) ($pending[$item->id] ?? 0);
+            $minQty = (float) $item->min_restock_qty > 0 ? (float) $item->min_restock_qty : 1;
+
+            return [
+                'item_key' => "warehouse:{$item->id}",
+                'stock_item_id' => null,
+                'warehouse_stock_item_id' => $item->id,
+                'warehouse_id' => $item->warehouse_id,
+                'name' => $item->name,
+                'unit_name' => $item->unit_name,
+                'outlet_id' => null,
+                'outlet_name' => $item->warehouse?->name ?? 'Gudang Pusat',
+                'current_stock' => (float) $item->current_stock,
+                'restock_price' => (float) $item->restock_price,
+                'min_restock_qty' => $minQty,
+                'restock_qty' => round($receivedQty, 2),
+                'sold_qty' => 0,
+                'waste_qty' => 0,
+                'personal_use_qty' => 0,
+                'expired_waste_qty' => 0,
+                'damaged_waste_qty' => 0,
+                'other_waste_qty' => 0,
+                'product_waste_qty' => 0,
+                'stock_waste_qty' => 0,
+                'waste_breakdown' => [],
+                'sales_qty' => 0,
+                'settled_qty' => round($settledQty, 2),
+                'pending_settlement_qty' => round($pendingQty, 2),
+                'committed_qty' => round($settledQty + $pendingQty, 2),
+                'restock_subtotal' => round(($receivedQty / $minQty) * (float) $item->restock_price),
+                'sales_subtotal' => 0,
+            ];
+        })->values()->all();
+    }
+
     public function getMitraReportDataAcrossOutlets(User $mitra, Carbon $startDate, Carbon $endDate): array
     {
         $outletIds = $mitra->mitraStockItems()
@@ -56,10 +139,10 @@ class MitraReportService
         $productUsage = $this->getProductUsageOverview($outletId, $stockIds, $periodStart, $periodEnd);
 
         $deliveries = MitraStockDelivery::with([
-            'stockItem:id,name,unit_name',
+            'warehouse:id,name',
+            'warehouseStockItem:id,name,unit_name',
             'receiver:id,display_name',
         ])
-            ->where('outlet_id', $outletId)
             ->where('mitra_id', $mitra->id)
             ->whereBetween('sent_at', [$periodStart, $periodEnd])
             ->orderByDesc('sent_at')
@@ -67,8 +150,10 @@ class MitraReportService
             ->map(fn (MitraStockDelivery $delivery) => [
                 'id' => $delivery->id,
                 'stock_item_id' => $delivery->stock_item_id,
-                'stock_name' => $delivery->stockItem?->name,
-                'unit_name' => $delivery->stockItem?->unit_name,
+                'warehouse_stock_item_id' => $delivery->warehouse_stock_item_id,
+                'stock_name' => $delivery->warehouseStockItem?->name,
+                'unit_name' => $delivery->warehouseStockItem?->unit_name,
+                'warehouse_name' => $delivery->warehouse?->name,
                 'qty_sent' => (float) $delivery->qty_sent,
                 'qty_received' => $delivery->qty_received !== null ? (float) $delivery->qty_received : null,
                 'difference' => $delivery->qty_received !== null
@@ -374,6 +459,7 @@ class MitraReportService
             $periodStart,
             $periodEnd,
             [MitraSettlement::STATUS_PAID],
+            'SALES',
         );
         $pendingSettlementPerStock = $this->getSettlementQtyPerStock(
             $outletId,
@@ -382,6 +468,7 @@ class MitraReportService
             $periodStart,
             $periodEnd,
             [MitraSettlement::STATUS_PENDING, MitraSettlement::STATUS_APPROVED],
+            'SALES',
         );
 
         // 4. Combine Data with proportional pricing
@@ -451,13 +538,34 @@ class MitraReportService
         array $stockIds,
         Carbon $startDate,
         Carbon $endDate,
-        array $statuses
+        array $statuses,
+        string $calculationMethod,
     ): array
     {
-        $settledPerStock = array_fill_keys($stockIds, 0);
+        return $this->getSettlementQtyPerReceiptKey(
+            $mitraId,
+            $stockIds,
+            'stock_item_id',
+            $startDate,
+            $endDate,
+            $statuses,
+            $calculationMethod,
+        );
+    }
 
+    private function getSettlementQtyPerReceiptKey(
+        string $mitraId,
+        array $itemIds,
+        string $receiptKey,
+        Carbon $startDate,
+        Carbon $endDate,
+        array $statuses,
+        string $calculationMethod,
+    ): array {
+        $settledPerStock = array_fill_keys($itemIds, 0);
         $paidSettlements = MitraSettlement::where('mitra_id', $mitraId)
             ->whereIn('status', $statuses)
+            ->where('calculation_method', $calculationMethod)
             ->where(function ($q) use ($startDate, $endDate) {
                 // Settlements whose period overlaps with the report period
                 $q->where('period_start', '<=', $endDate->endOfDay())
@@ -468,7 +576,7 @@ class MitraReportService
         foreach ($paidSettlements as $settlement) {
             if (is_array($settlement->receipt_data)) {
                 foreach ($settlement->receipt_data as $item) {
-                    $stockId = $item['stock_item_id'] ?? null;
+                    $stockId = $item[$receiptKey] ?? null;
                     if ($stockId && isset($settledPerStock[$stockId])) {
                         // Use the qty that was used for calculation at the time of settlement
                         $settledPerStock[$stockId] += (float) ($item['calculated_qty'] ?? 0);

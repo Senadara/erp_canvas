@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Outlet;
 use App\Services\ReportService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -15,7 +17,7 @@ class ReportController extends Controller
     {
         $outletId = $request->session()->get('outlet_id');
         $user = $request->user();
-        
+
         $mitraProductIds = null;
         $mitraStockIds = null;
         if ($user && $user->isMitra()) {
@@ -66,5 +68,61 @@ class ReportController extends Controller
             'currentYear' => (int)$year,
             'productPerformance' => $productPerformance,
         ]);
+    }
+
+    public function eSettlement(Request $request)
+    {
+        $outletId = $request->session()->get('outlet_id');
+        $user = $request->user();
+        $mitraProductIds = $user && $user->isMitra() ? $user->getMitraProductIds() : null;
+
+        [$startDate, $endDate] = $this->settlementDateRange($request);
+
+        return Inertia::render('Reports/ESettlement', [
+            'filters' => [
+                'start_date' => $startDate->toDateString(),
+                'end_date' => $endDate->toDateString(),
+            ],
+            'report' => $this->reportService->getESettlementReport($outletId, $startDate, $endDate, $mitraProductIds),
+        ]);
+    }
+
+    public function eSettlementPdf(Request $request)
+    {
+        $outletId = $request->session()->get('outlet_id');
+        $user = $request->user();
+        $mitraProductIds = $user && $user->isMitra() ? $user->getMitraProductIds() : null;
+        [$startDate, $endDate] = $this->settlementDateRange($request);
+
+        $report = $this->reportService->getESettlementReport($outletId, $startDate, $endDate, $mitraProductIds);
+
+        $pdf = Pdf::loadView('pdf.e-settlement', [
+            'outlet' => Outlet::find($outletId),
+            'report' => $report,
+            'generatedAt' => now(),
+        ])->setPaper('a4', 'portrait');
+
+        return $pdf->download("e-settlement-{$startDate->format('Ymd')}-{$endDate->format('Ymd')}.pdf");
+    }
+
+    private function settlementDateRange(Request $request): array
+    {
+        $validated = $request->validate([
+            'start_date' => ['nullable', 'date_format:Y-m-d'],
+            'end_date' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+
+        $startDate = isset($validated['start_date'])
+            ? Carbon::createFromFormat('Y-m-d', $validated['start_date'])->startOfDay()
+            : Carbon::now()->startOfMonth();
+        $endDate = isset($validated['end_date'])
+            ? Carbon::createFromFormat('Y-m-d', $validated['end_date'])->endOfDay()
+            : Carbon::now()->endOfDay();
+
+        if ($endDate->lt($startDate)) {
+            $endDate = $startDate->copy()->endOfDay();
+        }
+
+        return [$startDate, $endDate];
     }
 }

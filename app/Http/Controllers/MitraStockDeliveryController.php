@@ -23,7 +23,6 @@ class MitraStockDeliveryController extends Controller
         try {
             $this->deliveryService->create(
                 $user,
-                (string) $request->session()->get('outlet_id'),
                 $data['stock_item_id'],
                 (float) $data['qty_sent'],
                 $data['sender_note'] ?? null,
@@ -48,7 +47,6 @@ class MitraStockDeliveryController extends Controller
         try {
             $delivery = $this->deliveryService->receive(
                 $id,
-                (string) $request->session()->get('outlet_id'),
                 $user,
                 (float) $data['qty_received'],
                 $data['receiver_note'] ?? null,
@@ -61,6 +59,6 @@ class MitraStockDeliveryController extends Controller
             ? 'Pengiriman diterima. Jumlah sesuai dengan catatan mitra.'
             : 'Pengiriman diterima dengan selisih jumlah yang tercatat.';
 
-        return back()->with('success', $message);
+        return back()->with('success', str_replace('Pengiriman diterima', 'Pengiriman diterima ke gudang', $message));
     }
 }
