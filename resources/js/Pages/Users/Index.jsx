@@ -2,7 +2,7 @@ import { useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, useForm, router, usePage } from '@inertiajs/react';
 
-export default function UsersIndex({ users, outlets, activityLogs, products, stockItems }) {
+export default function UsersIndex({ users, outlets, activityLogs, products, stockItems, suppliers = [] }) {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [activeTab, setActiveTab] = useState('users');
@@ -14,6 +14,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
         password: '',
         display_name: '',
         role: 'STAFF',
+        supplier_id: '',
         is_active: true,
         outlet_ids: [],
         mitra_product_ids: [],
@@ -29,6 +30,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                 password: '',
                 display_name: user.display_name,
                 role: user.role,
+                supplier_id: user.supplier_id || '',
                 is_active: user.is_active,
                 outlet_ids: user.outlets?.map(o => o.id) || [],
                 mitra_product_ids: user.mitra_product_ids || [],
@@ -44,6 +46,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                 password: '',
                 display_name: '',
                 role: 'STAFF',
+                supplier_id: '',
                 is_active: true,
                 outlet_ids: [],
                 mitra_product_ids: [],
@@ -87,18 +90,31 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
         );
     };
 
-    const toggleMitraProduct = (productId) => {
-        setData('mitra_product_ids', data.mitra_product_ids.includes(productId)
-            ? data.mitra_product_ids.filter(id => id !== productId)
-            : [...data.mitra_product_ids, productId]
-        );
+    const toggleMitraProduct = () => {};
+    const toggleMitraStock = () => {};
+
+    const applySupplier = (supplierId) => {
+        const supplier = suppliers.find(s => s.id === supplierId);
+        setData({
+            ...data,
+            supplier_id: supplierId,
+            outlet_ids: supplier
+                ? Array.from(new Set([...(data.outlet_ids || []), ...(supplier.outlet_ids || [])]))
+                : data.outlet_ids,
+            mitra_product_ids: supplier ? (supplier.product_ids || []) : [],
+            mitra_stock_ids: supplier ? (supplier.stock_item_ids || []) : [],
+        });
     };
 
-    const toggleMitraStock = (stockId) => {
-        setData('mitra_stock_ids', data.mitra_stock_ids.includes(stockId)
-            ? data.mitra_stock_ids.filter(id => id !== stockId)
-            : [...data.mitra_stock_ids, stockId]
-        );
+    const changeRole = (role) => {
+        setData({
+            ...data,
+            role,
+            supplier_id: role === 'MITRA' ? data.supplier_id : '',
+            mitra_product_ids: role === 'MITRA' ? data.mitra_product_ids : [],
+            mitra_stock_ids: role === 'MITRA' ? data.mitra_stock_ids : [],
+            mitra_can_view_sales: role === 'MITRA' ? data.mitra_can_view_sales : false,
+        });
     };
 
     const roleColors = {
@@ -148,6 +164,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                 <th className="px-4 py-3 font-medium">Nama</th>
                                 <th className="px-4 py-3 font-medium">Email</th>
                                 <th className="px-4 py-3 font-medium">Role</th>
+                                <th className="px-4 py-3 font-medium">Supplier</th>
                                 <th className="px-4 py-3 font-medium">Outlet</th>
                                 <th className="px-4 py-3 font-medium">Akses Mitra</th>
                                 <th className="px-4 py-3 font-medium">Status</th>
@@ -156,7 +173,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                         </thead>
                         <tbody className="divide-y divide-slate-200">
                             {users.length === 0 ? (
-                                <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-500">Belum ada pengguna.</td></tr>
+                                <tr><td colSpan="8" className="px-4 py-8 text-center text-slate-500">Belum ada pengguna.</td></tr>
                             ) : (
                                 users.map((u) => (
                                     <tr key={u.id} className="hover:bg-slate-50">
@@ -166,6 +183,19 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                             <span className={`px-2 py-1 rounded-full text-xs font-bold ${roleColors[u.role] || ''}`}>
                                                 {u.role}
                                             </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-xs">
+                                            {u.role === 'MITRA' ? (
+                                                u.supplier ? (
+                                                    <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 font-medium text-amber-800">
+                                                        {u.supplier.name}
+                                                    </span>
+                                                ) : (
+                                                    <span className="rounded border border-rose-200 bg-rose-50 px-2 py-1 font-medium text-rose-700">Belum terhubung</span>
+                                                )
+                                            ) : (
+                                                <span className="text-slate-400">-</span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-xs">{u.outlets?.map(o => o.name).join(', ') || '-'}</td>
                                         <td className="px-4 py-3">
@@ -251,7 +281,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-                                    <select value={data.role} onChange={e => setData('role', e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+                                    <select value={data.role} onChange={e => changeRole(e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
                                         <option value="STAFF">STAFF</option>
                                         <option value="MITRA">MITRA</option>
                                         <option value="OWNER">OWNER</option>
@@ -286,6 +316,47 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
 
                             {data.role === 'MITRA' && (
                                 <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-amber-900 mb-2">Hubungkan Supplier</label>
+                                        <select
+                                            value={data.supplier_id || ''}
+                                            onChange={e => applySupplier(e.target.value)}
+                                            className="w-full border border-amber-300 rounded-md px-3 py-2 text-sm bg-white focus:border-amber-500 focus:ring-amber-500"
+                                            required
+                                        >
+                                            <option value="">Pilih supplier</option>
+                                            {suppliers.map(supplier => (
+                                                <option key={supplier.id} value={supplier.id}>
+                                                    {supplier.name} - {supplier.stock_items_count || 0} bahan
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {errors.supplier_id && <p className="text-rose-500 text-xs mt-1">{errors.supplier_id}</p>}
+                                        {suppliers.length === 0 && (
+                                            <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                                                Buat supplier dan hubungkan bahan di menu Supplier terlebih dahulu sebelum membuat akun mitra.
+                                            </p>
+                                        )}
+                                        {data.supplier_id && (() => {
+                                            const supplier = suppliers.find(s => s.id === data.supplier_id);
+                                            return supplier ? (
+                                                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                                                    <div className="rounded bg-white px-3 py-2 text-amber-900 border border-amber-200">
+                                                        <span className="block text-amber-600">Bahan otomatis</span>
+                                                        <strong>{supplier.stock_item_ids?.length || 0}</strong>
+                                                    </div>
+                                                    <div className="rounded bg-white px-3 py-2 text-amber-900 border border-amber-200">
+                                                        <span className="block text-amber-600">Produk terkait</span>
+                                                        <strong>{supplier.product_ids?.length || 0}</strong>
+                                                    </div>
+                                                    <div className="rounded bg-white px-3 py-2 text-amber-900 border border-amber-200">
+                                                        <span className="block text-amber-600">Outlet terkait</span>
+                                                        <strong>{supplier.outlet_ids?.length || 0}</strong>
+                                                    </div>
+                                                </div>
+                                            ) : null;
+                                        })()}
+                                    </div>
                                     <div className="flex items-center gap-3 border-b border-amber-200 pb-3">
                                         <input 
                                             type="checkbox" 
@@ -301,10 +372,11 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-amber-900 mb-2">Scope Produk Mitra (Menu)</label>
+                                        <p className="mb-2 text-xs text-amber-700">Otomatis dari supplier. Ubah bahan supplier di menu Supplier untuk memperbarui daftar ini.</p>
                                         <div className="max-h-32 overflow-y-auto bg-white border border-amber-200 rounded p-2 space-y-1">
                                             {products.length === 0 ? <p className="text-xs text-amber-600 italic">Belum ada produk di outlet ini.</p> : products.map(p => (
-                                                <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-amber-50 p-1 rounded">
-                                                    <input type="checkbox" checked={data.mitra_product_ids.includes(p.id)} onChange={() => toggleMitraProduct(p.id)} className="rounded border-amber-300 text-amber-600" />
+                                                <label key={p.id} className="flex cursor-not-allowed items-center gap-2 rounded p-1 text-sm text-slate-500">
+                                                    <input type="checkbox" disabled checked={data.mitra_product_ids.includes(p.id)} onChange={() => toggleMitraProduct(p.id)} className="rounded border-amber-300 text-amber-600 disabled:opacity-60" />
                                                     {p.name}
                                                 </label>
                                             ))}
@@ -312,10 +384,11 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-amber-900 mb-2">Scope Stok Mitra</label>
+                                        <p className="mb-2 text-xs text-amber-700">Otomatis dari bahan yang disuplai supplier. Tidak perlu centang manual.</p>
                                         <div className="max-h-32 overflow-y-auto bg-white border border-amber-200 rounded p-2 space-y-1">
                                             {stockItems.length === 0 ? <p className="text-xs text-amber-600 italic">Belum ada stok di outlet ini.</p> : stockItems.map(s => (
-                                                <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-amber-50 p-1 rounded">
-                                                    <input type="checkbox" checked={data.mitra_stock_ids.includes(s.id)} onChange={() => toggleMitraStock(s.id)} className="rounded border-amber-300 text-amber-600" />
+                                                <label key={s.id} className="flex cursor-not-allowed items-center gap-2 rounded p-1 text-sm text-slate-500">
+                                                    <input type="checkbox" disabled checked={data.mitra_stock_ids.includes(s.id)} onChange={() => toggleMitraStock(s.id)} className="rounded border-amber-300 text-amber-600 disabled:opacity-60" />
                                                     {s.name}
                                                 </label>
                                             ))}

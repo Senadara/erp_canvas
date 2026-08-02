@@ -7,6 +7,8 @@ use Carbon\Carbon;
 
 class PettyCashService
 {
+    private const BUSINESS_TIMEZONE = 'Asia/Jakarta';
+
     public const DEFAULT_CATEGORIES = [
         'Operasional',
         'Bahan Baku',
@@ -132,9 +134,7 @@ class PettyCashService
 
     public function createExpense(array $data)
     {
-        $date = isset($data['date']) && ! empty($data['date'])
-            ? Carbon::parse($data['date'])
-            : Carbon::now();
+        $date = $this->movementDate($data['date'] ?? null);
         $normalized = $this->normalizeCashMovement($data);
 
         return PettyCash::create([
@@ -162,7 +162,7 @@ class PettyCashService
         ];
 
         if (isset($data['date']) && ! empty($data['date'])) {
-            $updateData['created_at'] = Carbon::parse($data['date']);
+            $updateData['created_at'] = $this->movementDate($data['date']);
         }
         if ($ownerId) {
             $updateData['edited_by_owner_at'] = Carbon::now();
@@ -206,6 +206,25 @@ class PettyCashService
             'payment_method' => in_array($paymentMethod, ['CASH', 'QRIS', 'PRIVATE'], true) ? $paymentMethod : 'CASH',
             'cash_flow' => $cashFlow === 'IN' ? 'IN' : 'OUT',
         ];
+    }
+
+    private function movementDate(mixed $value = null): Carbon
+    {
+        $timezone = config('app.timezone') ?: 'UTC';
+
+        if ($value instanceof Carbon) {
+            return $value->copy()->setTimezone($timezone);
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return Carbon::instance($value)->setTimezone($timezone);
+        }
+
+        if ($value !== null && $value !== '') {
+            return Carbon::parse($value, self::BUSINESS_TIMEZONE)->setTimezone($timezone);
+        }
+
+        return Carbon::now($timezone);
     }
 
     private function emptyCategorySummary(string $category): array

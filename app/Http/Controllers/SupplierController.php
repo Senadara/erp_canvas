@@ -3,12 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Services\SupplierService;
+use App\Services\UserService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class SupplierController extends Controller
 {
-    public function __construct(private SupplierService $supplierService) {}
+    public function __construct(
+        private SupplierService $supplierService,
+        private UserService $userService
+    ) {}
 
     public function index(Request $request)
     {
@@ -50,11 +54,14 @@ class SupplierController extends Controller
             }
         }
 
+        $this->userService->syncMitraUsersForSupplier($supplier->id);
+
         return redirect()->back()->with('success', 'Supplier berhasil disimpan.');
     }
 
     public function destroy(string $id)
     {
+        $this->userService->clearMitraSupplierLinks($id);
         $this->supplierService->deleteSupplier($id);
 
         return redirect()->back()->with('success', 'Supplier berhasil dihapus.');

@@ -75,13 +75,14 @@ export default function SuppliersIndex({ suppliers, stockItems }) {
                             <th className="px-4 py-3 font-medium">Telepon</th>
                             <th className="px-4 py-3 font-medium">Alamat</th>
                             <th className="px-4 py-3 font-medium text-right">Jml Bahan</th>
+                            <th className="px-4 py-3 font-medium text-right">Akun Mitra</th>
                             <th className="px-4 py-3 font-medium">Aksi</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                         {suppliers.length === 0 ? (
                             <tr>
-                                <td colSpan="5" className="px-4 py-8 text-center text-slate-500">
+                                <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
                                     Belum ada supplier.
                                 </td>
                             </tr>
@@ -94,6 +95,11 @@ export default function SuppliersIndex({ suppliers, stockItems }) {
                                     <td className="px-4 py-3 text-right">
                                         <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs font-medium">
                                             {s.stock_items_count} bahan
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                        <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-1 rounded text-xs font-medium">
+                                            {s.mitra_users_count || 0} akun
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 flex gap-2">

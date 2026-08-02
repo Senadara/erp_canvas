@@ -15,7 +15,7 @@ class ShiftRecord extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'outlet_id', 'name', 'opened_at', 'closed_at', 'opening_cash', 'expected_cash', 'actual_cash',
+        'outlet_id', 'name', 'opened_by', 'closed_by', 'opened_at', 'closed_at', 'opening_cash', 'expected_cash', 'actual_cash',
         'expected_qris', 'discrepancy', 'total_sales_cash', 'total_sales_qris', 'total_expenses',
         'note', 'edited_by_owner_at', 'edited_by_owner_id', 'status',
     ];
@@ -45,5 +45,15 @@ class ShiftRecord extends Model
     public function transactions()
     {
         return $this->hasMany(Transaction::class, 'shift_id');
+    }
+
+    public function opener(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'opened_by');
+    }
+
+    public function closer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'closed_by');
     }
 }

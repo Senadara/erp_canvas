@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Outlet;
 use App\Models\PettyCash;
 use App\Models\Product;
+use App\Models\ShiftRecord;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\User;
@@ -129,6 +130,22 @@ class ProductPerformanceReportTest extends TestCase
         $this->createMovement($outlet->id, 'Tambah Kas', 'CASH', 'IN', 5000, '2026-07-10 11:20:00');
         $this->createMovement($outlet->id, 'Penarikan', 'QRIS', 'OUT', 10000, '2026-07-10 11:30:00');
         $this->createMovement($outlet->id, 'RESTOCK', 'PRIVATE', 'OUT', 7000, '2026-07-10 11:40:00');
+        ShiftRecord::create([
+            'outlet_id' => $outlet->id,
+            'name' => 'Shift Pagi',
+            'opened_at' => '2026-07-10 07:00:00',
+            'closed_at' => '2026-07-10 15:00:00',
+            'opening_cash' => 50000,
+            'status' => 'CLOSED',
+        ]);
+        ShiftRecord::create([
+            'outlet_id' => $outlet->id,
+            'name' => 'Shift Sore',
+            'opened_at' => '2026-07-10 15:30:00',
+            'closed_at' => '2026-07-10 21:30:00',
+            'opening_cash' => 50000,
+            'status' => 'CLOSED',
+        ]);
 
         $report = app(ReportService::class)->getESettlementReport(
             $outlet->id,
@@ -161,6 +178,18 @@ class ProductPerformanceReportTest extends TestCase
 
         $topupRow = collect($report['movements'])->firstWhere('category', 'Tambah Kas');
         $this->assertSame('OUT', $topupRow['cash_flow']);
+
+        $this->assertCount(3, $report['sold_items']);
+        $this->assertSame('Dimsum Ori', $report['sold_items'][0]['product_name']);
+        $this->assertCount(1, $report['product_summary']);
+        $this->assertSame(17.0, (float) $report['product_summary'][0]['quantity_sold']);
+        $this->assertSame(51000.0, (float) $report['product_summary'][0]['estimated_hpp']);
+        $this->assertSame(119000.0, (float) $report['product_summary'][0]['gross_profit']);
+        $this->assertSame(1, $report['shift_summary']['work_days']);
+        $this->assertSame(2, $report['shift_summary']['shift_count']);
+        $this->assertSame(420, $report['shift_summary']['average_open_minutes']);
+        $this->assertSame('8j 0m', $report['shift_summary']['longest_shift']['duration_label']);
+        $this->assertSame('Tidak diketahui', $report['shift_details'][0]['opened_by']);
     }
 
     public function test_e_settlement_page_and_pdf_are_separate_from_regular_report_page(): void

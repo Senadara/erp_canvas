@@ -188,7 +188,12 @@
     $daily = collect($report['daily'] ?? []);
     $transactions = collect($report['transactions'] ?? []);
     $movements = collect($report['movements'] ?? []);
+    $productSummary = collect($report['product_summary'] ?? []);
+    $soldItems = collect($report['sold_items'] ?? []);
+    $shiftSummary = $report['shift_summary'] ?? [];
+    $shiftDetails = collect($report['shift_details'] ?? []);
     $formatRupiah = fn ($value) => 'Rp '.number_format((float) $value, 0, ',', '.');
+    $formatQty = fn ($value) => number_format((float) $value, 2, ',', '.');
     $formatSignedRupiah = function ($value) use ($formatRupiah) {
         $amount = (float) $value;
 
@@ -298,6 +303,121 @@
         </td>
     </tr>
 </table>
+
+<table class="summary-table">
+    <tr>
+        <td>
+            <div class="summary-label">Hari Kerja</div>
+            <div class="summary-value">{{ number_format((float) ($shiftSummary['work_days'] ?? 0), 0, ',', '.') }}</div>
+            <div class="muted">{{ number_format((float) ($shiftSummary['shift_count'] ?? 0), 0, ',', '.') }} shift</div>
+        </td>
+        <td>
+            <div class="summary-label">Rata-rata Shift</div>
+            <div class="summary-value">{{ $shiftSummary['average_open_label'] ?? '0j 0m' }}</div>
+            <div class="muted">Durasi buka shift</div>
+        </td>
+        <td>
+            <div class="summary-label">Shift Terlama</div>
+            <div class="summary-value">{{ $shiftSummary['longest_shift']['duration_label'] ?? '0j 0m' }}</div>
+            <div class="muted">{{ $shiftSummary['longest_shift']['name'] ?? 'Belum ada shift' }}</div>
+        </td>
+        <td>
+            <div class="summary-label">Shift Tersingkat</div>
+            <div class="summary-value">{{ $shiftSummary['shortest_shift']['duration_label'] ?? '0j 0m' }}</div>
+            <div class="muted">{{ $shiftSummary['shortest_shift']['name'] ?? 'Belum ada shift' }}</div>
+        </td>
+    </tr>
+</table>
+
+<div class="section-title">Ringkasan Produk</div>
+@if ($productSummary->isNotEmpty())
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 28%;">Produk</th>
+                <th class="number" style="width: 12%;">Qty</th>
+                <th class="number" style="width: 18%;">Omzet</th>
+                <th class="number" style="width: 16%;">HPP</th>
+                <th class="number" style="width: 16%;">Profit</th>
+                <th class="number" style="width: 10%;">Margin</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach ($productSummary as $product)
+                <tr>
+                    <td><strong>{{ $product['product_name'] ?? 'Produk' }}</strong><br><span class="muted">{{ number_format((float) ($product['transaction_count'] ?? 0), 0, ',', '.') }} transaksi</span></td>
+                    <td class="number">{{ $formatQty($product['quantity_sold'] ?? 0) }}</td>
+                    <td class="number">{{ $formatRupiah($product['revenue'] ?? 0) }}</td>
+                    <td class="number">{{ $formatRupiah($product['estimated_hpp'] ?? 0) }}</td>
+                    <td class="number {{ (float) ($product['gross_profit'] ?? 0) < 0 ? 'negative' : 'positive' }}"><strong>{{ $formatSignedRupiah($product['gross_profit'] ?? 0) }}</strong></td>
+                    <td class="number">{{ $formatQty($product['margin_percent'] ?? 0) }}%</td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+@else
+    <div class="empty">Belum ada produk terjual pada periode ini.</div>
+@endif
+
+<div class="section-title">Shift Pegawai</div>
+@if ($shiftDetails->isNotEmpty())
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 26%;">Shift</th>
+                <th style="width: 24%;">Waktu</th>
+                <th style="width: 24%;">Petugas</th>
+                <th class="number" style="width: 13%;">Durasi</th>
+                <th style="width: 13%;">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach ($shiftDetails as $shift)
+                <tr>
+                    <td><strong>{{ $shift['name'] ?? 'Shift' }}</strong></td>
+                    <td>{{ $formatDateTime($shift['opened_at'] ?? null) }}<br><span class="muted">{{ ($shift['closed_at'] ?? null) ? $formatDateTime($shift['closed_at']) : 'Masih berjalan' }}</span></td>
+                    <td>{{ $shift['opened_by'] ?? 'Tidak diketahui' }}<br><span class="muted">{{ $shift['closed_by'] ?? '-' }}</span></td>
+                    <td class="number"><strong>{{ $shift['duration_label'] ?? '0j 0m' }}</strong></td>
+                    <td>{{ $shift['status'] ?? '-' }}</td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+@else
+    <div class="empty">Belum ada shift pada periode ini.</div>
+@endif
+
+<div class="section-title">Detail Barang Terjual</div>
+@if ($soldItems->isNotEmpty())
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 20%;">Invoice</th>
+                <th style="width: 24%;">Produk</th>
+                <th style="width: 12%;">Metode</th>
+                <th class="number" style="width: 10%;">Qty</th>
+                <th class="number" style="width: 14%;">Omzet</th>
+                <th class="number" style="width: 10%;">HPP</th>
+                <th class="number" style="width: 10%;">Profit</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach ($soldItems as $item)
+                <tr>
+                    <td><strong>{{ $item['invoice_number'] ?? '-' }}</strong><br><span class="muted">{{ $formatDateTime($item['paid_at'] ?? null) }}</span></td>
+                    <td>{{ $item['product_name'] ?? 'Produk' }}</td>
+                    <td><span class="badge {{ $methodClass($item['payment_method'] ?? 'CASH') }}">{{ $item['payment_method'] ?? 'CASH' }}</span></td>
+                    <td class="number">{{ $formatQty($item['qty'] ?? 0) }}</td>
+                    <td class="number">{{ $formatRupiah($item['revenue'] ?? 0) }}</td>
+                    <td class="number">{{ $formatRupiah($item['estimated_hpp'] ?? 0) }}</td>
+                    <td class="number {{ (float) ($item['gross_profit'] ?? 0) < 0 ? 'negative' : 'positive' }}"><strong>{{ $formatSignedRupiah($item['gross_profit'] ?? 0) }}</strong></td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+@else
+    <div class="empty">Belum ada item produk terjual pada periode ini.</div>
+@endif
 
 <div class="section-title">Kategori Keuangan</div>
 @if ($categorySummary->isNotEmpty())

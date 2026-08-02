@@ -42,33 +42,47 @@ class MitraReportService
             ->select('warehouse_stock_item_id', DB::raw('SUM(qty_received) as total_received'))
             ->get()
             ->keyBy('warehouse_stock_item_id');
-        $settled = $this->getSettlementQtyPerReceiptKey(
+        $itemKeys = collect($warehouseItemIds)
+            ->map(fn (string $id) => "warehouse:{$id}")
+            ->all();
+        $settled = $this->getSettlementQtyByItemKey(
             $mitra->id,
-            $warehouseItemIds,
-            'warehouse_stock_item_id',
+            $itemKeys,
             $periodStart,
             $periodEnd,
             [MitraSettlement::STATUS_PAID],
-            'RESTOCK',
+            null,
         );
-        $pending = $this->getSettlementQtyPerReceiptKey(
+        $pending = $this->getSettlementQtyByItemKey(
             $mitra->id,
-            $warehouseItemIds,
-            'warehouse_stock_item_id',
+            $itemKeys,
             $periodStart,
             $periodEnd,
             [MitraSettlement::STATUS_PENDING, MitraSettlement::STATUS_APPROVED],
+            null,
+        );
+        $sameMethodCommitted = $this->getSettlementQtyByItemKey(
+            $mitra->id,
+            $itemKeys,
+            $periodStart,
+            $periodEnd,
+            [MitraSettlement::STATUS_PENDING, MitraSettlement::STATUS_APPROVED, MitraSettlement::STATUS_PAID],
             'RESTOCK',
         );
 
-        return $warehouseItems->map(function (WarehouseStockItem $item) use ($received, $settled, $pending) {
+        return $warehouseItems->map(function (WarehouseStockItem $item) use ($received, $settled, $pending, $sameMethodCommitted) {
+            $itemKey = "warehouse:{$item->id}";
             $receivedQty = (float) ($received->get($item->id)?->total_received ?? 0);
-            $settledQty = (float) ($settled[$item->id] ?? 0);
-            $pendingQty = (float) ($pending[$item->id] ?? 0);
+            $settledQty = (float) ($settled[$itemKey] ?? 0);
+            $pendingQty = (float) ($pending[$itemKey] ?? 0);
+            $sameCommittedQty = (float) ($sameMethodCommitted[$itemKey] ?? 0);
+            $committedQty = $settledQty + $pendingQty;
+            $crossCommittedQty = max(0, $committedQty - $sameCommittedQty);
             $minQty = (float) $item->min_restock_qty > 0 ? (float) $item->min_restock_qty : 1;
 
             return [
-                'item_key' => "warehouse:{$item->id}",
+                'item_key' => $itemKey,
+                'settlement_item_key' => $itemKey,
                 'stock_item_id' => null,
                 'warehouse_stock_item_id' => $item->id,
                 'warehouse_id' => $item->warehouse_id,
@@ -90,9 +104,13 @@ class MitraReportService
                 'stock_waste_qty' => 0,
                 'waste_breakdown' => [],
                 'sales_qty' => 0,
+                'gross_qty' => round($receivedQty, 2),
                 'settled_qty' => round($settledQty, 2),
                 'pending_settlement_qty' => round($pendingQty, 2),
-                'committed_qty' => round($settledQty + $pendingQty, 2),
+                'same_method_committed_qty' => round($sameCommittedQty, 2),
+                'cross_committed_qty' => round($crossCommittedQty, 2),
+                'committed_qty' => round($committedQty, 2),
+                'remaining_qty' => round(max(0, $receivedQty - $committedQty), 2),
                 'restock_subtotal' => round(($receivedQty / $minQty) * (float) $item->restock_price),
                 'sales_subtotal' => 0,
             ];
@@ -109,7 +127,7 @@ class MitraReportService
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        return $outlets
+        $rows = $outlets
             ->flatMap(function (Outlet $outlet) use ($mitra, $startDate, $endDate) {
                 return collect($this->getMitraReportData(
                     $outlet->id,
@@ -128,6 +146,8 @@ class MitraReportService
             ])
             ->values()
             ->all();
+
+        return $this->allocateCommittedQuantitiesAcrossRows($rows, 'sales_qty');
     }
 
     public function getMitraReportOverview(string $outletId, User $mitra, Carbon $startDate, Carbon $endDate): array
@@ -386,6 +406,10 @@ class MitraReportService
             ->get()
             ->keyBy('id');
         $mitraStockIds = $mitraStockItems->keys()->toArray();
+        $itemKeysByStockId = $mitraStockItems
+            ->mapWithKeys(fn (StockItem $item) => [$item->id => $this->settlementItemKeyForStock($item)])
+            ->all();
+        $settlementItemKeys = array_values(array_unique(array_values($itemKeysByStockId)));
 
         if (empty($mitraStockIds)) {
             return [];
@@ -452,22 +476,28 @@ class MitraReportService
             ->groupBy('stock_item_id');
 
         // 3. Track paid quantities and quantities reserved by active proposals.
-        $settledPerStock = $this->getSettlementQtyPerStock(
-            $outletId,
+        $settledPerItemKey = $this->getSettlementQtyByItemKey(
             $mitra->id,
-            $mitraStockIds,
+            $settlementItemKeys,
             $periodStart,
             $periodEnd,
             [MitraSettlement::STATUS_PAID],
-            'SALES',
+            null,
         );
-        $pendingSettlementPerStock = $this->getSettlementQtyPerStock(
-            $outletId,
+        $pendingSettlementPerItemKey = $this->getSettlementQtyByItemKey(
             $mitra->id,
-            $mitraStockIds,
+            $settlementItemKeys,
             $periodStart,
             $periodEnd,
             [MitraSettlement::STATUS_PENDING, MitraSettlement::STATUS_APPROVED],
+            null,
+        );
+        $sameMethodCommittedPerItemKey = $this->getSettlementQtyByItemKey(
+            $mitra->id,
+            $settlementItemKeys,
+            $periodStart,
+            $periodEnd,
+            [MitraSettlement::STATUS_PENDING, MitraSettlement::STATUS_APPROVED, MitraSettlement::STATUS_PAID],
             'SALES',
         );
 
@@ -493,8 +523,12 @@ class MitraReportService
             $salesQty = $soldQty + $wasteQty;
             $restockPrice = (float) ($stockItem->restock_price ?? 0);
             $minRestockQty = $stockItem->min_restock_qty > 0 ? (float) $stockItem->min_restock_qty : 1;
-            $settledQty = $settledPerStock[$stockId] ?? 0;
-            $pendingSettlementQty = $pendingSettlementPerStock[$stockId] ?? 0;
+            $settlementItemKey = $itemKeysByStockId[$stockId] ?? "stock:{$stockId}";
+            $settledQty = $settledPerItemKey[$settlementItemKey] ?? 0;
+            $pendingSettlementQty = $pendingSettlementPerItemKey[$settlementItemKey] ?? 0;
+            $sameCommittedQty = $sameMethodCommittedPerItemKey[$settlementItemKey] ?? 0;
+            $committedQty = $settledQty + $pendingSettlementQty;
+            $crossCommittedQty = max(0, $committedQty - $sameCommittedQty);
 
             // Proportional subtotal: (qty / min_restock_qty) * restock_price
             $restockSubtotal = ($restockQty / $minRestockQty) * $restockPrice;
@@ -502,6 +536,9 @@ class MitraReportService
 
             $reportData[] = [
                 'stock_item_id' => $stockId,
+                'warehouse_stock_item_id' => $stockItem->warehouse_stock_item_id,
+                'settlement_item_key' => $settlementItemKey,
+                'item_key' => $settlementItemKey,
                 'name' => $stockItem->name,
                 'unit_name' => $stockItem->unit_name,
                 'current_stock' => (float) $stockItem->current_stock_biji,
@@ -518,9 +555,13 @@ class MitraReportService
                 'stock_waste_qty' => round($wasteQtyBySource(WasteLog::SOURCE_STOCK), 2),
                 'waste_breakdown' => $stockWasteBreakdown->all(),
                 'sales_qty' => round($salesQty, 2),
+                'gross_qty' => round($salesQty, 2),
                 'settled_qty' => round($settledQty, 2),
                 'pending_settlement_qty' => round($pendingSettlementQty, 2),
-                'committed_qty' => round($settledQty + $pendingSettlementQty, 2),
+                'same_method_committed_qty' => round($sameCommittedQty, 2),
+                'cross_committed_qty' => round($crossCommittedQty, 2),
+                'committed_qty' => round($committedQty, 2),
+                'remaining_qty' => round(max(0, $salesQty - $committedQty), 2),
                 'restock_subtotal' => round($restockSubtotal),
                 'sales_subtotal' => round($salesSubtotal),
             ];
@@ -532,6 +573,148 @@ class MitraReportService
     /**
      * Get the total qty already settled (PAID) per stock item for the given mitra in overlapping periods.
      */
+    private function settlementItemKeyForStock(StockItem $stockItem): string
+    {
+        return $stockItem->warehouse_stock_item_id
+            ? "warehouse:{$stockItem->warehouse_stock_item_id}"
+            : "stock:{$stockItem->id}";
+    }
+
+    private function allocateCommittedQuantitiesAcrossRows(array $rows, string $quantityKey): array
+    {
+        $remainingCommittedByKey = [];
+        $remainingPaidByKey = [];
+        $remainingPendingByKey = [];
+        $remainingSameByKey = [];
+        $remainingCrossByKey = [];
+
+        foreach ($rows as $row) {
+            $key = $row['settlement_item_key'] ?? $row['item_key'] ?? $row['stock_item_id'] ?? null;
+            if (! $key || isset($remainingCommittedByKey[$key])) {
+                continue;
+            }
+
+            $remainingCommittedByKey[$key] = (float) ($row['committed_qty'] ?? 0);
+            $remainingPaidByKey[$key] = (float) ($row['settled_qty'] ?? 0);
+            $remainingPendingByKey[$key] = (float) ($row['pending_settlement_qty'] ?? 0);
+            $remainingSameByKey[$key] = (float) ($row['same_method_committed_qty'] ?? 0);
+            $remainingCrossByKey[$key] = (float) ($row['cross_committed_qty'] ?? 0);
+        }
+
+        return collect($rows)->map(function (array $row) use (
+            $quantityKey,
+            &$remainingCommittedByKey,
+            &$remainingPaidByKey,
+            &$remainingPendingByKey,
+            &$remainingSameByKey,
+            &$remainingCrossByKey
+        ) {
+            $key = $row['settlement_item_key'] ?? $row['item_key'] ?? $row['stock_item_id'] ?? null;
+            if (! $key) {
+                return $row;
+            }
+
+            $grossQty = (float) ($row[$quantityKey] ?? 0);
+            $allocatedCommitted = min($grossQty, max(0, $remainingCommittedByKey[$key] ?? 0));
+            $remainingCommittedByKey[$key] = max(0, ($remainingCommittedByKey[$key] ?? 0) - $allocatedCommitted);
+
+            $allocatedPaid = min($grossQty, max(0, $remainingPaidByKey[$key] ?? 0));
+            $remainingPaidByKey[$key] = max(0, ($remainingPaidByKey[$key] ?? 0) - $allocatedPaid);
+            $remainingForPending = max(0, $grossQty - $allocatedPaid);
+            $allocatedPending = min($remainingForPending, max(0, $remainingPendingByKey[$key] ?? 0));
+            $remainingPendingByKey[$key] = max(0, ($remainingPendingByKey[$key] ?? 0) - $allocatedPending);
+
+            $allocatedSame = min($allocatedCommitted, max(0, $remainingSameByKey[$key] ?? 0));
+            $remainingSameByKey[$key] = max(0, ($remainingSameByKey[$key] ?? 0) - $allocatedSame);
+            $remainingForCross = max(0, $allocatedCommitted - $allocatedSame);
+            $allocatedCross = min($remainingForCross, max(0, $remainingCrossByKey[$key] ?? 0));
+            $remainingCrossByKey[$key] = max(0, ($remainingCrossByKey[$key] ?? 0) - $allocatedCross);
+
+            return [
+                ...$row,
+                'total_committed_qty' => round((float) ($row['committed_qty'] ?? 0), 2),
+                'total_settled_qty' => round((float) ($row['settled_qty'] ?? 0), 2),
+                'total_pending_settlement_qty' => round((float) ($row['pending_settlement_qty'] ?? 0), 2),
+                'settled_qty' => round($allocatedPaid, 2),
+                'pending_settlement_qty' => round($allocatedPending, 2),
+                'same_method_committed_qty' => round($allocatedSame, 2),
+                'cross_committed_qty' => round($allocatedCross, 2),
+                'committed_qty' => round($allocatedCommitted, 2),
+                'remaining_qty' => round(max(0, $grossQty - $allocatedCommitted), 2),
+            ];
+        })->all();
+    }
+
+    private function getSettlementQtyByItemKey(
+        string $mitraId,
+        array $itemKeys,
+        Carbon $startDate,
+        Carbon $endDate,
+        array $statuses,
+        ?string $calculationMethod,
+    ): array {
+        $settledPerKey = array_fill_keys($itemKeys, 0);
+        if (empty($itemKeys)) {
+            return $settledPerKey;
+        }
+
+        $query = MitraSettlement::where('mitra_id', $mitraId)
+            ->whereIn('status', $statuses)
+            ->where(function ($q) use ($startDate, $endDate) {
+                $q->where('period_start', '<=', $endDate->copy()->endOfDay())
+                    ->where('period_end', '>=', $startDate->copy()->startOfDay());
+            });
+
+        if ($calculationMethod !== null) {
+            $query->where('calculation_method', $calculationMethod);
+        }
+
+        $settlements = $query->get();
+        $receiptRows = $settlements
+            ->flatMap(fn (MitraSettlement $settlement) => is_array($settlement->receipt_data) ? $settlement->receipt_data : [])
+            ->filter(fn ($item) => is_array($item));
+        $stockIds = $receiptRows
+            ->pluck('stock_item_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $stockWarehouseIds = empty($stockIds)
+            ? []
+            : StockItem::whereIn('id', $stockIds)
+                ->pluck('warehouse_stock_item_id', 'id')
+                ->all();
+
+        foreach ($receiptRows as $item) {
+            $itemKey = $this->receiptSettlementItemKey($item, $stockWarehouseIds);
+            if ($itemKey && array_key_exists($itemKey, $settledPerKey)) {
+                $settledPerKey[$itemKey] += (float) ($item['calculated_qty'] ?? 0);
+            }
+        }
+
+        return $settledPerKey;
+    }
+
+    private function receiptSettlementItemKey(array $item, array $stockWarehouseIds): ?string
+    {
+        if (! empty($item['settlement_item_key'])) {
+            return (string) $item['settlement_item_key'];
+        }
+
+        if (! empty($item['warehouse_stock_item_id'])) {
+            return "warehouse:{$item['warehouse_stock_item_id']}";
+        }
+
+        if (! empty($item['stock_item_id'])) {
+            $stockId = (string) $item['stock_item_id'];
+            $warehouseId = $stockWarehouseIds[$stockId] ?? null;
+
+            return $warehouseId ? "warehouse:{$warehouseId}" : "stock:{$stockId}";
+        }
+
+        return null;
+    }
+
     private function getSettlementQtyPerStock(
         string $outletId,
         string $mitraId,

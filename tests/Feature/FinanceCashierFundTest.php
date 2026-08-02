@@ -22,6 +22,11 @@ class FinanceCashierFundTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function financeTimestamp(string $value): Carbon
+    {
+        return Carbon::parse($value, 'Asia/Jakarta')->setTimezone(config('app.timezone'));
+    }
+
     public function test_opening_cash_defaults_to_fifty_thousand_but_accepts_a_lower_actual_amount(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-06 08:00:00'));
@@ -108,8 +113,8 @@ class FinanceCashierFundTest extends TestCase
             $shiftSummary = app(ShiftService::class)->moneySummary($shift->fresh());
 
             $this->assertSame(20000.0, $shiftSummary['cash']['cashier_topups']);
-            $this->assertSame(0, $shiftSummary['cash']['additions']);
-            $this->assertSame(150000.0, $shiftSummary['cash']['expected']);
+            $this->assertSame(20000.0, $shiftSummary['cash']['additions']);
+            $this->assertSame(170000.0, $shiftSummary['cash']['expected']);
 
             $this->actingAs($owner)
                 ->withSession(['outlet_id' => $outlet->id])
@@ -227,8 +232,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 100000,
                 'payment_method' => 'CASH',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-07 09:00:00'),
-                'created_at' => Carbon::parse('2026-07-07 09:00:00'),
+                'paid_at' => $this->financeTimestamp('2026-07-07 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-07 09:00:00'),
             ]);
             $transaction->items()->create([
                 'product_id' => $product->id,
@@ -245,7 +250,7 @@ class FinanceCashierFundTest extends TestCase
                 'payment_method' => 'CASH',
                 'cash_flow' => 'OUT',
                 'description' => 'Beli plastik',
-                'date' => Carbon::parse('2026-07-07 10:00:00'),
+                'date' => $this->financeTimestamp('2026-07-07 10:00:00'),
             ]);
 
             $this->actingAs($owner)
@@ -328,8 +333,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 100000,
                 'payment_method' => 'CASH',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-07 09:00:00'),
-                'created_at' => Carbon::parse('2026-07-07 09:00:00'),
+                'paid_at' => $this->financeTimestamp('2026-07-07 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-07 09:00:00'),
             ]);
             $transaction->items()->create([
                 'product_id' => $product->id,
@@ -346,7 +351,7 @@ class FinanceCashierFundTest extends TestCase
                 'payment_method' => 'CASH',
                 'cash_flow' => 'OUT',
                 'description' => 'Beli plastik',
-                'date' => Carbon::parse('2026-07-07 10:00:00'),
+                'date' => $this->financeTimestamp('2026-07-07 10:00:00'),
             ]);
 
             $this->actingAs($owner)
@@ -432,8 +437,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 100000,
                 'payment_method' => 'CASH',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-07 09:00:00'),
-                'created_at' => Carbon::parse('2026-07-07 09:00:00'),
+                'paid_at' => $this->financeTimestamp('2026-07-07 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-07 09:00:00'),
             ]);
             $transaction->items()->create([
                 'product_id' => $product->id,
@@ -450,7 +455,7 @@ class FinanceCashierFundTest extends TestCase
                 'payment_method' => 'CASH',
                 'cash_flow' => 'OUT',
                 'description' => 'Beli plastik',
-                'date' => Carbon::parse('2026-07-07 10:00:00'),
+                'date' => $this->financeTimestamp('2026-07-07 10:00:00'),
             ]);
 
             $this->actingAs($owner)
@@ -490,6 +495,149 @@ class FinanceCashierFundTest extends TestCase
         }
     }
 
+    public function test_current_cashier_tab_ignores_future_withdrawal_and_keeps_current_shift_sales_visible(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-02 18:00:00', 'Asia/Jakarta'));
+
+        try {
+            $outlet = Outlet::create(['name' => 'Outlet Future Withdrawal']);
+            $owner = User::create([
+                'email' => 'owner-future-withdrawal@karsa.local',
+                'password_hash' => Hash::make('password'),
+                'display_name' => 'Owner Future Withdrawal',
+                'role' => 'OWNER',
+                'is_active' => true,
+            ]);
+
+            $shift = app(ShiftService::class)->openShift($outlet->id, 50000, 'Shift Sore');
+
+            Transaction::create([
+                'outlet_id' => $outlet->id,
+                'shift_id' => $shift->id,
+                'invoice_number' => 'INV-FUTURE-WD-CASH',
+                'total_amount' => 20000,
+                'payment_method' => 'CASH',
+                'payment_status' => 'PAID',
+                'paid_at' => Carbon::parse('2026-08-02 18:30:00', 'Asia/Jakarta')->setTimezone(config('app.timezone')),
+                'created_at' => Carbon::parse('2026-08-02 18:30:00', 'Asia/Jakarta')->setTimezone(config('app.timezone')),
+            ]);
+
+            PettyCash::create([
+                'outlet_id' => $outlet->id,
+                'amount' => 10000,
+                'category' => 'Penarikan',
+                'payment_method' => 'CASH',
+                'cash_flow' => 'OUT',
+                'description' => 'Timestamp masa depan dari input/browser lama',
+                'created_at' => Carbon::parse('2026-08-02 23:51:00', 'Asia/Jakarta')->setTimezone(config('app.timezone')),
+            ]);
+
+            Carbon::setTestNow(Carbon::parse('2026-08-02 18:59:00', 'Asia/Jakarta'));
+
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->get(route('finance', [
+                    'date_from' => '2026-08-02',
+                    'date_to' => '2026-08-02',
+                ]))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('Finance/Index')
+                    ->where('summary.hasOpenShift', true)
+                    ->where('summary.currentPeriodMode', 'OPEN_SHIFT')
+                    ->where('summary.lastWithdrawalAt', null)
+                    ->where('summary.omzet', 20000)
+                    ->where('summary.cashSales', 20000)
+                    ->where('summary.cashDrawerNet', 20000)
+                    ->where('summary.cashDrawerActual', 70000)
+                    ->where('summary', function ($summary) {
+                        $summary = collect($summary);
+
+                        return Carbon::parse($summary->get('periodStart'))->lte(Carbon::parse($summary->get('periodEnd')));
+                    })
+                );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_current_cashier_tab_adds_sales_after_last_withdrawal_to_remaining_balance(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-02 09:00:00', 'Asia/Jakarta'));
+
+        try {
+            $outlet = Outlet::create(['name' => 'Outlet Beruntun Withdrawal']);
+            $owner = User::create([
+                'email' => 'owner-running-balance@karsa.local',
+                'password_hash' => Hash::make('password'),
+                'display_name' => 'Owner Running Balance',
+                'role' => 'OWNER',
+                'is_active' => true,
+            ]);
+
+            Transaction::create([
+                'outlet_id' => $outlet->id,
+                'invoice_number' => 'INV-RUNNING-BEFORE',
+                'total_amount' => 100000,
+                'payment_method' => 'CASH',
+                'payment_status' => 'PAID',
+                'paid_at' => Carbon::parse('2026-08-02 09:00:00', 'Asia/Jakarta')->setTimezone(config('app.timezone')),
+                'created_at' => Carbon::parse('2026-08-02 09:00:00', 'Asia/Jakarta')->setTimezone(config('app.timezone')),
+            ]);
+
+            Carbon::setTestNow(Carbon::parse('2026-08-02 10:00:00', 'Asia/Jakarta'));
+
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->post(route('finance.withdraw'), [
+                    'amount' => 60000,
+                    'payment_method' => 'CASH',
+                    'description' => 'Tarik sebagian pagi',
+                    'date' => '2026-08-02 10:00:00',
+                ])
+                ->assertRedirect()
+                ->assertSessionHasNoErrors();
+
+            Transaction::create([
+                'outlet_id' => $outlet->id,
+                'invoice_number' => 'INV-RUNNING-AFTER',
+                'total_amount' => 30000,
+                'payment_method' => 'CASH',
+                'payment_status' => 'PAID',
+                'paid_at' => Carbon::parse('2026-08-02 18:00:00', 'Asia/Jakarta')->setTimezone(config('app.timezone')),
+                'created_at' => Carbon::parse('2026-08-02 18:00:00', 'Asia/Jakarta')->setTimezone(config('app.timezone')),
+            ]);
+
+            Carbon::setTestNow(Carbon::parse('2026-08-02 18:59:00', 'Asia/Jakarta'));
+
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->get(route('finance', [
+                    'date_from' => '2026-08-02',
+                    'date_to' => '2026-08-02',
+                ]))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('Finance/Index')
+                    ->where('summary.currentPeriodMode', 'SINCE_LAST_WITHDRAWAL')
+                    ->where('summary.cashSales', 30000)
+                    ->where('summary.omzet', 30000)
+                    ->where('summary.cashDrawerNet', 70000)
+                    ->where('summary.cleanFinance', 70000)
+                    ->where('summary.withdrawableCash', 70000)
+                    ->where('periodSummary.omzet', 130000)
+                    ->where('periodSummary.withdrawTotal', 60000)
+                    ->where('summary', function ($summary) {
+                        $summary = collect($summary);
+
+                        return Carbon::parse($summary->get('periodStart'))->lte(Carbon::parse($summary->get('periodEnd')));
+                    })
+                );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_current_cashier_tab_uses_open_shift_period_even_when_shift_started_on_previous_day(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-09 08:00:00', 'Asia/Jakarta'));
@@ -513,8 +661,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 54000,
                 'payment_method' => 'CASH',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-09 08:30:00', 'Asia/Jakarta'),
-                'created_at' => Carbon::parse('2026-07-09 08:30:00', 'Asia/Jakarta'),
+                'paid_at' => $this->financeTimestamp('2026-07-09 08:30:00'),
+                'created_at' => $this->financeTimestamp('2026-07-09 08:30:00'),
             ]);
 
             Carbon::setTestNow(Carbon::parse('2026-07-19 12:00:00', 'Asia/Jakarta'));
@@ -542,6 +690,88 @@ class FinanceCashierFundTest extends TestCase
         }
     }
 
+    public function test_current_cashier_tab_updates_when_multiple_same_day_shifts_are_closed_with_cash_discrepancy(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-20 08:00:00', 'Asia/Jakarta'));
+
+        try {
+            $outlet = Outlet::create(['name' => 'Outlet Multi Shift']);
+            $owner = User::create([
+                'email' => 'owner-multi-shift-finance@karsa.local',
+                'password_hash' => Hash::make('password'),
+                'display_name' => 'Owner Multi Shift',
+                'role' => 'OWNER',
+                'is_active' => true,
+            ]);
+
+            $firstShift = app(ShiftService::class)->openShift($outlet->id, 50000, 'Shift Pagi');
+            Transaction::create([
+                'outlet_id' => $outlet->id,
+                'shift_id' => $firstShift->id,
+                'invoice_number' => 'INV-MULTI-SHIFT-001',
+                'total_amount' => 100000,
+                'payment_method' => 'CASH',
+                'payment_status' => 'PAID',
+                'paid_at' => $this->financeTimestamp('2026-07-20 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-20 09:00:00'),
+            ]);
+
+            Carbon::setTestNow(Carbon::parse('2026-07-20 10:00:00', 'Asia/Jakarta'));
+            app(ShiftService::class)->closeShift($firstShift->id, 130000, 'Kas kurang saat tutup shift pagi', $owner->id);
+
+            Carbon::setTestNow(Carbon::parse('2026-07-20 11:00:00', 'Asia/Jakarta'));
+            $secondShift = app(ShiftService::class)->openShift($outlet->id, 50000, 'Shift Siang');
+            Transaction::create([
+                'outlet_id' => $outlet->id,
+                'shift_id' => $secondShift->id,
+                'invoice_number' => 'INV-MULTI-SHIFT-002',
+                'total_amount' => 40000,
+                'payment_method' => 'CASH',
+                'payment_status' => 'PAID',
+                'paid_at' => $this->financeTimestamp('2026-07-20 12:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-20 12:00:00'),
+            ]);
+
+            Carbon::setTestNow(Carbon::parse('2026-07-20 12:30:00', 'Asia/Jakarta'));
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->get(route('finance', [
+                    'date_from' => '2026-07-20',
+                    'date_to' => '2026-07-20',
+                ]))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->where('summary.hasOpenShift', true)
+                    ->where('summary.closedShiftDiscrepancy', -20000)
+                    ->where('summary.cashDrawerActual', 170000)
+                    ->where('summary.cashDrawerNet', 120000)
+                    ->where('summary.cleanFinance', 120000)
+                );
+
+            Carbon::setTestNow(Carbon::parse('2026-07-20 13:00:00', 'Asia/Jakarta'));
+            app(ShiftService::class)->closeShift($secondShift->id, 95000, 'Kas lebih saat tutup shift siang', $owner->id);
+
+            Carbon::setTestNow(Carbon::parse('2026-07-20 13:30:00', 'Asia/Jakarta'));
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->get(route('finance', [
+                    'date_from' => '2026-07-20',
+                    'date_to' => '2026-07-20',
+                ]))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->where('summary.hasOpenShift', false)
+                    ->where('summary.currentPeriodMode', 'ALL_UNWITHDRAWN')
+                    ->where('summary.closedShiftDiscrepancy', -15000)
+                    ->where('summary.cashDrawerActual', 175000)
+                    ->where('summary.cashDrawerNet', 125000)
+                    ->where('summary.cleanFinance', 125000)
+                );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_current_cashier_tab_accumulates_prior_sales_when_owner_has_never_withdrawn(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-19 12:00:00', 'Asia/Jakarta'));
@@ -562,8 +792,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 100000,
                 'payment_method' => 'CASH',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-09 09:00:00', 'Asia/Jakarta'),
-                'created_at' => Carbon::parse('2026-07-09 09:00:00', 'Asia/Jakarta'),
+                'paid_at' => $this->financeTimestamp('2026-07-09 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-09 09:00:00'),
             ]);
 
             Transaction::create([
@@ -572,8 +802,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 40000,
                 'payment_method' => 'QRIS',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-10 09:00:00', 'Asia/Jakarta'),
-                'created_at' => Carbon::parse('2026-07-10 09:00:00', 'Asia/Jakarta'),
+                'paid_at' => $this->financeTimestamp('2026-07-10 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-10 09:00:00'),
             ]);
 
             app(PettyCashService::class)->createExpense([
@@ -642,7 +872,7 @@ class FinanceCashierFundTest extends TestCase
                 'payment_method' => 'CASH',
                 'payment_status' => 'PAID',
                 'paid_at' => null,
-                'created_at' => Carbon::parse('2026-07-18 09:00:00', 'Asia/Jakarta'),
+                'created_at' => $this->financeTimestamp('2026-07-18 09:00:00'),
             ]);
 
             Transaction::create([
@@ -652,7 +882,7 @@ class FinanceCashierFundTest extends TestCase
                 'payment_method' => 'QRIS',
                 'payment_status' => 'PAID',
                 'paid_at' => null,
-                'created_at' => Carbon::parse('2026-07-18 10:00:00', 'Asia/Jakarta'),
+                'created_at' => $this->financeTimestamp('2026-07-18 10:00:00'),
             ]);
 
             $this->actingAs($owner)
@@ -697,8 +927,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 100000,
                 'payment_method' => 'CASH',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-18 09:00:00', 'Asia/Jakarta'),
-                'created_at' => Carbon::parse('2026-07-18 09:00:00', 'Asia/Jakarta'),
+                'paid_at' => $this->financeTimestamp('2026-07-18 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-18 09:00:00'),
             ]);
             Transaction::create([
                 'outlet_id' => $outlet->id,
@@ -706,8 +936,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 40000,
                 'payment_method' => 'QRIS',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-18 09:30:00', 'Asia/Jakarta'),
-                'created_at' => Carbon::parse('2026-07-18 09:30:00', 'Asia/Jakarta'),
+                'paid_at' => $this->financeTimestamp('2026-07-18 09:30:00'),
+                'created_at' => $this->financeTimestamp('2026-07-18 09:30:00'),
             ]);
 
             app(PettyCashService::class)->createExpense([
@@ -762,8 +992,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 20000,
                 'payment_method' => 'CASH',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-19 09:00:00', 'Asia/Jakarta'),
-                'created_at' => Carbon::parse('2026-07-19 09:00:00', 'Asia/Jakarta'),
+                'paid_at' => $this->financeTimestamp('2026-07-19 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-19 09:00:00'),
             ]);
 
             Carbon::setTestNow(Carbon::parse('2026-07-19 12:00:00', 'Asia/Jakarta'));
@@ -830,8 +1060,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 80000,
                 'payment_method' => 'CASH',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-07 09:00:00'),
-                'created_at' => Carbon::parse('2026-07-07 09:00:00'),
+                'paid_at' => $this->financeTimestamp('2026-07-07 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-07 09:00:00'),
             ]);
             $cashTransaction->items()->create([
                 'product_id' => $product->id,
@@ -847,8 +1077,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 100000,
                 'payment_method' => 'qris',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-07 09:30:00'),
-                'created_at' => Carbon::parse('2026-07-07 09:30:00'),
+                'paid_at' => $this->financeTimestamp('2026-07-07 09:30:00'),
+                'created_at' => $this->financeTimestamp('2026-07-07 09:30:00'),
             ]);
             $qrisTransaction->items()->create([
                 'product_id' => $product->id,
@@ -874,8 +1104,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 40000,
                 'payment_method' => 'QRIS',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-07 12:30:00'),
-                'created_at' => Carbon::parse('2026-07-07 12:30:00'),
+                'paid_at' => $this->financeTimestamp('2026-07-07 12:30:00'),
+                'created_at' => $this->financeTimestamp('2026-07-07 12:30:00'),
             ]);
             $newQrisTransaction->items()->create([
                 'product_id' => $product->id,
@@ -929,8 +1159,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 100000,
                 'payment_method' => 'CASH',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-19 09:00:00', 'Asia/Jakarta'),
-                'created_at' => Carbon::parse('2026-07-19 09:00:00', 'Asia/Jakarta'),
+                'paid_at' => $this->financeTimestamp('2026-07-19 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-19 09:00:00'),
             ]);
 
             Transaction::create([
@@ -939,8 +1169,8 @@ class FinanceCashierFundTest extends TestCase
                 'total_amount' => 40000,
                 'payment_method' => 'QRIS',
                 'payment_status' => 'PAID',
-                'paid_at' => Carbon::parse('2026-07-19 09:30:00', 'Asia/Jakarta'),
-                'created_at' => Carbon::parse('2026-07-19 09:30:00', 'Asia/Jakarta'),
+                'paid_at' => $this->financeTimestamp('2026-07-19 09:30:00'),
+                'created_at' => $this->financeTimestamp('2026-07-19 09:30:00'),
             ]);
 
             $this->actingAs($owner)
@@ -1056,6 +1286,134 @@ class FinanceCashierFundTest extends TestCase
                             && (float) $day['profit'] === -50000.0;
                     })
                 );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_operational_cash_expense_reduces_drawer_savings_without_reducing_active_shift_cash(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-07 08:00:00', 'Asia/Jakarta'));
+
+        try {
+            $outlet = Outlet::create(['name' => 'Outlet Operasional']);
+            $owner = User::create([
+                'email' => 'owner-operational-expense@karsa.local',
+                'password_hash' => Hash::make('password'),
+                'display_name' => 'Owner Operasional',
+                'role' => 'OWNER',
+                'is_active' => true,
+            ]);
+
+            $shift = app(ShiftService::class)->openShift($outlet->id, 50000, 'Shift Pagi');
+
+            Transaction::create([
+                'outlet_id' => $outlet->id,
+                'shift_id' => $shift->id,
+                'invoice_number' => 'INV-OP-EXP-001',
+                'total_amount' => 100000,
+                'payment_method' => 'CASH',
+                'payment_status' => 'PAID',
+                'paid_at' => $this->financeTimestamp('2026-07-07 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-07 09:00:00'),
+            ]);
+
+            app(PettyCashService::class)->createExpense([
+                'outlet_id' => $outlet->id,
+                'amount' => 20000,
+                'category' => 'Operasional',
+                'payment_method' => 'CASH',
+                'cash_flow' => 'OUT',
+                'description' => 'Plastik dan tisu',
+                'date' => $this->financeTimestamp('2026-07-07 10:00:00'),
+            ]);
+
+            Carbon::setTestNow(Carbon::parse('2026-07-07 11:00:00', 'Asia/Jakarta'));
+
+            $shiftSummary = app(ShiftService::class)->moneySummary($shift->fresh());
+            $this->assertSame(0.0, (float) $shiftSummary['cash']['expenses']);
+            $this->assertSame(20000.0, $shiftSummary['cash']['drawer_expenses']);
+            $this->assertSame(150000.0, $shiftSummary['cash']['expected']);
+
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->get(route('finance', [
+                    'date_from' => '2026-07-07',
+                    'date_to' => '2026-07-07',
+                ]))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('Finance/Index')
+                    ->where('summary.cashExpense', 20000)
+                    ->where('summary.cashRestockExpense', 0)
+                    ->where('summary.cashDrawerSavingsExpense', 20000)
+                    ->where('summary.cashDrawerActual', 130000)
+                    ->where('summary.cashDrawerNet', 80000)
+                    ->where('summary.cleanFinance', 80000)
+                );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_owner_withdrawal_stays_out_of_shift_summary_and_shift_movements(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-08 08:00:00', 'Asia/Jakarta'));
+
+        try {
+            $outlet = Outlet::create(['name' => 'Outlet Shift Penarikan']);
+            $owner = User::create([
+                'email' => 'owner-shift-withdrawal@karsa.local',
+                'password_hash' => Hash::make('password'),
+                'display_name' => 'Owner Shift Withdrawal',
+                'role' => 'OWNER',
+                'is_active' => true,
+            ]);
+
+            $shift = app(ShiftService::class)->openShift($outlet->id, 50000, 'Shift Pagi');
+
+            Transaction::create([
+                'outlet_id' => $outlet->id,
+                'shift_id' => $shift->id,
+                'invoice_number' => 'INV-SHIFT-WD-001',
+                'total_amount' => 100000,
+                'payment_method' => 'CASH',
+                'payment_status' => 'PAID',
+                'paid_at' => $this->financeTimestamp('2026-07-08 09:00:00'),
+                'created_at' => $this->financeTimestamp('2026-07-08 09:00:00'),
+            ]);
+
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->post(route('finance.withdraw'), [
+                    'amount' => 30000,
+                    'payment_method' => 'CASH',
+                    'description' => 'Penarikan owner saat shift berjalan',
+                    'date' => '2026-07-08 10:00:00',
+                ])
+                ->assertRedirect()
+                ->assertSessionHasNoErrors();
+
+            $shiftSummary = app(ShiftService::class)->moneySummary($shift->fresh());
+            $this->assertSame(0.0, (float) $shiftSummary['cash']['withdrawals']);
+            $this->assertSame(0.0, (float) $shiftSummary['cash']['expenses']);
+            $this->assertSame(150000.0, $shiftSummary['cash']['expected']);
+
+            $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->get(route('shifts'))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('Shifts/Index')
+                    ->where('cashSummary.cash.withdrawals', 0)
+                    ->where('cashSummary.cash.expected', 150000)
+                    ->where('expenses', fn ($expenses) => $expenses->count() === 0)
+                );
+
+            Carbon::setTestNow(Carbon::parse('2026-07-08 11:00:00', 'Asia/Jakarta'));
+            $closedShift = app(ShiftService::class)->closeShift($shift->id, 150000, 'Tutup shift tanpa selisih', $owner->id);
+
+            $this->assertSame(0.0, (float) $closedShift->fresh()->discrepancy);
         } finally {
             Carbon::setTestNow();
         }

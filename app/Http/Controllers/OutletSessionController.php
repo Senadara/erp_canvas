@@ -10,10 +10,13 @@ class OutletSessionController extends Controller
 {
     public function store(Request $request): RedirectResponse
     {
-        $request->validate(['outlet_id' => 'required|string']);
+        $data = $request->validate([
+            'outlet_id' => 'required|string',
+            'redirect_to' => 'nullable|string|max:255',
+        ]);
 
         $user = $request->user();
-        $outletId = $request->string('outlet_id');
+        $outletId = (string) $data['outlet_id'];
 
         if (! $user->isOwner()) {
             $allowed = $user->outlets()->where('outlets.id', $outletId)->exists();
@@ -25,6 +28,11 @@ class OutletSessionController extends Controller
         }
 
         $request->session()->put('outlet_id', $outletId);
+
+        $redirectTo = $data['redirect_to'] ?? null;
+        if (is_string($redirectTo) && str_starts_with($redirectTo, '/') && ! str_starts_with($redirectTo, '//')) {
+            return redirect($redirectTo);
+        }
 
         return back();
     }

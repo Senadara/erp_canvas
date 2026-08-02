@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\PettyCash;
 use App\Models\Product;
+use App\Models\ShiftRecord;
 use App\Models\StockItem;
 use App\Models\Transaction;
 use Carbon\Carbon;
@@ -74,7 +75,7 @@ class ReportService
         $query = Transaction::where('outlet_id', $outletId)
             ->where('payment_status', 'PAID')
             ->whereBetween('created_at', [$start, $end])
-            ->with('items');
+            ->with('items.product');
 
         if ($mitraProductIds !== null) {
             $query->whereHas('items', function ($q) use ($mitraProductIds) {
@@ -410,6 +411,8 @@ class ReportService
 
         $daily = [];
         $categorySummary = [];
+        $soldItems = [];
+        $productSummary = [];
         $ensureDay = function (Carbon $date) use (&$daily): string {
             $key = $date->toDateString();
 
@@ -470,9 +473,46 @@ class ReportService
         $transactionRows = [];
         foreach ($transactions as $transaction) {
             $amount = 0.0;
+            $transactionItems = [];
             foreach ($transaction->items as $item) {
                 if ($mitraProductIds === null || in_array($item->product_id, $mitraProductIds, true)) {
-                    $amount += (float) $item->subtotal;
+                    $quantity = (float) $item->qty_porsi;
+                    $revenue = (float) $item->subtotal;
+                    $hpp = (float) ($item->product?->hpp ?? 0) * $quantity;
+                    $grossProfit = $revenue - $hpp;
+                    $productName = $item->product_name ?: ($item->product?->name ?? 'Produk');
+
+                    $amount += $revenue;
+
+                    if (! isset($productSummary[$item->product_id])) {
+                        $productSummary[$item->product_id] = [
+                            'product_id' => $item->product_id,
+                            'product_name' => $productName,
+                            'quantity_sold' => 0.0,
+                            'revenue' => 0.0,
+                            'estimated_hpp' => 0.0,
+                            'gross_profit' => 0.0,
+                            'transaction_ids' => [],
+                        ];
+                    }
+
+                    $productSummary[$item->product_id]['product_name'] = $productName;
+                    $productSummary[$item->product_id]['quantity_sold'] += $quantity;
+                    $productSummary[$item->product_id]['revenue'] += $revenue;
+                    $productSummary[$item->product_id]['estimated_hpp'] += $hpp;
+                    $productSummary[$item->product_id]['gross_profit'] += $grossProfit;
+                    $productSummary[$item->product_id]['transaction_ids'][$transaction->id] = true;
+
+                    $transactionItems[] = [
+                        'id' => $item->id,
+                        'product_id' => $item->product_id,
+                        'product_name' => $productName,
+                        'qty' => $quantity,
+                        'price_per_porsi' => (float) $item->price_per_porsi,
+                        'revenue' => $revenue,
+                        'estimated_hpp' => $hpp,
+                        'gross_profit' => $grossProfit,
+                    ];
                 }
             }
 
@@ -500,12 +540,23 @@ class ReportService
             }
             $addCategorySummary('Penjualan', $method, 'IN', $amount);
 
+            foreach ($transactionItems as $transactionItem) {
+                $soldItems[] = [
+                    ...$transactionItem,
+                    'transaction_id' => $transaction->id,
+                    'invoice_number' => $transaction->invoice_number,
+                    'paid_at' => $settledAt?->toIso8601String(),
+                    'payment_method' => $method,
+                ];
+            }
+
             $transactionRows[] = [
                 'id' => $transaction->id,
                 'invoice_number' => $transaction->invoice_number,
                 'paid_at' => $settledAt?->toIso8601String(),
                 'payment_method' => $method,
                 'amount' => $amount,
+                'items' => $transactionItems,
             ];
         }
 
@@ -593,11 +644,57 @@ class ReportService
         $summary['settlement_net'] = $summary['cash_net'] + $summary['qris_net'];
         $summary['money_in_total'] = $summary['cash_sales'] + $summary['qris_sales'] + $summary['cash_in'] + $summary['qris_in'] + $summary['outside_in'];
         $summary['money_out_total'] = $summary['cash_out'] + $summary['qris_out'] + $summary['outside_out'];
+        $summary['gross_profit'] = collect($productSummary)->sum('gross_profit');
+        $summary['estimated_hpp'] = collect($productSummary)->sum('estimated_hpp');
+
+        $productSummaryRows = collect($productSummary)
+            ->map(function (array $row) {
+                $transactionCount = count($row['transaction_ids']);
+                unset($row['transaction_ids']);
+
+                return [
+                    ...$row,
+                    'quantity_sold' => round((float) $row['quantity_sold'], 2),
+                    'revenue' => round((float) $row['revenue']),
+                    'estimated_hpp' => round((float) $row['estimated_hpp']),
+                    'gross_profit' => round((float) $row['gross_profit']),
+                    'transaction_count' => $transactionCount,
+                    'margin_percent' => (float) $row['revenue'] > 0
+                        ? round(((float) $row['gross_profit'] / (float) $row['revenue']) * 100, 2)
+                        : 0.0,
+                ];
+            })
+            ->sortByDesc('revenue')
+            ->values()
+            ->all();
+
+        [$shiftSummary, $shiftDetails] = $this->buildSettlementShiftSummary($outletId, $start, $end);
+        $financialSummary = [
+            'sales_total' => round((float) $summary['sales_total']),
+            'cash_sales' => round((float) $summary['cash_sales']),
+            'qris_sales' => round((float) $summary['qris_sales']),
+            'cash_net' => round((float) $summary['cash_net']),
+            'qris_net' => round((float) $summary['qris_net']),
+            'settlement_net' => round((float) $summary['settlement_net']),
+            'estimated_hpp' => round((float) $summary['estimated_hpp']),
+            'gross_profit' => round((float) $summary['gross_profit']),
+            'operating_expenses' => round((float) $summary['operating_expenses']),
+            'restock_expenses' => round((float) $summary['restock_expenses']),
+            'cashier_topups' => round((float) $summary['cashier_topups']),
+            'owner_withdrawals' => round((float) $summary['withdraw_cash'] + (float) $summary['withdraw_qris']),
+            'money_in_total' => round((float) $summary['money_in_total']),
+            'money_out_total' => round((float) $summary['money_out_total']),
+        ];
 
         return [
             'start_date' => $start->format('Y-m-d'),
             'end_date' => $end->format('Y-m-d'),
             'summary' => $summary,
+            'financial_summary' => $financialSummary,
+            'shift_summary' => $shiftSummary,
+            'shift_details' => $shiftDetails,
+            'product_summary' => $productSummaryRows,
+            'sold_items' => collect($soldItems)->sortByDesc('paid_at')->values()->all(),
             'category_summary' => collect($categorySummary)
                 ->sortBy([
                     ['category', 'asc'],
@@ -616,5 +713,65 @@ class ReportService
         return strtoupper((string) $paymentMethod) === 'QRIS'
             ? 'QRIS'
             : (strtoupper((string) $paymentMethod) === 'PRIVATE' ? 'PRIVATE' : 'CASH');
+    }
+
+    private function buildSettlementShiftSummary(string $outletId, Carbon $start, Carbon $end): array
+    {
+        $shifts = ShiftRecord::with(['opener:id,display_name', 'closer:id,display_name'])
+            ->where('outlet_id', $outletId)
+            ->where('opened_at', '<=', $end)
+            ->where(function ($query) use ($start) {
+                $query->whereNull('closed_at')
+                    ->orWhere('closed_at', '>=', $start);
+            })
+            ->orderBy('opened_at')
+            ->get();
+
+        $now = Carbon::now();
+        $details = $shifts->map(function (ShiftRecord $shift) use ($start, $end, $now) {
+            $openedAt = Carbon::parse($shift->opened_at);
+            $closedAt = $shift->closed_at ? Carbon::parse($shift->closed_at) : $now;
+            $effectiveStart = $openedAt->lt($start) ? $start->copy() : $openedAt;
+            $effectiveEnd = $closedAt->gt($end) ? $end->copy() : $closedAt;
+            $durationMinutes = max(0, (int) $effectiveStart->diffInMinutes($effectiveEnd));
+
+            return [
+                'id' => $shift->id,
+                'name' => $shift->name,
+                'opened_at' => $openedAt->toIso8601String(),
+                'closed_at' => $shift->closed_at?->toIso8601String(),
+                'opened_by' => $shift->opener?->display_name ?? 'Tidak diketahui',
+                'closed_by' => $shift->closer?->display_name ?? ($shift->closed_at ? 'Tidak diketahui' : 'Masih berjalan'),
+                'duration_minutes' => $durationMinutes,
+                'duration_label' => $this->formatDurationMinutes($durationMinutes),
+                'status' => $shift->status,
+            ];
+        })->values();
+
+        $workDays = $details
+            ->map(fn (array $row) => Carbon::parse($row['opened_at'])->toDateString())
+            ->unique()
+            ->count();
+        $shiftCount = $details->count();
+        $averageMinutes = $shiftCount > 0 ? (int) round($details->avg('duration_minutes')) : 0;
+        $longest = $details->sortByDesc('duration_minutes')->first();
+        $shortest = $details->sortBy('duration_minutes')->first();
+
+        return [[
+            'work_days' => $workDays,
+            'shift_count' => $shiftCount,
+            'average_open_minutes' => $averageMinutes,
+            'average_open_label' => $this->formatDurationMinutes($averageMinutes),
+            'longest_shift' => $longest,
+            'shortest_shift' => $shortest,
+        ], $details->all()];
+    }
+
+    private function formatDurationMinutes(int $minutes): string
+    {
+        $hours = intdiv(max(0, $minutes), 60);
+        $remainingMinutes = max(0, $minutes) % 60;
+
+        return "{$hours}j {$remainingMinutes}m";
     }
 }

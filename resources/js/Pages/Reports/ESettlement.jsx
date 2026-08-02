@@ -2,12 +2,15 @@ import { useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, router } from '@inertiajs/react';
 import {
-    ArrowDownTrayIcon,
     BanknotesIcon,
     CalendarDaysIcon,
     ClipboardDocumentListIcon,
+    ClockIcon,
     CreditCardIcon,
     FunnelIcon,
+    PrinterIcon,
+    Squares2X2Icon,
+    UserGroupIcon,
 } from '@heroicons/react/24/outline';
 
 function formatRupiah(value) {
@@ -17,6 +20,10 @@ function formatRupiah(value) {
 
 function formatNumber(value) {
     return new Intl.NumberFormat('id-ID').format(Number(value) || 0);
+}
+
+function formatQty(value) {
+    return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(Number(value) || 0);
 }
 
 function formatDate(value) {
@@ -59,13 +66,13 @@ function movementSign(item, incoming) {
     return incoming ? '+' : '-';
 }
 
-function MetricCard({ label, value, sub, icon: Icon, tone = 'text-slate-900', box = 'border-slate-200 bg-white' }) {
+function MetricCard({ label, value, sub, icon: Icon, tone = 'text-slate-900', box = 'border-slate-200 bg-white', currency = true }) {
     return (
         <div className={`rounded-lg border p-4 shadow-sm ${box}`}>
             <div className="flex items-start justify-between gap-3">
                 <div>
                     <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
-                    <p className={`mt-2 text-2xl font-bold ${tone}`}>{formatRupiah(value)}</p>
+                    <p className={`mt-2 text-2xl font-bold ${tone}`}>{currency ? formatRupiah(value) : value}</p>
                 </div>
                 {Icon && <Icon className="h-6 w-6 text-slate-400" />}
             </div>
@@ -83,6 +90,10 @@ export default function ESettlement({ filters, report = {} }) {
     const daily = report.daily || [];
     const transactions = report.transactions || [];
     const movements = report.movements || [];
+    const soldItems = report.sold_items || [];
+    const productSummary = report.product_summary || [];
+    const shiftSummary = report.shift_summary || {};
+    const shiftDetails = report.shift_details || [];
     const cashierMoneyInTotal = (Number(summary.cash_sales) || 0)
         + (Number(summary.qris_sales) || 0)
         + (Number(summary.cash_in) || 0)
@@ -91,10 +102,6 @@ export default function ESettlement({ filters, report = {} }) {
     const privateMoneyUsage = Number(summary.outside_out) || 0;
     const privateMoneyIn = Number(summary.outside_in) || 0;
     const ownerWithdrawalTotal = (Number(summary.withdraw_cash) || 0) + (Number(summary.withdraw_qris) || 0);
-    const pdfUrl = route('reports.e-settlement.pdf', {
-        start_date: startDate,
-        end_date: endDate,
-    });
 
     const applyFilter = (event) => {
         event.preventDefault();
@@ -113,8 +120,34 @@ export default function ESettlement({ filters, report = {} }) {
     return (
         <ErpLayout title="E-Settlement Keuangan">
             <Head title="E-Settlement Keuangan" />
+            <style>{`
+                @media print {
+                    @page { size: A4; margin: 12mm; }
+                    body { background: #fff !important; }
+                    .erp-app-sidebar,
+                    .erp-app-header,
+                    .settlement-print-hidden {
+                        display: none !important;
+                    }
+                    .settlement-print-area {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                    }
+                    .settlement-print-area section,
+                    .settlement-print-card {
+                        break-inside: avoid;
+                        box-shadow: none !important;
+                    }
+                    .settlement-print-area table {
+                        page-break-inside: auto;
+                    }
+                    .settlement-print-area tr {
+                        page-break-inside: avoid;
+                    }
+                }
+            `}</style>
 
-            <div className="space-y-6">
+            <div className="settlement-print-area space-y-6">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                         <h1 className="text-2xl font-semibold text-slate-900">E-Settlement Keuangan</h1>
@@ -122,25 +155,26 @@ export default function ESettlement({ filters, report = {} }) {
                             Rekap data penting keuangan periode {formatDate(report.start_date)} - {formatDate(report.end_date)}.
                         </p>
                     </div>
-                    <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="settlement-print-hidden flex flex-col gap-2 sm:flex-row">
                         <button
                             type="button"
                             onClick={() => router.get(route('reports'))}
                             className="inline-flex min-h-[40px] items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                         >
                             Kembali
-                        </button>
-                        <a
-                            href={pdfUrl}
+                            </button>
+                        <button
+                            type="button"
+                            onClick={() => window.print()}
                             className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
                         >
-                            <ArrowDownTrayIcon className="h-4 w-4" />
-                            Cetak PDF
-                        </a>
+                            <PrinterIcon className="h-4 w-4" />
+                            Print / Simpan PDF
+                        </button>
                     </div>
                 </div>
 
-                <form onSubmit={applyFilter} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                <form onSubmit={applyFilter} className="settlement-print-hidden grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-[1fr_1fr_auto] sm:items-end">
                     <label className="block">
                         <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Mulai</span>
                         <input
@@ -185,6 +219,134 @@ export default function ESettlement({ filters, report = {} }) {
                     <MetricCard label="Top Up Kasir" value={summary.cashier_topups} tone="text-amber-700" sub={`Dari laci ${formatRupiah(summary.drawer_cashier_topups)} | luar ${formatRupiah(summary.outside_cashier_topups)}`} />
                     <MetricCard label="Penarikan Owner" value={ownerWithdrawalTotal} tone="text-slate-900" sub={`Cash ${formatRupiah(summary.withdraw_cash)} | QRIS ${formatRupiah(summary.withdraw_qris)}`} />
                 </div>
+
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <MetricCard label="Hari Kerja" value={formatNumber(shiftSummary.work_days || 0)} icon={CalendarDaysIcon} tone="text-slate-900" sub={`${formatNumber(shiftSummary.shift_count)} shift pada periode ini.`} currency={false} />
+                    <MetricCard label="Rata-rata Shift" value={shiftSummary.average_open_label || '0j 0m'} icon={ClockIcon} tone="text-indigo-800" box="border-indigo-200 bg-indigo-50" sub="Durasi rata-rata buka shift." currency={false} />
+                    <MetricCard label="Shift Terlama" value={shiftSummary.longest_shift?.duration_label || '0j 0m'} icon={UserGroupIcon} tone="text-emerald-800" box="border-emerald-200 bg-emerald-50" sub={shiftSummary.longest_shift ? `${shiftSummary.longest_shift.name || 'Shift'}` : 'Belum ada shift'} currency={false} />
+                    <MetricCard label="Shift Tersingkat" value={shiftSummary.shortest_shift?.duration_label || '0j 0m'} icon={ClockIcon} tone="text-amber-800" box="border-amber-200 bg-amber-50" sub={shiftSummary.shortest_shift ? `${shiftSummary.shortest_shift.name || 'Shift'}` : 'Belum ada shift'} currency={false} />
+                </div>
+
+                <div className="grid gap-5 xl:grid-cols-2">
+                    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div className="border-b border-slate-200 px-4 py-3">
+                            <h2 className="font-semibold text-slate-900">Ringkasan Produk</h2>
+                            <p className="text-xs text-slate-500">Produk terjual, estimasi HPP, dan profit kotor sesuai filter.</p>
+                        </div>
+                        <div className="max-h-[360px] overflow-auto">
+                            {productSummary.length > 0 ? (
+                                <table className="w-full min-w-[720px] text-sm">
+                                    <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                                        <tr>
+                                            <th className="px-4 py-3">Produk</th>
+                                            <th className="px-4 py-3 text-right">Qty</th>
+                                            <th className="px-4 py-3 text-right">Omzet</th>
+                                            <th className="px-4 py-3 text-right">HPP</th>
+                                            <th className="px-4 py-3 text-right">Profit</th>
+                                            <th className="px-4 py-3 text-right">Margin</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {productSummary.map((item) => (
+                                            <tr key={item.product_id || item.product_name} className="hover:bg-slate-50">
+                                                <td className="px-4 py-3">
+                                                    <p className="font-semibold text-slate-900">{item.product_name}</p>
+                                                    <p className="text-xs text-slate-500">{formatNumber(item.transaction_count)} transaksi</p>
+                                                </td>
+                                                <td className="px-4 py-3 text-right">{formatQty(item.quantity_sold)}</td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-indigo-700">{formatRupiah(item.revenue)}</td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatRupiah(item.estimated_hpp)}</td>
+                                                <td className={`whitespace-nowrap px-4 py-3 text-right font-semibold ${signedTone(item.gross_profit, 'text-emerald-700')}`}>{formatRupiah(item.gross_profit)}</td>
+                                                <td className="px-4 py-3 text-right">{formatQty(item.margin_percent)}%</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="px-4 py-10 text-center text-sm text-slate-500">Belum ada produk terjual pada periode ini.</div>
+                            )}
+                        </div>
+                    </section>
+
+                    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div className="border-b border-slate-200 px-4 py-3">
+                            <h2 className="font-semibold text-slate-900">Shift Pegawai</h2>
+                            <p className="text-xs text-slate-500">Jam buka shift dan petugas yang tercatat.</p>
+                        </div>
+                        <div className="max-h-[360px] overflow-auto">
+                            {shiftDetails.length > 0 ? (
+                                <table className="w-full min-w-[680px] text-sm">
+                                    <tbody className="divide-y divide-slate-100">
+                                        {shiftDetails.map((shift) => (
+                                            <tr key={shift.id} className="hover:bg-slate-50">
+                                                <td className="px-4 py-3">
+                                                    <p className="font-semibold text-slate-900">{shift.name || 'Shift'}</p>
+                                                    <p className="text-xs text-slate-500">{formatDateTime(shift.opened_at)} - {shift.closed_at ? formatDateTime(shift.closed_at) : 'Masih berjalan'}</p>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <p className="text-xs text-slate-500">Buka / Tutup</p>
+                                                    <p className="font-medium text-slate-800">{shift.opened_by} / {shift.closed_by}</p>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-indigo-700">{shift.duration_label}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="px-4 py-10 text-center text-sm text-slate-500">Belum ada shift pada periode ini.</div>
+                            )}
+                        </div>
+                    </section>
+                </div>
+
+                <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                        <div>
+                            <h2 className="font-semibold text-slate-900">Detail Barang Terjual</h2>
+                            <p className="text-xs text-slate-500">Setiap item produk dari transaksi lunas sesuai periode filter.</p>
+                        </div>
+                        <Squares2X2Icon className="h-5 w-5 text-slate-400" />
+                    </div>
+                    {soldItems.length > 0 ? (
+                        <div className="max-h-[420px] overflow-auto">
+                            <table className="w-full min-w-[980px] text-sm">
+                                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                                    <tr>
+                                        <th className="px-4 py-3">Invoice</th>
+                                        <th className="px-4 py-3">Produk</th>
+                                        <th className="px-4 py-3">Metode</th>
+                                        <th className="px-4 py-3 text-right">Qty</th>
+                                        <th className="px-4 py-3 text-right">Omzet</th>
+                                        <th className="px-4 py-3 text-right">HPP</th>
+                                        <th className="px-4 py-3 text-right">Profit</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {soldItems.map((item) => (
+                                        <tr key={item.id} className="hover:bg-slate-50">
+                                            <td className="px-4 py-3">
+                                                <p className="font-semibold text-slate-900">{item.invoice_number}</p>
+                                                <p className="text-xs text-slate-500">{formatDateTime(item.paid_at)}</p>
+                                            </td>
+                                            <td className="px-4 py-3 font-medium text-slate-900">{item.product_name}</td>
+                                            <td className="px-4 py-3">
+                                                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${methodBadgeTone(item.payment_method)}`}>
+                                                    {item.payment_method}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-right">{formatQty(item.qty)}</td>
+                                            <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-indigo-700">{formatRupiah(item.revenue)}</td>
+                                            <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatRupiah(item.estimated_hpp)}</td>
+                                            <td className={`whitespace-nowrap px-4 py-3 text-right font-semibold ${signedTone(item.gross_profit, 'text-emerald-700')}`}>{formatRupiah(item.gross_profit)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="px-4 py-10 text-center text-sm text-slate-500">Belum ada item produk terjual pada periode ini.</div>
+                    )}
+                </section>
 
                 <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div className="border-b border-slate-200 px-4 py-3">

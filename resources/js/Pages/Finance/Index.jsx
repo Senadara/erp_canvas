@@ -16,10 +16,23 @@ function formatRupiah(value) {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
 }
 
-function localDatetimeValue() {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    return now.toISOString().slice(0, 16);
+const FINANCE_TIMEZONE = 'Asia/Jakarta';
+
+function financeDatetimeValue(value = new Date()) {
+    const parts = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: FINANCE_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).formatToParts(new Date(value)).reduce((carry, part) => {
+        if (part.type !== 'literal') carry[part.type] = part.value;
+        return carry;
+    }, {});
+
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
 function isCashierFundMovement(item) {
@@ -69,12 +82,18 @@ function formatDateTime(value) {
     return new Intl.DateTimeFormat('id-ID', {
         dateStyle: 'medium',
         timeStyle: 'short',
+        timeZone: FINANCE_TIMEZONE,
     }).format(new Date(value));
 }
 
 function formatPeriod(start, end) {
     if (!start || !end) return '-';
     return `${formatDateTime(start)} - ${formatDateTime(end)}`;
+}
+
+function periodIsInvalid(start, end) {
+    if (!start || !end) return false;
+    return new Date(start).getTime() > new Date(end).getTime();
 }
 
 function signedTone(value, positiveTone = 'text-emerald-700') {
@@ -119,18 +138,24 @@ export default function FinanceIndex({
         amount: '',
         payment_method: 'CASH',
         description: '',
-        date: localDatetimeValue(),
+        date: financeDatetimeValue(summary.periodEnd),
     });
 
     const period = periodSummary || summary;
     const recentMovements = cashMovements.slice(0, 12);
+    const currentPeriodInvalid = periodIsInvalid(summary.periodStart, summary.periodEnd);
     const hasOpenShift = Boolean(summary.hasOpenShift);
+    const hasTrackedCashPosition = hasOpenShift || summary.currentPeriodMode !== 'TODAY';
+    const displayedCashDrawerActual = hasTrackedCashPosition ? Number(summary.cashDrawerActual || 0) : 0;
     const currentShiftName = summary.currentShift?.name || 'Shift aktif';
     const withdrawableCash = Number(summary.withdrawableCash ?? Math.max(0, Number(summary.cashDrawerNet) || 0));
     const withdrawableQris = Number(summary.withdrawableQris ?? Math.max(0, Number(summary.qrisBalanceActual) || 0));
     const selectedWithdrawalBalance = data.payment_method === 'QRIS' ? withdrawableQris : withdrawableCash;
     const withdrawalAmount = Number(data.amount) || 0;
     const withdrawalTooHigh = withdrawalAmount > 0 && withdrawalAmount > selectedWithdrawalBalance;
+    const activeCashierTopups = Number(summary.activeCashierTopups || 0);
+    const activeOutsideCashierTopups = Number(summary.activeOutsideCashierTopups || 0);
+    const cashDrawerSavingsExpense = Number(summary.cashDrawerSavingsExpense || 0);
     const currentCashierExpense = (Number(summary.cashExpense) || 0) + (Number(summary.qrisExpense) || 0);
     const currentPrivateExpense = Number(summary.outsideExpense) || 0;
     const currentDailyCashierExpenseAverage = currentCashierExpense / Math.max(1, Number(summary.periodDays) || 1);
@@ -145,6 +170,10 @@ export default function FinanceIndex({
         TODAY: 'Berjalan sejak awal hari',
     }[summary.currentPeriodMode] || 'Berjalan sejak awal hari';
     const periodGenerated = (Number(period.omzet) || 0) - periodCashierExpense - (Number(period.drawerCashierTopups ?? period.cashierTopups) || 0);
+    const closedShiftDiscrepancy = Number(summary.closedShiftDiscrepancy || 0);
+    const discrepancyInfo = closedShiftDiscrepancy !== 0
+        ? ` Selisih kas shift tertutup ${formatRupiah(closedShiftDiscrepancy)} sudah ikut dihitung.`
+        : '';
     const historyTotals = useMemo(() => withdrawalHistory.reduce((totals, item) => ({
         amount: totals.amount + (Number(item.amount) || 0),
         before: totals.before + (Number(item.available_before) || 0),
@@ -162,7 +191,7 @@ export default function FinanceIndex({
             preserveScroll: true,
             onSuccess: () => {
                 reset('amount', 'description');
-                setData('date', localDatetimeValue());
+                setData('date', financeDatetimeValue());
                 setShowWithdrawalForm(false);
                 setActiveView('current');
                 router.reload({
@@ -175,12 +204,14 @@ export default function FinanceIndex({
 
     const currentCards = [
         {
-            label: 'Kas Kasir Aktual',
-            value: hasOpenShift ? summary.cashDrawerActual : 0,
-            tone: signedTone(hasOpenShift ? summary.cashDrawerActual : 0, 'text-slate-900'),
+            label: 'Cash Fisik Laci/Kasir',
+            value: displayedCashDrawerActual,
+            tone: signedTone(displayedCashDrawerActual, 'text-slate-900'),
             sub: hasOpenShift
-                ? `Termasuk modal buka shift ${formatRupiah(summary.openingCash ?? summary.standardOpeningCash ?? 50000)}. Hasil cash bersih ${formatRupiah(summary.cashDrawerNet)}.`
-                : 'Belum ada shift terbuka pada outlet ini.',
+                ? `Estimasi uang fisik: modal ${formatRupiah(summary.openingCash ?? summary.standardOpeningCash ?? 50000)} + top up aktif ${formatRupiah(activeCashierTopups)} + cash net ${formatRupiah(summary.cashDrawerNet)}.${discrepancyInfo}`
+                : hasTrackedCashPosition
+                    ? `Estimasi uang laci setelah shift terakhir. Cash net yang boleh ditarik ${formatRupiah(summary.cashDrawerNet)}.${discrepancyInfo}`
+                    : 'Belum ada shift atau aktivitas kas pada outlet ini.',
         },
         {
             label: 'Keuangan Bersih',
@@ -198,19 +229,19 @@ export default function FinanceIndex({
             label: 'Saldo QRIS Aktual',
             value: summary.qrisBalanceActual,
             tone: 'text-blue-700',
-            sub: `QRIS masuk hari ini ${formatRupiah(summary.qrisSales)}. Pengeluaran/penarikan QRIS ${formatRupiah((Number(summary.qrisExpense) || 0) + (Number(summary.withdrawQris) || 0))}.`,
+            sub: `QRIS masuk periode berjalan ${formatRupiah(summary.qrisSales)}. Pengeluaran/penarikan QRIS ${formatRupiah((Number(summary.qrisExpense) || 0) + (Number(summary.withdrawQris) || 0))}.`,
         },
         {
             label: 'Pengeluaran Kas/QRIS',
             value: currentCashierExpense,
             tone: 'text-rose-700',
-            sub: `${resetLabel}. Cash ${formatRupiah(summary.cashExpense)} | QRIS ${formatRupiah(summary.qrisExpense)}.`,
+            sub: `${resetLabel}. Cash ${formatRupiah(summary.cashExpense)} | QRIS ${formatRupiah(summary.qrisExpense)}. Pengeluaran laci cash ${formatRupiah(cashDrawerSavingsExpense)}.`,
         },
         {
             label: 'Uang Pribadi',
             value: currentPrivateExpense,
             tone: 'text-amber-700',
-            sub: 'Catatan luar kasir, tidak mengurangi saldo bersih cash/QRIS.',
+            sub: `Catatan luar kasir. Top up pribadi aktif ${formatRupiah(activeOutsideCashierTopups)} dianggap pinjaman, bukan saldo owner.`,
         },
         {
             label: 'Rata-rata Pengeluaran',
@@ -332,14 +363,26 @@ export default function FinanceIndex({
 
                 {activeView === 'current' && (
                     <>
-                        <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                        <div className={`flex flex-col gap-2 rounded-lg border px-4 py-3 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between ${currentPeriodInvalid ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-slate-200 bg-white text-slate-600'}`}>
                             <span>Periode aktual: {formatPeriod(summary.periodStart, summary.periodEnd)}</span>
-                            <span className="font-semibold text-slate-900">{resetLabel}</span>
+                            <span className={`font-semibold ${currentPeriodInvalid ? 'text-rose-900' : 'text-slate-900'}`}>{resetLabel}</span>
                         </div>
 
-                        {!hasOpenShift && (
+                        {currentPeriodInvalid && (
+                            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                                Periode Kasir Saat Ini terdeteksi tidak valid. Muat ulang halaman setelah penarikan tersimpan, dan periksa tanggal penarikan bila masih berada di masa depan.
+                            </div>
+                        )}
+
+                        {!hasOpenShift && hasTrackedCashPosition && (
+                            <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                                Tidak ada shift terbuka. Kasir Saat Ini tetap menghitung saldo laci sejak penarikan terakhir atau aktivitas pertama, termasuk selisih kas dari shift yang sudah ditutup.
+                            </div>
+                        )}
+
+                        {!hasTrackedCashPosition && (
                             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                Tidak ada shift terbuka untuk outlet ini. Card kas kasir aktual akan bernilai 0 sampai shift dibuka; keuangan bersih tetap menghitung saldo yang belum pernah ditarik owner.
+                                Belum ada shift atau aktivitas kas untuk outlet ini. Card kas aktual akan mulai berjalan setelah shift dibuka atau ada transaksi keuangan.
                             </div>
                         )}
 
@@ -357,7 +400,7 @@ export default function FinanceIndex({
                                     <BanknotesIcon className="h-6 w-6 text-emerald-600" />
                                 </div>
                                 <p className="mt-2 text-xs leading-relaxed text-emerald-800">
-                                    Dari penjualan cash dikurangi pengeluaran cash, top up dari laci, dan penarikan cash. Modal buka shift tidak ikut dihitung.
+                                    Saldo cash owner sejak penarikan terakhir: penjualan cash dikurangi pengeluaran laci/cash, restok kas shift, top up dari laci, dan penarikan cash. Modal dan pinjaman pribadi tidak ikut batas ambil.
                                 </p>
                             </div>
                             <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
@@ -380,7 +423,7 @@ export default function FinanceIndex({
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        setData('date', localDatetimeValue());
+                                        setData('date', financeDatetimeValue());
                                         setShowWithdrawalForm(true);
                                     }}
                                     className="mt-4 inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"

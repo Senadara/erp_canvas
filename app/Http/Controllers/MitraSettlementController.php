@@ -106,7 +106,15 @@ class MitraSettlementController extends Controller
             'mitra_id' => 'required|exists:users,id',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
-            'calculation_method' => 'required|in:SALES,RESTOCK',
+            'calculation_method' => 'required|in:SALES,RESTOCK,CUSTOM',
+            'custom_amount' => 'nullable|numeric|min:1',
+            'custom_description' => 'nullable|string|max:255',
+            'custom_kind' => 'nullable|in:ADJUSTMENT_ONLY,STOCK_CREDIT',
+            'custom_stock_key' => 'nullable|string|max:120',
+            'custom_quantity' => 'nullable|numeric|min:0.0001',
+            'custom_items' => 'nullable|array|max:50',
+            'custom_items.*.stock_key' => 'required_with:custom_items|string|max:120',
+            'custom_items.*.quantity' => 'required_with:custom_items|numeric|min:0.0001',
         ]);
 
         $mitra = User::find($data['mitra_id']);
@@ -116,6 +124,29 @@ class MitraSettlementController extends Controller
 
         $startDate = Carbon::parse($data['start_date'])->startOfDay();
         $endDate = Carbon::parse($data['end_date'])->endOfDay();
+        if ($data['calculation_method'] === 'CUSTOM') {
+            [$receiptData, $totalAmount] = $this->buildCustomSettlementReceipt($mitra, $data, $startDate, $endDate);
+
+            if ($totalAmount <= 0 || empty($receiptData)) {
+                return back()->withErrors(['settlement' => 'Nominal custom wajib lebih dari 0.']);
+            }
+
+            DB::transaction(function () use ($outletId, $data, $startDate, $endDate, $receiptData, $totalAmount) {
+                MitraSettlement::create([
+                    'outlet_id' => $outletId,
+                    'mitra_id' => $data['mitra_id'],
+                    'period_start' => $startDate,
+                    'period_end' => $endDate,
+                    'calculation_method' => 'CUSTOM',
+                    'total_amount' => round($totalAmount),
+                    'status' => MitraSettlement::STATUS_PENDING,
+                    'receipt_data' => $receiptData,
+                ]);
+            });
+
+            return redirect()->back()->with('success', 'Pengajuan setoran custom dikirim dan menunggu validasi mitra.');
+        }
+
         $reportData = $data['calculation_method'] === 'RESTOCK'
             ? $this->mitraReportService->getMitraWarehouseRestockData($mitra, $startDate, $endDate)
             : $this->mitraReportService->getMitraReportDataAcrossOutlets($mitra, $startDate, $endDate);
@@ -126,19 +157,37 @@ class MitraSettlementController extends Controller
             $rawQty = $data['calculation_method'] === 'SALES'
                 ? (float) $item['sales_qty']
                 : (float) $item['restock_qty'];
-            $remainingQty = max(0, $rawQty - (float) ($item['committed_qty'] ?? $item['settled_qty'] ?? 0));
+            $remainingQty = array_key_exists('remaining_qty', $item)
+                ? (float) $item['remaining_qty']
+                : max(0, $rawQty - (float) ($item['committed_qty'] ?? $item['settled_qty'] ?? 0));
             $minQty = (float) $item['min_restock_qty'] > 0 ? (float) $item['min_restock_qty'] : 1;
             $subtotal = ($remainingQty / $minQty) * (float) $item['restock_price'];
 
             $receiptData[] = [
                 ...$item,
+                'settlement_item_key' => $item['settlement_item_key'] ?? $item['item_key'] ?? null,
+                'gross_qty' => round($rawQty, 4),
+                'same_method_committed_qty' => round((float) ($item['same_method_committed_qty'] ?? 0), 4),
+                'cross_committed_qty' => round((float) ($item['cross_committed_qty'] ?? 0), 4),
+                'pending_qty' => round((float) ($item['pending_settlement_qty'] ?? 0), 4),
+                'tracking_note' => $this->settlementTrackingNote($item, $data['calculation_method']),
                 'calculated_qty' => round($remainingQty, 4),
                 'subtotal' => round($subtotal),
             ];
             $totalAmount += $subtotal;
         }
 
-        if ($totalAmount <= 0 || empty($receiptData)) {
+        $grossAmount = $totalAmount;
+        $advanceApplied = 0.0;
+        if ($grossAmount > 0) {
+            $advanceApplied = min($grossAmount, $this->availableAdvanceCredit($mitra->id));
+            if ($advanceApplied > 0) {
+                $receiptData[] = $this->advanceAppliedReceiptItem($advanceApplied);
+                $totalAmount -= $advanceApplied;
+            }
+        }
+
+        if ($grossAmount <= 0 || empty($receiptData)) {
             return back()->withErrors(['settlement' => 'Tidak ada sisa setoran yang dapat diajukan pada periode ini.']);
         }
 
@@ -149,13 +198,15 @@ class MitraSettlementController extends Controller
                 'period_start' => $startDate,
                 'period_end' => $endDate,
                 'calculation_method' => $data['calculation_method'],
-                'total_amount' => round($totalAmount),
+                'total_amount' => max(0, round($totalAmount)),
                 'status' => MitraSettlement::STATUS_PENDING,
                 'receipt_data' => $receiptData,
             ]);
         });
 
-        return redirect()->back()->with('success', 'Pengajuan setoran dikirim dan menunggu validasi mitra.');
+        return redirect()->back()->with('success', $advanceApplied > 0
+            ? 'Pengajuan setoran dikirim, sudah dikurangi bon/uang muka yang tersedia, dan menunggu validasi mitra.'
+            : 'Pengajuan setoran dikirim dan menunggu validasi mitra.');
     }
 
     public function downloadPdf(Request $request, string $id)
@@ -284,6 +335,187 @@ class MitraSettlementController extends Controller
         ]);
 
         return redirect()->back()->with('success', 'Setoran berhasil ditandai Lunas.');
+    }
+
+    private function buildCustomSettlementReceipt(User $mitra, array $data, Carbon $startDate, Carbon $endDate): array
+    {
+        $amount = (float) ($data['custom_amount'] ?? 0);
+        $kind = $data['custom_kind'] ?? 'ADJUSTMENT_ONLY';
+        $description = trim((string) ($data['custom_description'] ?? 'Setoran custom'));
+        if ($description === '') {
+            $description = 'Setoran custom';
+        }
+
+        if ($kind !== 'STOCK_CREDIT') {
+            if ($amount <= 0) {
+                return [[], 0.0];
+            }
+
+            return [[[
+                'settlement_item_key' => null,
+                'item_key' => 'custom:advance',
+                'name' => 'Bon / uang muka mitra',
+                'unit_name' => 'item',
+                'custom_kind' => 'ADJUSTMENT_ONLY',
+                'advance_credit' => true,
+                'credit_amount' => round($amount),
+                'custom_description' => $description,
+                'gross_qty' => 0,
+                'same_method_committed_qty' => 0,
+                'cross_committed_qty' => 0,
+                'pending_qty' => 0,
+                'calculated_qty' => 0,
+                'subtotal' => round($amount),
+                'tracking_note' => 'Uang muka/bon. Setelah status Lunas, nominal ini otomatis mengurangi setoran bahan berikutnya untuk mitra yang sama.',
+            ]], $amount];
+        }
+
+        $stockOptions = collect([
+            ...$this->mitraReportService->getMitraWarehouseRestockData($mitra, $startDate, $endDate),
+            ...$this->mitraReportService->getMitraReportDataAcrossOutlets($mitra, $startDate, $endDate),
+        ])->reduce(function ($carry, array $item) {
+            $key = $item['settlement_item_key'] ?? $item['item_key'] ?? null;
+            if (! $key || $carry->has($key)) {
+                return $carry;
+            }
+
+            $carry->put($key, $item);
+
+            return $carry;
+        }, collect());
+
+        $requestedRows = collect($data['custom_items'] ?? [])
+            ->map(fn (array $row) => [
+                'stock_key' => trim((string) ($row['stock_key'] ?? '')),
+                'quantity' => (float) ($row['quantity'] ?? 0),
+            ])
+            ->filter(fn (array $row) => $row['stock_key'] !== '' && $row['quantity'] > 0)
+            ->groupBy('stock_key')
+            ->map(fn ($rows, string $stockKey) => [
+                'stock_key' => $stockKey,
+                'quantity' => (float) $rows->sum('quantity'),
+            ])
+            ->values();
+
+        if ($requestedRows->isEmpty()) {
+            $stockKey = trim((string) ($data['custom_stock_key'] ?? ''));
+            $quantity = (float) ($data['custom_quantity'] ?? 0);
+            if ($stockKey !== '' && $quantity > 0) {
+                $requestedRows = collect([[
+                    'stock_key' => $stockKey,
+                    'quantity' => $quantity,
+                ]]);
+            }
+        }
+
+        if ($requestedRows->isEmpty()) {
+            return [[], 0.0];
+        }
+
+        $receiptItems = [];
+        $totalAmount = 0.0;
+        foreach ($requestedRows as $row) {
+            $stockKey = $row['stock_key'];
+            $stockItem = $stockOptions->get($stockKey);
+            if (! $stockItem) {
+                continue;
+            }
+
+            $rawQuantity = (float) ($stockItem['gross_qty'] ?? $stockItem['restock_qty'] ?? $stockItem['sales_qty'] ?? 0);
+            $remainingQty = array_key_exists('remaining_qty', $stockItem)
+                ? (float) $stockItem['remaining_qty']
+                : max(0, $rawQuantity - (float) ($stockItem['committed_qty'] ?? $stockItem['settled_qty'] ?? 0));
+            $quantity = min((float) $row['quantity'], max(0, $remainingQty));
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $minQty = (float) $stockItem['min_restock_qty'] > 0 ? (float) $stockItem['min_restock_qty'] : 1;
+            $subtotal = ($quantity / $minQty) * (float) $stockItem['restock_price'];
+
+            $receiptItems[] = [
+                ...$stockItem,
+                'settlement_item_key' => $stockKey,
+                'item_key' => $stockKey,
+                'custom_kind' => 'STOCK_CREDIT',
+                'custom_description' => $description,
+                'gross_qty' => round($rawQuantity, 4),
+                'same_method_committed_qty' => round((float) ($stockItem['same_method_committed_qty'] ?? 0), 4),
+                'cross_committed_qty' => round((float) ($stockItem['cross_committed_qty'] ?? 0), 4),
+                'pending_qty' => round((float) ($stockItem['pending_settlement_qty'] ?? 0), 4),
+                'custom_requested_qty' => round((float) $row['quantity'], 4),
+                'remaining_qty_before_custom' => round($remainingQty, 4),
+                'remaining_qty_after_custom' => round(max(0, $remainingQty - $quantity), 4),
+                'calculated_qty' => round($quantity, 4),
+                'subtotal' => round($subtotal),
+                'tracking_note' => 'Pelunasan custom bahan ini ikut mengunci quantity agar tidak ditagih ulang dari metode RESTOCK atau SALES.',
+            ];
+            $totalAmount += $subtotal;
+        }
+
+        return [$receiptItems, $totalAmount];
+    }
+
+    private function availableAdvanceCredit(string $mitraId): float
+    {
+        $credit = 0.0;
+        $applied = 0.0;
+
+        MitraSettlement::where('mitra_id', $mitraId)
+            ->whereIn('status', [
+                MitraSettlement::STATUS_PENDING,
+                MitraSettlement::STATUS_APPROVED,
+                MitraSettlement::STATUS_PAID,
+            ])
+            ->get(['status', 'receipt_data'])
+            ->each(function (MitraSettlement $settlement) use (&$credit, &$applied) {
+                foreach (($settlement->receipt_data ?? []) as $item) {
+                    $kind = $item['custom_kind'] ?? null;
+                    if ($settlement->status === MitraSettlement::STATUS_PAID && $kind === 'ADJUSTMENT_ONLY' && ($item['advance_credit'] ?? false)) {
+                        $credit += (float) ($item['credit_amount'] ?? $item['subtotal'] ?? 0);
+                    }
+
+                    if ($kind === 'ADVANCE_APPLIED') {
+                        $applied += abs((float) ($item['subtotal'] ?? 0));
+                    }
+                }
+            });
+
+        return max(0, $credit - $applied);
+    }
+
+    private function advanceAppliedReceiptItem(float $amount): array
+    {
+        return [
+            'settlement_item_key' => null,
+            'item_key' => 'custom:advance-applied',
+            'name' => 'Bon / uang muka terpakai',
+            'unit_name' => 'item',
+            'custom_kind' => 'ADVANCE_APPLIED',
+            'advance_applied' => true,
+            'gross_qty' => 0,
+            'same_method_committed_qty' => 0,
+            'cross_committed_qty' => 0,
+            'pending_qty' => 0,
+            'calculated_qty' => 0,
+            'subtotal' => -round($amount),
+            'tracking_note' => 'Pengurang dari bon/uang muka mitra yang sudah lunas.',
+        ];
+    }
+
+    private function settlementTrackingNote(array $item, string $method): string
+    {
+        $same = (float) ($item['same_method_committed_qty'] ?? 0);
+        $cross = (float) ($item['cross_committed_qty'] ?? 0);
+        $pending = (float) ($item['pending_settlement_qty'] ?? 0);
+
+        if ($same <= 0 && $cross <= 0 && $pending <= 0) {
+            return 'Belum ada setoran aktif/lunas untuk bahan ini pada periode overlap.';
+        }
+
+        $methodLabel = $method === 'RESTOCK' ? 'metode stok diterima' : 'metode bahan terpakai';
+
+        return "Terkunci {$same} dari {$methodLabel}, {$cross} dari metode lain, dan {$pending} masih diajukan/menunggu pembayaran.";
     }
 
     private function authorizeSettlementAccess(?User $user): void

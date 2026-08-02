@@ -25,6 +25,7 @@ class ShiftController extends Controller
         if ($openShift) {
             $expenses = PettyCash::where('outlet_id', $outletId)
                 ->where('created_at', '>=', $openShift->opened_at)
+                ->where('category', '!=', 'Penarikan')
                 ->orderByDesc('created_at')
                 ->get();
         }
@@ -40,7 +41,7 @@ class ShiftController extends Controller
 
     public function show(Request $request, string $id)
     {
-        $shift = ShiftRecord::findOrFail($id);
+        $shift = ShiftRecord::with(['opener:id,display_name', 'closer:id,display_name'])->findOrFail($id);
         $outletId = $shift->outlet_id;
 
         $endTime = $shift->closed_at ?? Carbon::now();
@@ -79,7 +80,8 @@ class ShiftController extends Controller
 
         // Expenses during shift
         $expQuery = PettyCash::where('outlet_id', $outletId)
-            ->where('created_at', '>=', $shift->opened_at);
+            ->where('created_at', '>=', $shift->opened_at)
+            ->where('category', '!=', 'Penarikan');
         if ($shift->closed_at) {
             $expQuery->where('created_at', '<=', $shift->closed_at);
         }
@@ -88,7 +90,7 @@ class ShiftController extends Controller
 
         $expenseByCategory = [];
         foreach ($shiftExpenses as $exp) {
-            if (in_array($exp->category, ['Tambah Modal', 'Tambah Kas', 'Penarikan'], true)) {
+            if (in_array($exp->category, ['Tambah Modal', 'Tambah Kas'], true)) {
                 continue;
             }
             $cat = $exp->category;
@@ -99,7 +101,9 @@ class ShiftController extends Controller
         }
 
         $totalOperatingExpenses = (float) $cashSummary['cash']['expenses']
+            + (float) ($cashSummary['cash']['drawer_expenses'] ?? 0)
             + (float) $cashSummary['qris']['expenses']
+            + (float) ($cashSummary['qris']['drawer_expenses'] ?? 0)
             + (float) ($cashSummary['outside']['expenses'] ?? 0);
 
         return response()->json([
@@ -132,7 +136,12 @@ class ShiftController extends Controller
         ]);
 
         try {
-            $this->shiftService->openShift($outletId, $data['opening_cash'] ?? ShiftService::STANDARD_OPENING_CASH, $data['name'] ?? null);
+            $this->shiftService->openShift(
+                $outletId,
+                $data['opening_cash'] ?? ShiftService::STANDARD_OPENING_CASH,
+                $data['name'] ?? null,
+                $request->user()?->id
+            );
             return redirect()->back()->with('success', 'Shift berhasil dibuka.');
         } catch (\Throwable $e) {
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);
@@ -147,7 +156,7 @@ class ShiftController extends Controller
         ]);
 
         try {
-            $this->shiftService->closeShift($id, $request->input('actual_cash'), $request->input('note'));
+            $this->shiftService->closeShift($id, $request->input('actual_cash'), $request->input('note'), $request->user()?->id);
             return redirect()->back()->with('success', 'Shift berhasil ditutup.');
         } catch (\Throwable $e) {
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);

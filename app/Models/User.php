@@ -18,6 +18,7 @@ class User extends Authenticatable
         'password_hash',
         'display_name',
         'role',
+        'supplier_id',
         'is_active',
         'feature_overrides',
         'mitra_can_view_sales',
@@ -45,6 +46,11 @@ class User extends Authenticatable
     public function outlets(): BelongsToMany
     {
         return $this->belongsToMany(Outlet::class, 'user_outlets');
+    }
+
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class);
     }
 
     public function mitraProducts(): BelongsToMany

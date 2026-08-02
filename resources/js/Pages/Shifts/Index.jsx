@@ -22,7 +22,7 @@ function isOutsideCashierTopup(item) {
 }
 
 function isIncomingMovement(item) {
-    return item.cash_flow === 'IN' && (!isCashierFundMovement(item) || isOutsideCashierTopup(item));
+    return item.cash_flow === 'IN';
 }
 
 function paymentLabel(method) {
@@ -37,11 +37,13 @@ function paymentTone(method) {
 }
 
 function amountTone(item, incoming) {
+    if (isCashierFundMovement(item)) return item.payment_method === 'PRIVATE' ? 'text-amber-700' : 'text-emerald-700';
     if (item.payment_method === 'PRIVATE') return 'text-amber-700';
     return incoming ? 'text-emerald-600' : 'text-rose-600';
 }
 
 function amountSign(item, incoming) {
+    if (isCashierFundMovement(item)) return '+';
     if (item.payment_method === 'PRIVATE') return '';
     return incoming ? '+' : '-';
 }
@@ -95,6 +97,10 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
         'Tambah Kas',
         'Lainnya'
     ];
+    const cashShiftExpenses = Number(cashSummary?.cash?.expenses || 0);
+    const qrisShiftExpenses = Number(cashSummary?.qris?.expenses || 0);
+    const cashierTopups = Number(cashSummary?.cash?.cashier_topups || 0);
+    const drawerExpenses = Number(cashSummary?.cash?.drawer_expenses || 0) + Number(cashSummary?.qris?.drawer_expenses || 0);
 
     // Monitor connectivity changes
     useEffect(() => {
@@ -313,17 +319,17 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                     <div className="bg-white rounded-lg border border-emerald-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-emerald-600">Saldo Cash Kasir</p>
                         <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.cash?.expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Penjualan {formatRupiah(cashSummary.cash?.sales)} - keluar/alokasi {formatRupiah((cashSummary.cash?.expenses || 0) + (cashSummary.cash?.withdrawals || 0))}</p>
+                        <p className="mt-1 text-xs text-slate-500">Kas awal + penjualan {formatRupiah(cashSummary.cash?.sales)} + top up {formatRupiah(cashierTopups)} - restok kas shift {formatRupiah(cashShiftExpenses)}.</p>
                     </div>
                     <div className="bg-white rounded-lg border border-blue-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-blue-600">Saldo QRIS</p>
                         <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.qris?.expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Penjualan {formatRupiah(cashSummary.qris?.sales)} - penarikan {formatRupiah(cashSummary.qris?.withdrawals)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Penjualan {formatRupiah(cashSummary.qris?.sales)} - restok QRIS shift {formatRupiah(qrisShiftExpenses)}.</p>
                     </div>
                     <div className="bg-white rounded-lg border border-indigo-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-indigo-600">Total Cash + QRIS</p>
                         <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.total_expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Sudah termasuk alokasi kas kasir, pengeluaran, dan penarikan.</p>
+                        <p className="mt-1 text-xs text-slate-500">Penarikan owner tidak masuk shift. Pengeluaran laci tercatat terpisah {formatRupiah(drawerExpenses)}.</p>
                     </div>
                 </div>
             )}
@@ -355,7 +361,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                 <form onSubmit={handleClose} className="border-t border-slate-200 pt-4 mt-4 space-y-4">
                                     <h3 className="font-medium text-slate-900">Form Tutup Shift</h3>
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Kas Aktual di Laci (Rp)</label>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Kas Aktual di Kasir (Rp)</label>
                                         <input
                                             type="number"
                                             value={closeData.actual_cash}
@@ -693,13 +699,13 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                         </div>
                                         {Number(shiftDetail.cash_summary?.cash?.drawer_cashier_topups || 0) > 0 && (
                                             <div className="flex justify-between">
-                                                <span className="text-slate-400">Alokasi top up dari laci</span>
+                                                <span className="text-slate-400">+ Top up dari laci</span>
                                                 <span className="text-amber-300">{formatRupiah(shiftDetail.cash_summary?.cash?.drawer_cashier_topups)}</span>
                                             </div>
                                         )}
                                         {Number(shiftDetail.cash_summary?.cash?.outside_cashier_topups || 0) > 0 && (
                                             <div className="flex justify-between">
-                                                <span className="text-slate-400">Top up luar laci</span>
+                                                <span className="text-slate-400">+ Top up luar laci</span>
                                                 <span className="text-amber-300">{formatRupiah(shiftDetail.cash_summary?.cash?.outside_cashier_topups)}</span>
                                             </div>
                                         )}
@@ -708,25 +714,25 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                             <span className="text-blue-400">{formatRupiah(shiftDetail.shift?.total_sales_qris)}</span>
                                         </div>
                                         <div className="flex justify-between">
-                                            <span className="text-slate-400">- Pengeluaran kas/QRIS</span>
+                                            <span className="text-slate-400">- Pengeluaran kas shift/QRIS</span>
                                             <span className="text-rose-400">
                                                 {formatRupiah((Number(shiftDetail.cash_summary?.cash?.expenses) || 0) + (Number(shiftDetail.cash_summary?.qris?.expenses) || 0))}
                                             </span>
                                         </div>
+                                        {((Number(shiftDetail.cash_summary?.cash?.drawer_expenses) || 0) + (Number(shiftDetail.cash_summary?.qris?.drawer_expenses) || 0)) > 0 && (
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-400">Pengeluaran simpanan laci</span>
+                                                <span className="text-amber-300">
+                                                    {formatRupiah((Number(shiftDetail.cash_summary?.cash?.drawer_expenses) || 0) + (Number(shiftDetail.cash_summary?.qris?.drawer_expenses) || 0))}
+                                                </span>
+                                            </div>
+                                        )}
                                         {Number(shiftDetail.cash_summary?.outside?.expenses || 0) > 0 && (
                                             <div className="flex justify-between">
                                                 <span className="text-slate-400">Uang pribadi</span>
                                                 <span className="text-amber-300">{formatRupiah(shiftDetail.cash_summary?.outside?.expenses)}</span>
                                             </div>
                                         )}
-                                        <div className="flex justify-between">
-                                            <span className="text-slate-400">- Penarikan Cash</span>
-                                            <span className="text-rose-400">{formatRupiah(shiftDetail.cash_summary?.cash?.withdrawals)}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-slate-400">- Penarikan QRIS</span>
-                                            <span className="text-rose-400">{formatRupiah(shiftDetail.cash_summary?.qris?.withdrawals)}</span>
-                                        </div>
                                         <div className="border-t border-slate-700 pt-2 flex justify-between font-bold">
                                             <span>Ekspektasi Kas</span>
                                             <span>{formatRupiah(shiftDetail.shift?.expected_cash)}</span>
@@ -888,28 +894,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                     </div>
                                 </div>
                             )}
-                            {expenseData.category === 'Penarikan' && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Sumber Saldo</label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setExpenseData('payment_method', 'CASH')}
-                                            className={`py-2 rounded border text-sm font-medium ${expenseData.payment_method === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'border-slate-300 text-slate-600'}`}
-                                        >
-                                            Cash
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setExpenseData('payment_method', 'QRIS')}
-                                            className={`py-2 rounded border text-sm font-medium ${expenseData.payment_method === 'QRIS' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'border-slate-300 text-slate-600'}`}
-                                        >
-                                            QRIS
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                            {expenseData.category !== 'Penarikan' && expenseData.category !== 'Tambah Kas' && (
+                            {expenseData.category !== 'Tambah Kas' && (
                                 <input type="hidden" value={expenseData.payment_method} readOnly />
                             )}
                             <div>

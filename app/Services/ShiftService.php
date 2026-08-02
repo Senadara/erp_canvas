@@ -20,7 +20,7 @@ class ShiftService
             ->first();
     }
 
-    public function openShift(string $outletId, float $openingCash, ?string $name = null)
+    public function openShift(string $outletId, float $openingCash, ?string $name = null, ?string $openedBy = null)
     {
         $open = $this->getOpenShift($outletId);
         if ($open) {
@@ -39,13 +39,14 @@ class ShiftService
             'name' => $name,
             'opening_cash' => $openingCash,
             'status' => 'OPEN',
-            'opened_at' => Carbon::now(),
+            'opened_at' => $this->storageNow(),
+            'opened_by' => $openedBy,
         ]);
     }
 
-    public function closeShift(string $shiftId, float $actualCash, ?string $note = null)
+    public function closeShift(string $shiftId, float $actualCash, ?string $note = null, ?string $closedBy = null)
     {
-        return DB::transaction(function () use ($shiftId, $actualCash, $note) {
+        return DB::transaction(function () use ($shiftId, $actualCash, $note, $closedBy) {
             $shift = ShiftRecord::lockForUpdate()->findOrFail($shiftId);
             
             if ($shift->status !== 'OPEN') {
@@ -54,7 +55,7 @@ class ShiftService
 
             $openedAt = $shift->opened_at;
             $outletId = $shift->outlet_id;
-            $shift->closed_at = Carbon::now();
+            $shift->closed_at = $this->storageNow();
             $summary = $this->calculateMoneySummary($shift);
             $expectedCash = $summary['cash']['expected'];
             $discrepancy = $actualCash - $expectedCash;
@@ -71,6 +72,7 @@ class ShiftService
                 'total_sales_qris' => $summary['qris']['sales'],
                 'total_expenses' => $totalExpenses,
                 'note' => $note,
+                'closed_by' => $closedBy,
             ]);
 
             return $shift;
@@ -80,6 +82,7 @@ class ShiftService
     public function listShifts(string $outletId, int $limit = 50)
     {
         return ShiftRecord::where('outlet_id', $outletId)
+            ->with(['opener:id,display_name', 'closer:id,display_name'])
             ->orderByDesc('opened_at')
             ->take($limit)
             ->get();
@@ -168,9 +171,10 @@ class ShiftService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $end = $shift->closed_at ?? Carbon::now();
+            $end = $shift->closed_at ? $this->storedTime($shift->closed_at) : $this->storageNow();
             $expenseCount = PettyCash::where('outlet_id', $outletId)
-                ->whereBetween('created_at', [$shift->opened_at, $end])
+                ->whereBetween('created_at', [$this->storedTime($shift->opened_at), $end])
+                ->where('category', '!=', 'Penarikan')
                 ->count();
 
             if ($shift->transactions_count > 0 || $expenseCount > 0) {
@@ -183,13 +187,16 @@ class ShiftService
 
     private function calculateMoneySummary(ShiftRecord $shift): array
     {
-        $start = Carbon::parse($shift->opened_at);
-        $end = $shift->closed_at ? Carbon::parse($shift->closed_at) : Carbon::now();
+        $start = $this->storedTime($shift->opened_at);
+        $end = $shift->closed_at ? $this->storedTime($shift->closed_at) : $this->storageNow();
 
         $transactions = Transaction::where('outlet_id', $shift->outlet_id)
             ->where('payment_status', 'PAID')
             ->whereNotNull('paid_at')
-            ->whereBetween('paid_at', [$start, $end])
+            ->where(function ($query) use ($shift, $start, $end) {
+                $query->whereBetween('paid_at', [$start, $end])
+                    ->orWhere('shift_id', $shift->id);
+            })
             ->get();
 
         $summary = $this->emptyMoneySummary();
@@ -209,11 +216,15 @@ class ShiftService
             $flow = $this->resolveCashFlow($movement);
             $amount = (float) $movement->amount;
 
+            if ($movement->category === 'Penarikan') {
+                continue;
+            }
+
             if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {
                 $summary['cash']['cashier_topups'] += $amount;
+                $summary['cash']['additions'] += $amount;
                 if ($movement->payment_method === 'PRIVATE') {
                     $summary['cash']['outside_cashier_topups'] += $amount;
-                    $summary['cash']['additions'] += $amount;
                 } else {
                     $summary['cash']['drawer_cashier_topups'] += $amount;
                 }
@@ -223,8 +234,6 @@ class ShiftService
             if ($method === 'outside') {
                 if ($flow === 'IN') {
                     $summary['outside']['additions'] += $amount;
-                } elseif ($movement->category === 'Penarikan') {
-                    $summary['outside']['withdrawals'] += $amount;
                 } else {
                     $summary['outside']['expenses'] += $amount;
                 }
@@ -236,10 +245,10 @@ class ShiftService
                 continue;
             }
 
-            if ($movement->category === 'Penarikan') {
-                $summary[$method]['withdrawals'] += $amount;
-            } else {
+            if ($this->usesActiveShiftFunds($movement)) {
                 $summary[$method]['expenses'] += $amount;
+            } else {
+                $summary[$method]['drawer_expenses'] += $amount;
             }
         }
 
@@ -266,11 +275,33 @@ class ShiftService
         return $movement->cash_flow === 'IN' ? 'IN' : 'OUT';
     }
 
+    private function storageNow(): Carbon
+    {
+        return Carbon::now(config('app.timezone') ?: 'UTC');
+    }
+
+    private function storedTime(Carbon|string $date): Carbon
+    {
+        $value = $date instanceof Carbon
+            ? $date->format('Y-m-d H:i:s.u')
+            : $date;
+
+        return Carbon::parse($value, config('app.timezone') ?: 'UTC');
+    }
+
     private function operatingExpenseTotal(array $summary): float
     {
         return (float) $summary['cash']['expenses']
+            + (float) ($summary['cash']['drawer_expenses'] ?? 0)
             + (float) $summary['qris']['expenses']
+            + (float) ($summary['qris']['drawer_expenses'] ?? 0)
             + (float) $summary['outside']['expenses'];
+    }
+
+    private function usesActiveShiftFunds(PettyCash $movement): bool
+    {
+        return $movement->category === 'RESTOCK'
+            && in_array($movement->payment_method, ['CASH', 'QRIS'], true);
     }
 
     private function resolvePaymentBucket(PettyCash $movement): string
@@ -289,6 +320,7 @@ class ShiftService
             'sales' => 0,
             'additions' => 0,
             'expenses' => 0,
+            'drawer_expenses' => 0,
             'cashier_topups' => 0,
             'drawer_cashier_topups' => 0,
             'outside_cashier_topups' => 0,

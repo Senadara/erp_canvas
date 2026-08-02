@@ -30,6 +30,8 @@ Route::middleware(['auth', 'outlet'])->group(function () {
     Route::post('/stock/{id}/transfer-from-warehouse', [\App\Http\Controllers\StockController::class, 'transferFromWarehouse'])->name('stock.transfer-from-warehouse');
     Route::post('/stock/{id}/waste', [\App\Http\Controllers\StockController::class, 'recordWaste'])->name('stock.waste');
     Route::put('/stock/{id}/mitra-price', [\App\Http\Controllers\StockController::class, 'updateMitraPrice'])->name('stock.update-mitra-price');
+    Route::get('/stock-audit', [\App\Http\Controllers\StockAuditController::class, 'index'])->name('stock-audit');
+    Route::post('/stock-audit/counts', [\App\Http\Controllers\StockAuditController::class, 'storeCount'])->name('stock-audit.counts');
     Route::post('/mitra-stock-deliveries', [\App\Http\Controllers\MitraStockDeliveryController::class, 'store'])->name('mitra-stock-deliveries.store');
     Route::post('/mitra-stock-deliveries/{id}/receive', [\App\Http\Controllers\MitraStockDeliveryController::class, 'receive'])->name('mitra-stock-deliveries.receive');
 
@@ -62,6 +64,10 @@ Route::middleware(['auth', 'outlet'])->group(function () {
     Route::get('/reports/e-settlement/pdf', [\App\Http\Controllers\ReportController::class, 'eSettlementPdf'])->name('reports.e-settlement.pdf');
     Route::get('/finance', [\App\Http\Controllers\FinanceController::class, 'index'])->name('finance');
     Route::post('/finance/withdraw', [\App\Http\Controllers\FinanceController::class, 'withdraw'])->name('finance.withdraw');
+
+    // Payroll
+    Route::get('/payroll', [\App\Http\Controllers\PayrollController::class, 'index'])->name('payroll');
+    Route::post('/payroll', [\App\Http\Controllers\PayrollController::class, 'store'])->name('payroll.store');
     
     // Mitra Reports
     Route::get('/mitra-reports', [\App\Http\Controllers\MitraReportController::class, 'index'])->name('mitra-reports');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Outlet;
 use App\Models\Product;
 use App\Models\StockItem;
+use App\Models\Supplier;
 use App\Services\UserService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -22,6 +23,28 @@ class UserController extends Controller
         $logs = $this->userService->listActivityLogs(50);
         $products = Product::where('outlet_id', $outletId)->orderBy('name')->get(['id', 'name']);
         $stockItems = StockItem::where('outlet_id', $outletId)->orderBy('name')->get(['id', 'name']);
+        $suppliers = Supplier::with([
+            'stockItems:id,supplier_id,outlet_id,name',
+            'stockItems.conversions:id,stock_item_id,product_id',
+        ])
+            ->withCount(['stockItems', 'mitraUsers'])
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Supplier $supplier) => [
+                'id' => $supplier->id,
+                'name' => $supplier->name,
+                'phone' => $supplier->phone,
+                'stock_items_count' => $supplier->stock_items_count,
+                'mitra_users_count' => $supplier->mitra_users_count,
+                'stock_item_ids' => $supplier->stockItems->pluck('id')->values()->all(),
+                'outlet_ids' => $supplier->stockItems->pluck('outlet_id')->filter()->unique()->values()->all(),
+                'product_ids' => $supplier->stockItems
+                    ->flatMap(fn (StockItem $stockItem) => $stockItem->conversions->pluck('product_id'))
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all(),
+            ]);
 
         return Inertia::render('Users/Index', [
             'users' => $users,
@@ -29,6 +52,7 @@ class UserController extends Controller
             'activityLogs' => $logs,
             'products' => $products,
             'stockItems' => $stockItems,
+            'suppliers' => $suppliers,
         ]);
     }
 
@@ -41,6 +65,7 @@ class UserController extends Controller
             'password' => 'required|string|min:6',
             'display_name' => 'required|string',
             'role' => 'required|in:OWNER,STAFF,MITRA',
+            'supplier_id' => 'required_if:role,MITRA|nullable|exists:suppliers,id',
             'is_active' => 'boolean',
             'outlet_ids' => 'nullable|array',
             'outlet_ids.*' => 'string',
@@ -71,6 +96,7 @@ class UserController extends Controller
             'password' => 'nullable|string|min:6',
             'display_name' => 'required|string',
             'role' => 'required|in:OWNER,STAFF,MITRA',
+            'supplier_id' => 'required_if:role,MITRA|nullable|exists:suppliers,id',
             'is_active' => 'boolean',
             'outlet_ids' => 'nullable|array',
             'outlet_ids.*' => 'string',

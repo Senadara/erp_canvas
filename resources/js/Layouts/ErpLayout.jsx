@@ -21,6 +21,7 @@ import {
     UserCircleIcon,
     ChevronLeftIcon,
     DevicePhoneMobileIcon,
+    DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import { usePWAInstall } from '@/pwa/usePWAInstall';
 
@@ -38,6 +39,7 @@ const iconMap = {
     building: BuildingOfficeIcon,
     map: MapPinIcon,
     users: UsersIcon,
+    document: DocumentTextIcon,
 };
 
 const groupLabels = {
@@ -45,12 +47,15 @@ const groupLabels = {
     operasional: 'Operasional',
     inventaris: 'Inventaris',
     keuangan: 'Keuangan',
+    laporan: 'Laporan',
+    mitra: 'Mitra',
+    manajemen: 'Manajemen',
     pengaturan: 'Pengaturan',
 };
 
 function groupNavItems(items) {
     const groups = {};
-    const order = ['main', 'operasional', 'inventaris', 'keuangan', 'pengaturan'];
+    const order = ['main', 'operasional', 'inventaris', 'keuangan', 'laporan', 'mitra', 'manajemen', 'pengaturan'];
     for (const key of order) groups[key] = [];
     for (const item of items) {
         const g = item.group || 'main';
@@ -138,6 +143,7 @@ export default function ErpLayout({ title, children }) {
 
             {/* ── Sidebar ───────────────────────────────────────── */}
             <aside className={`
+                erp-app-sidebar
                 fixed inset-y-0 left-0 z-50 flex flex-col border-r border-slate-200/80 bg-white transition-all duration-300
                 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0
                 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -211,7 +217,7 @@ export default function ErpLayout({ title, children }) {
             {/* ── Main Content ──────────────────────────────────── */}
             <div className="flex flex-1 flex-col min-w-0">
                 {/* Top Header */}
-                <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur-md sm:px-6">
+                <header className="erp-app-header sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur-md sm:px-6">
                     <div className="flex items-center gap-3">
                         <button
                             onClick={() => setSidebarOpen(true)}

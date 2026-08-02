@@ -6,11 +6,15 @@ use App\Models\MitraSettlement;
 use App\Models\MitraStockDelivery;
 use App\Models\Outlet;
 use App\Models\PettyCash;
+use App\Models\Product;
 use App\Models\RestockLog;
 use App\Models\StockItem;
+use App\Models\Transaction;
+use App\Models\TransactionItem;
 use App\Models\User;
 use App\Models\WarehouseStockItem;
 use App\Models\WarehouseStockTransfer;
+use App\Models\Conversion;
 use App\Services\MitraStockDeliveryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -295,6 +299,262 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
             );
     }
 
+    public function test_restock_settlement_locks_sales_settlement_for_the_same_warehouse_stock(): void
+    {
+        [$outlet, $owner, $staff, $mitra, $stock] = $this->createContext();
+        $deliveryService = app(MitraStockDeliveryService::class);
+        $delivery = $deliveryService->create($mitra, $stock->id, 20, null);
+        $deliveryService->receive($delivery->id, $staff, 20, null);
+        $product = $this->createProductForStock($outlet->id, $stock->id);
+        $this->createPaidSale($outlet->id, $product, 10, 100000);
+
+        $period = [
+            'mitra_id' => $mitra->id,
+            'start_date' => now()->startOfMonth()->format('Y-m-d'),
+            'end_date' => now()->endOfMonth()->format('Y-m-d'),
+        ];
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                ...$period,
+                'calculation_method' => 'RESTOCK',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $restockSettlement = MitraSettlement::firstOrFail();
+        $this->assertSame(20.0, (float) $restockSettlement->receipt_data[0]['calculated_qty']);
+        $this->assertSame(100000.0, (float) $restockSettlement->total_amount);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                ...$period,
+                'calculation_method' => 'SALES',
+            ])
+            ->assertSessionHasErrors('settlement');
+
+        $this->assertSame(1, MitraSettlement::count());
+    }
+
+    public function test_sales_settlement_locks_only_the_matching_restock_quantity(): void
+    {
+        [$outlet, $owner, $staff, $mitra, $stock] = $this->createContext();
+        $deliveryService = app(MitraStockDeliveryService::class);
+        $delivery = $deliveryService->create($mitra, $stock->id, 20, null);
+        $deliveryService->receive($delivery->id, $staff, 20, null);
+        $product = $this->createProductForStock($outlet->id, $stock->id);
+        $this->createPaidSale($outlet->id, $product, 8, 80000);
+
+        $period = [
+            'mitra_id' => $mitra->id,
+            'start_date' => now()->startOfMonth()->format('Y-m-d'),
+            'end_date' => now()->endOfMonth()->format('Y-m-d'),
+        ];
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                ...$period,
+                'calculation_method' => 'SALES',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $salesSettlement = MitraSettlement::firstOrFail();
+        $this->assertSame(8.0, (float) $salesSettlement->receipt_data[0]['calculated_qty']);
+        $this->assertSame(40000.0, (float) $salesSettlement->total_amount);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                ...$period,
+                'calculation_method' => 'RESTOCK',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $restockSettlement = MitraSettlement::where('calculation_method', 'RESTOCK')->firstOrFail();
+        $this->assertSame(12.0, (float) $restockSettlement->receipt_data[0]['calculated_qty']);
+        $this->assertSame(60000.0, (float) $restockSettlement->total_amount);
+        $this->assertSame(2, MitraSettlement::count());
+    }
+
+    public function test_custom_settlement_can_adjust_without_stock_or_lock_a_stock_credit(): void
+    {
+        [$outlet, $owner, $staff, $mitra, $stock] = $this->createContext();
+        $deliveryService = app(MitraStockDeliveryService::class);
+        $delivery = $deliveryService->create($mitra, $stock->id, 20, null);
+        $deliveryService->receive($delivery->id, $staff, 20, null);
+        $warehouseKey = 'warehouse:'.WarehouseStockItem::firstOrFail()->id;
+
+        $period = [
+            'mitra_id' => $mitra->id,
+            'start_date' => now()->startOfMonth()->format('Y-m-d'),
+            'end_date' => now()->endOfMonth()->format('Y-m-d'),
+        ];
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                ...$period,
+                'calculation_method' => 'CUSTOM',
+                'custom_kind' => 'ADJUSTMENT_ONLY',
+                'custom_amount' => 25000,
+                'custom_description' => 'Penyesuaian pembulatan',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $adjustment = MitraSettlement::firstOrFail();
+        $this->assertSame(25000.0, (float) $adjustment->total_amount);
+        $this->assertNull($adjustment->receipt_data[0]['settlement_item_key']);
+        $this->assertSame(0.0, (float) $adjustment->receipt_data[0]['calculated_qty']);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                ...$period,
+                'calculation_method' => 'CUSTOM',
+                'custom_kind' => 'STOCK_CREDIT',
+                'custom_amount' => 50000,
+                'custom_stock_key' => $warehouseKey,
+                'custom_quantity' => 10,
+                'custom_description' => 'Pelunasan manual bahan',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $stockCredit = MitraSettlement::get()
+            ->first(fn (MitraSettlement $settlement) => ($settlement->receipt_data[0]['custom_kind'] ?? null) === 'STOCK_CREDIT');
+        $this->assertNotNull($stockCredit);
+        $this->assertSame('CUSTOM', $stockCredit->calculation_method);
+        $this->assertSame($warehouseKey, $stockCredit->receipt_data[0]['settlement_item_key']);
+        $this->assertSame(10.0, (float) $stockCredit->receipt_data[0]['calculated_qty']);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                ...$period,
+                'calculation_method' => 'RESTOCK',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $restockSettlement = MitraSettlement::where('calculation_method', 'RESTOCK')->firstOrFail();
+        $this->assertSame(10.0, (float) $restockSettlement->receipt_data[0]['calculated_qty']);
+        $this->assertSame(50000.0, (float) $restockSettlement->total_amount);
+        $this->assertSame(3, MitraSettlement::count());
+    }
+
+    public function test_custom_stock_credit_can_lock_multiple_stock_items(): void
+    {
+        [$outlet, $owner, $staff, $mitra, $stock] = $this->createContext();
+        $secondStock = StockItem::create([
+            'outlet_id' => $outlet->id,
+            'name' => 'Siomay Frozen',
+            'current_stock_biji' => 0,
+            'unit_name' => 'pcs',
+            'min_stock_alert' => 5,
+            'trackable' => true,
+            'counting_basis' => 'BIJI',
+            'min_restock_qty' => 5,
+            'restock_price' => 25000,
+        ]);
+        $mitra->mitraStockItems()->attach($secondStock->id, ['price' => 25000]);
+
+        $deliveryService = app(MitraStockDeliveryService::class);
+        $deliveryService->receive($deliveryService->create($mitra, $stock->id, 20, null)->id, $staff, 20, null);
+        $deliveryService->receive($deliveryService->create($mitra, $secondStock->id, 10, null)->id, $staff, 10, null);
+
+        $firstKey = 'warehouse:'.$stock->fresh()->warehouse_stock_item_id;
+        $secondKey = 'warehouse:'.$secondStock->fresh()->warehouse_stock_item_id;
+        $period = [
+            'mitra_id' => $mitra->id,
+            'start_date' => now()->startOfMonth()->format('Y-m-d'),
+            'end_date' => now()->endOfMonth()->format('Y-m-d'),
+        ];
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                ...$period,
+                'calculation_method' => 'CUSTOM',
+                'custom_kind' => 'STOCK_CREDIT',
+                'custom_description' => 'Pelunasan beberapa bahan',
+                'custom_items' => [
+                    ['stock_key' => $firstKey, 'quantity' => 10],
+                    ['stock_key' => $secondKey, 'quantity' => 5],
+                ],
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $settlement = MitraSettlement::firstOrFail();
+        $this->assertSame(75000.0, (float) $settlement->total_amount);
+        $this->assertCount(2, $settlement->receipt_data);
+        $this->assertSame([$firstKey, $secondKey], collect($settlement->receipt_data)->pluck('settlement_item_key')->all());
+        $this->assertSame([10.0, 5.0], collect($settlement->receipt_data)->pluck('calculated_qty')->map(fn ($qty) => (float) $qty)->all());
+    }
+
+    public function test_paid_custom_advance_reduces_future_restock_settlement_total(): void
+    {
+        [$outlet, $owner, $staff, $mitra, $stock] = $this->createContext();
+        $deliveryService = app(MitraStockDeliveryService::class);
+        $deliveryService->receive($deliveryService->create($mitra, $stock->id, 20, null)->id, $staff, 20, null);
+
+        $period = [
+            'mitra_id' => $mitra->id,
+            'start_date' => now()->startOfMonth()->format('Y-m-d'),
+            'end_date' => now()->endOfMonth()->format('Y-m-d'),
+        ];
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                ...$period,
+                'calculation_method' => 'CUSTOM',
+                'custom_kind' => 'ADJUSTMENT_ONLY',
+                'custom_amount' => 30000,
+                'custom_description' => 'Bon sebelum stok datang',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $advance = MitraSettlement::firstOrFail();
+        $this->assertTrue((bool) ($advance->receipt_data[0]['advance_credit'] ?? false));
+
+        $this->actingAs($mitra)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.validate', $advance->id), ['decision' => 'APPROVE'])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.pay', $advance->id))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                ...$period,
+                'calculation_method' => 'RESTOCK',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $restockSettlement = MitraSettlement::where('calculation_method', 'RESTOCK')->firstOrFail();
+        $advanceRow = collect($restockSettlement->receipt_data)
+            ->first(fn (array $item) => ($item['custom_kind'] ?? null) === 'ADVANCE_APPLIED');
+
+        $this->assertSame(70000.0, (float) $restockSettlement->total_amount);
+        $this->assertNotNull($advanceRow);
+        $this->assertSame(-30000.0, (float) $advanceRow['subtotal']);
+    }
+
     private function createContext(): array
     {
         $outlet = Outlet::create(['name' => 'Outlet Utama']);
@@ -320,6 +580,48 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
         $mitra->mitraStockItems()->attach($stock->id, ['price' => 50000]);
 
         return [$outlet, $owner, $staff, $mitra, $stock];
+    }
+
+    private function createProductForStock(string $outletId, string $stockItemId): Product
+    {
+        $product = Product::create([
+            'outlet_id' => $outletId,
+            'name' => 'Dimsum Ori',
+            'category' => 'Makanan',
+            'price' => 10000,
+            'hpp' => 4000,
+            'is_active' => true,
+        ]);
+
+        Conversion::create([
+            'product_id' => $product->id,
+            'stock_item_id' => $stockItemId,
+            'ratio' => 1,
+        ]);
+
+        return $product;
+    }
+
+    private function createPaidSale(string $outletId, Product $product, int $quantity, int $subtotal): void
+    {
+        $transaction = Transaction::create([
+            'outlet_id' => $outletId,
+            'invoice_number' => 'INV-'.uniqid(),
+            'total_amount' => $subtotal,
+            'payment_method' => 'CASH',
+            'payment_status' => 'PAID',
+            'paid_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        TransactionItem::create([
+            'transaction_id' => $transaction->id,
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'qty_porsi' => $quantity,
+            'price_per_porsi' => $subtotal / $quantity,
+            'subtotal' => $subtotal,
+        ]);
     }
 
     private function createUser(string $email, string $role): User

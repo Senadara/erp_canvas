@@ -9,6 +9,9 @@ import {
     ClockIcon,
     DocumentMagnifyingGlassIcon,
     FunnelIcon,
+    MinusIcon,
+    PlusIcon,
+    TrashIcon,
     XCircleIcon,
     XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -43,6 +46,20 @@ function statusMeta(status) {
     return values[status] || { label: status, className: 'bg-slate-100 text-slate-700', icon: ClockIcon };
 }
 
+function methodLabel(method) {
+    if (method === 'RESTOCK') return 'Stok Diterima';
+    if (method === 'SALES') return 'Bahan Terpakai';
+    if (method === 'CUSTOM') return 'Custom';
+    return method || '-';
+}
+
+function customKindLabel(kind) {
+    if (kind === 'STOCK_CREDIT') return 'Pelunasan bahan custom';
+    if (kind === 'ADVANCE_APPLIED') return 'Bon / uang muka terpakai';
+    if (kind === 'ADJUSTMENT_ONLY') return 'Bon / uang muka mitra';
+    return 'Setoran custom';
+}
+
 export default function SettlementsIndex({
     mitras = [],
     selectedMitraId,
@@ -56,6 +73,11 @@ export default function SettlementsIndex({
     const pendingSettlements = settlements.filter((settlement) => settlement.status === 'PENDING');
     const [activeTab, setActiveTab] = useState(isOwner ? 'create' : (pendingSettlements.length > 0 ? 'pending' : 'history'));
     const [calcMethod, setCalcMethod] = useState('RESTOCK');
+    const [customKind, setCustomKind] = useState('ADJUSTMENT_ONLY');
+    const [customAmount, setCustomAmount] = useState('');
+    const [customDescription, setCustomDescription] = useState('');
+    const [customStockPicker, setCustomStockPicker] = useState('');
+    const [customItems, setCustomItems] = useState([]);
     const [viewSettlement, setViewSettlement] = useState(null);
     const [viewUsageItem, setViewUsageItem] = useState(null);
     const [filterMitra, setFilterMitra] = useState(selectedMitraId || '');
@@ -73,10 +95,27 @@ export default function SettlementsIndex({
         return (Number(quantity) / baseQuantity) * Number(price);
     };
 
-    const calculationData = calcMethod === 'RESTOCK' ? warehouseReportData : reportData;
+    const calculationData = calcMethod === 'RESTOCK' ? warehouseReportData : (calcMethod === 'SALES' ? reportData : []);
+    const customStockOptions = useMemo(() => {
+        const seen = new Set();
+        return [...warehouseReportData, ...reportData].filter((item) => {
+            const key = item.settlement_item_key || item.item_key;
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, [warehouseReportData, reportData]);
+    const customStockOptionMap = useMemo(() => {
+        const map = {};
+        customStockOptions.forEach((item) => {
+            const key = item.settlement_item_key || item.item_key;
+            if (key) map[key] = item;
+        });
+        return map;
+    }, [customStockOptions]);
     const proposalItems = useMemo(() => calculationData.map((item) => {
         const rawQuantity = calcMethod === 'SALES' ? Number(item.sales_qty) : Number(item.restock_qty);
-        const remainingQuantity = Math.max(0, rawQuantity - Number(item.committed_qty ?? item.settled_qty ?? 0));
+        const remainingQuantity = Number(item.remaining_qty ?? Math.max(0, rawQuantity - Number(item.committed_qty ?? item.settled_qty ?? 0)));
         return {
             ...item,
             remainingQuantity,
@@ -84,8 +123,48 @@ export default function SettlementsIndex({
         };
     }), [calculationData, calcMethod]);
 
-    const calculatedTotal = proposalItems.reduce((sum, item) => sum + item.subtotal, 0);
-    const proposalQuantity = proposalItems.reduce((sum, item) => sum + item.remainingQuantity, 0);
+    const customStockTotal = customItems.reduce((sum, row) => {
+        const item = customStockOptionMap[row.stock_key];
+        if (!item) return sum;
+        return sum + calcSubtotal(row.quantity, item.restock_price, item.min_restock_qty);
+    }, 0);
+    const customTotal = calcMethod === 'CUSTOM'
+        ? (customKind === 'STOCK_CREDIT' ? customStockTotal : Number(customAmount || 0))
+        : 0;
+    const calculatedTotal = calcMethod === 'CUSTOM' ? customTotal : proposalItems.reduce((sum, item) => sum + item.subtotal, 0);
+    const proposalQuantity = calcMethod === 'CUSTOM'
+        ? (customKind === 'STOCK_CREDIT' ? customItems.reduce((sum, row) => sum + Number(row.quantity || 0), 0) : 0)
+        : proposalItems.reduce((sum, item) => sum + item.remainingQuantity, 0);
+
+    const maxCustomQuantity = (stockKey) => {
+        const item = customStockOptionMap[stockKey];
+        if (!item) return 0;
+        return Number(item.remaining_qty ?? item.restock_qty ?? item.sales_qty ?? 0);
+    };
+
+    const addCustomStock = () => {
+        if (!customStockPicker || customItems.some((row) => row.stock_key === customStockPicker)) return;
+        const item = customStockOptionMap[customStockPicker];
+        if (!item) return;
+        const maxQty = maxCustomQuantity(customStockPicker);
+        const defaultQty = Math.min(maxQty, Math.max(1, Number(item.min_restock_qty || 1)));
+        if (defaultQty <= 0) return;
+
+        setCustomItems((rows) => [...rows, { stock_key: customStockPicker, quantity: defaultQty }]);
+        setCustomStockPicker('');
+    };
+
+    const updateCustomQuantity = (stockKey, nextQuantity) => {
+        const maxQty = maxCustomQuantity(stockKey);
+        const cleanQty = Math.min(maxQty, Math.max(0, Number(nextQuantity) || 0));
+        setCustomItems((rows) => rows.map((row) => (
+            row.stock_key === stockKey ? { ...row, quantity: cleanQty } : row
+        )));
+    };
+
+    const removeCustomStock = (stockKey) => {
+        setCustomItems((rows) => rows.filter((row) => row.stock_key !== stockKey));
+    };
 
     const applyFilters = () => {
         router.get(route('settlements'), {
@@ -107,6 +186,12 @@ export default function SettlementsIndex({
             start_date: filterStart,
             end_date: filterEnd,
             calculation_method: calcMethod,
+            custom_amount: calcMethod === 'CUSTOM' ? customAmount : undefined,
+            custom_description: calcMethod === 'CUSTOM' ? customDescription : undefined,
+            custom_kind: calcMethod === 'CUSTOM' ? customKind : undefined,
+            custom_items: calcMethod === 'CUSTOM' && customKind === 'STOCK_CREDIT'
+                ? customItems.map((row) => ({ stock_key: row.stock_key, quantity: row.quantity }))
+                : undefined,
         }, {
             preserveScroll: true,
             onSuccess: () => setActiveTab('history'),
@@ -221,7 +306,7 @@ export default function SettlementsIndex({
                         </div>
                     </section>
 
-                    {selectedMitraId && (reportData.length > 0 || warehouseReportData.length > 0) && (
+                    {selectedMitraId && (
                         <>
                             <section>
                                 <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
@@ -244,21 +329,49 @@ export default function SettlementsIndex({
                                         >
                                             Bahan Terpakai
                                         </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCalcMethod('CUSTOM')}
+                                            className={`rounded px-3 py-2 text-sm font-semibold ${calcMethod === 'CUSTOM' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                                        >
+                                            Custom
+                                        </button>
                                     </div>
                                 </div>
                                 <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
                                     {calcMethod === 'RESTOCK'
                                         ? 'Menghitung pasokan yang diterima satu kali di Gudang Pusat. Transfer gudang ke outlet tidak dihitung ulang.'
-                                        : 'Menghitung seluruh bahan terjual, waste, barang rusak/basi, dan penggunaan pribadi dari semua outlet.'}
+                                        : calcMethod === 'SALES'
+                                            ? 'Menghitung seluruh bahan terjual, waste, barang rusak/basi, dan penggunaan pribadi dari semua outlet.'
+                                            : 'Gunakan custom untuk pelunasan manual. Pilih nominal bebas, atau kaitkan ke bahan tertentu agar quantity ikut terkunci.'}
                                 </div>
 
                                 <div className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 lg:grid-cols-4">
                                     <Metric label="Periode" value={`${formatDate(startDate)} - ${formatDate(endDate)}`} />
-                                    <Metric label="Jenis Bahan" value={`${proposalItems.length} bahan`} />
+                                    <Metric label="Jenis Bahan" value={calcMethod === 'CUSTOM' ? (customKind === 'STOCK_CREDIT' ? 'Custom bahan' : 'Penyesuaian') : `${proposalItems.length} bahan`} />
                                     <Metric label="Jumlah Dihitung" value={formatQty(proposalQuantity)} />
                                     <Metric label="Total Pengajuan" value={formatRupiah(calculatedTotal)} emphasis />
                                 </div>
 
+                                {calcMethod === 'CUSTOM' ? (
+                                    <CustomSettlementForm
+                                        customKind={customKind}
+                                        setCustomKind={setCustomKind}
+                                        customAmount={customAmount}
+                                        setCustomAmount={setCustomAmount}
+                                        customDescription={customDescription}
+                                        setCustomDescription={setCustomDescription}
+                                        customStockPicker={customStockPicker}
+                                        setCustomStockPicker={setCustomStockPicker}
+                                        customItems={customItems}
+                                        addCustomStock={addCustomStock}
+                                        updateCustomQuantity={updateCustomQuantity}
+                                        removeCustomStock={removeCustomStock}
+                                        stockOptions={customStockOptions}
+                                        stockOptionMap={customStockOptionMap}
+                                        calcSubtotal={calcSubtotal}
+                                    />
+                                ) : (
                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                     {proposalItems.map((item) => (
                                         <button
@@ -315,6 +428,7 @@ export default function SettlementsIndex({
                                         </button>
                                     ))}
                                 </div>
+                                )}
                             </section>
 
                             <div className="flex flex-col items-end gap-2 border-t border-slate-200 pt-5">
@@ -322,7 +436,7 @@ export default function SettlementsIndex({
                                 <button
                                     type="button"
                                     onClick={createSettlement}
-                                    disabled={submitting || calculatedTotal <= 0}
+                                    disabled={submitting || calculatedTotal <= 0 || (calcMethod === 'CUSTOM' && customKind === 'STOCK_CREDIT' && customItems.length === 0)}
                                     className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-indigo-600 px-6 text-sm font-semibold text-white hover:bg-indigo-700 disabled:bg-slate-300"
                                 >
                                     <CheckCircleIcon className="h-5 w-5" />
@@ -332,7 +446,7 @@ export default function SettlementsIndex({
                         </>
                     )}
 
-                    {selectedMitraId && reportData.length === 0 && warehouseReportData.length === 0 && (
+                    {selectedMitraId && calcMethod !== 'CUSTOM' && reportData.length === 0 && warehouseReportData.length === 0 && (
                         <EmptyState text="Tidak ada aktivitas stok mitra pada periode yang dipilih." />
                     )}
                 </div>
@@ -485,6 +599,199 @@ function Metric({ label, value, emphasis = false }) {
     );
 }
 
+function CustomSettlementForm({
+    customKind,
+    setCustomKind,
+    customAmount,
+    setCustomAmount,
+    customDescription,
+    setCustomDescription,
+    customStockPicker,
+    setCustomStockPicker,
+    customItems,
+    addCustomStock,
+    updateCustomQuantity,
+    removeCustomStock,
+    stockOptions,
+    stockOptionMap,
+    calcSubtotal,
+}) {
+    const selectedKeys = new Set(customItems.map((row) => row.stock_key));
+    const selectableStocks = stockOptions.filter((item) => {
+        const key = item.settlement_item_key || item.item_key;
+        const remaining = Number(item.remaining_qty ?? item.restock_qty ?? item.sales_qty ?? 0);
+        return key && !selectedKeys.has(key) && remaining > 0;
+    });
+
+    return (
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className={`grid gap-4 ${customKind === 'ADJUSTMENT_ONLY' ? 'lg:grid-cols-[1fr_1fr]' : 'lg:grid-cols-[1fr]'}`}>
+                <div>
+                    <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Jenis Custom</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        <button
+                            type="button"
+                            onClick={() => setCustomKind('ADJUSTMENT_ONLY')}
+                            className={`rounded-md border p-3 text-left text-sm ${customKind === 'ADJUSTMENT_ONLY' ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                        >
+                            <span className="font-semibold">Bon / Uang Muka</span>
+                            <span className="mt-1 block text-xs">Mengurangi tagihan stok setelah lunas.</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setCustomKind('STOCK_CREDIT')}
+                            className={`rounded-md border p-3 text-left text-sm ${customKind === 'STOCK_CREDIT' ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                        >
+                            <span className="font-semibold">Pelunasan Bahan</span>
+                            <span className="mt-1 block text-xs">Pilih beberapa stok dan kunci quantity.</span>
+                        </button>
+                    </div>
+                </div>
+                {customKind === 'ADJUSTMENT_ONLY' && (
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Nominal Bon / Uang Muka</span>
+                        <input
+                            type="number"
+                            min="1"
+                            value={customAmount}
+                            onChange={(event) => setCustomAmount(event.target.value)}
+                            className="h-10 w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            placeholder="Contoh: 150000"
+                        />
+                        <span className="mt-1 block text-xs leading-5 text-slate-500">
+                            Setelah mitra menandai lunas, nominal ini otomatis dipakai sebagai pengurang setoran RESTOCK/SALES berikutnya.
+                        </span>
+                    </label>
+                )}
+            </div>
+
+            {customKind === 'STOCK_CREDIT' && (
+                <div className="mt-5 space-y-4">
+                    <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Tambah daftar stok</span>
+                        <select
+                            value={customStockPicker}
+                            onChange={(event) => setCustomStockPicker(event.target.value)}
+                            className="h-10 w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        >
+                            <option value="">Pilih bahan</option>
+                            {selectableStocks.map((item) => {
+                                const key = item.settlement_item_key || item.item_key;
+                                return (
+                                    <option key={key} value={key}>
+                                        {item.name} - {item.outlet_name || 'Gudang'} ({formatQty(item.remaining_qty ?? item.restock_qty ?? item.sales_qty, item.unit_name)} belum dibayar)
+                                    </option>
+                                );
+                            })}
+                        </select>
+                    </label>
+                    <button
+                        type="button"
+                        onClick={addCustomStock}
+                        disabled={!customStockPicker}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:bg-slate-300"
+                    >
+                        <PlusIcon className="h-4 w-4" />
+                        Tambah
+                    </button>
+                    </div>
+
+                    {customItems.length > 0 ? (
+                        <div className="grid gap-3">
+                            {customItems.map((row) => {
+                                const item = stockOptionMap[row.stock_key];
+                                if (!item) return null;
+                                const maxQty = Number(item.remaining_qty ?? item.restock_qty ?? item.sales_qty ?? 0);
+                                const afterQty = Math.max(0, maxQty - Number(row.quantity || 0));
+                                const subtotal = calcSubtotal(row.quantity, item.restock_price, item.min_restock_qty);
+
+                                return (
+                                    <div key={row.stock_key} className="rounded-lg border border-slate-200 p-4">
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                            <div className="min-w-0">
+                                                <p className="truncate font-semibold text-slate-900">{item.name}</p>
+                                                <p className="mt-1 inline-flex rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{item.outlet_name || 'Gudang'}</p>
+                                                <p className="mt-1 text-xs text-slate-500">
+                                                    {formatRupiah(item.restock_price)} per {formatQty(item.min_restock_qty, item.unit_name)}
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeCustomStock(row.stock_key)}
+                                                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-300 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                                                title="Hapus stok dari daftar"
+                                            >
+                                                <TrashIcon className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
+                                            <div className="rounded-md bg-slate-50 px-3 py-2">
+                                                <p className="text-xs text-slate-500">Belum dibayar</p>
+                                                <p className="mt-1 font-bold text-slate-900">{formatQty(maxQty, item.unit_name)}</p>
+                                            </div>
+                                            <div className="rounded-md bg-emerald-50 px-3 py-2">
+                                                <p className="text-xs text-emerald-700">Dibayar sekarang</p>
+                                                <div className="mt-1 flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => updateCustomQuantity(row.stock_key, Number(row.quantity || 0) - 1)}
+                                                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-100"
+                                                        title="Kurangi quantity"
+                                                    >
+                                                        <MinusIcon className="h-4 w-4" />
+                                                    </button>
+                                                    <input
+                                                        type="number"
+                                                        min="0.0001"
+                                                        max={maxQty}
+                                                        step="0.0001"
+                                                        value={row.quantity}
+                                                        onChange={(event) => updateCustomQuantity(row.stock_key, event.target.value)}
+                                                        className="h-8 min-w-0 flex-1 rounded-md border-emerald-200 text-center text-sm font-bold text-emerald-900 focus:border-emerald-500 focus:ring-emerald-500"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => updateCustomQuantity(row.stock_key, Number(row.quantity || 0) + 1)}
+                                                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-100"
+                                                        title="Tambah quantity"
+                                                    >
+                                                        <PlusIcon className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="rounded-md bg-indigo-50 px-3 py-2">
+                                                <p className="text-xs text-indigo-700">Sisa setelah dibayar</p>
+                                                <p className="mt-1 font-bold text-indigo-900">{formatQty(afterQty, item.unit_name)}</p>
+                                                <p className="mt-1 text-xs font-semibold text-indigo-700">{formatRupiah(subtotal)}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                            Tambahkan stok yang akan dilunasi. Quantity yang dipilih akan mengunci sisa belum dibayar agar tidak ditagih lagi.
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <label className="mt-4 block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Catatan</span>
+                <textarea
+                    rows="3"
+                    value={customDescription}
+                    onChange={(event) => setCustomDescription(event.target.value)}
+                    className="w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    placeholder="Contoh: pelunasan tambahan sesuai permintaan mitra"
+                />
+            </label>
+        </div>
+    );
+}
+
 function SettlementCard({ settlement, isOwner, submitting, onInspect, onPay, pdfUrl }) {
     const status = statusMeta(settlement.status);
     const StatusIcon = status.icon;
@@ -505,8 +812,8 @@ function SettlementCard({ settlement, isOwner, submitting, onInspect, onPay, pdf
             </div>
             <div className="mt-4 space-y-2 border-y border-slate-100 py-3 text-sm text-slate-600">
                 <p className="flex items-center gap-2"><CalendarDaysIcon className="h-4 w-4 text-slate-400" /> {formatDate(settlement.period_start)} - {formatDate(settlement.period_end)}</p>
-                <p>{itemCount} bahan dari {outletCount || 1} outlet</p>
-                <p>{settlement.calculation_method === 'RESTOCK' ? 'Berdasarkan stok diterima' : 'Berdasarkan bahan terpakai'}</p>
+                <p>{settlement.calculation_method === 'CUSTOM' ? `${itemCount} rincian custom` : `${itemCount} bahan dari ${outletCount || 1} outlet`}</p>
+                <p>{methodLabel(settlement.calculation_method)}</p>
             </div>
             <SettlementProgress settlement={settlement} compact />
             {settlement.validation_note && <p className="mt-3 line-clamp-2 text-sm text-rose-700">Catatan: {settlement.validation_note}</p>}
@@ -565,11 +872,11 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
                         <SettlementProgress settlement={settlement} />
                     </div>
 
-                    <h3 className="mb-3 font-semibold text-slate-900">Perincian Bahan</h3>
+                    <h3 className="mb-3 font-semibold text-slate-900">Perincian Setoran</h3>
                     <div className="grid gap-3 sm:grid-cols-2">
                         {items.map((item, index) => (
                             <button
-                                key={`${item.stock_item_id}-${index}`}
+                                key={`${item.settlement_item_key || item.item_key || item.stock_item_id || 'custom'}-${index}`}
                                 type="button"
                                 onClick={() => onUsageInspect(item)}
                                 className="rounded-lg border border-slate-200 p-4 text-left transition hover:border-indigo-300 hover:bg-indigo-50/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -578,7 +885,11 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
                                     <div className="min-w-0">
                                         <p className="truncate font-semibold text-slate-900">{item.name}</p>
                                         <p className="mt-1 inline-flex rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{item.outlet_name || 'Outlet'}</p>
-                                        <p className="mt-0.5 text-xs text-slate-500">{formatRupiah(item.restock_price)} per {formatQty(item.min_restock_qty, item.unit_name)}</p>
+                                        {settlement.calculation_method === 'CUSTOM' ? (
+                                            <p className="mt-0.5 text-xs text-slate-500">{item.custom_description || item.tracking_note || 'Setoran custom'}</p>
+                                        ) : (
+                                            <p className="mt-0.5 text-xs text-slate-500">{formatRupiah(item.restock_price)} per {formatQty(item.min_restock_qty, item.unit_name)}</p>
+                                        )}
                                     </div>
                                     <p className="shrink-0 font-bold text-indigo-700">{formatRupiah(item.subtotal)}</p>
                                 </div>
@@ -592,6 +903,7 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
                                         <span className="font-medium text-rose-700">Waste {formatQty(item.waste_qty, item.unit_name)}</span>
                                     </div>
                                 )}
+                                {item.tracking_note && <p className="mt-3 text-xs leading-5 text-slate-500">{item.tracking_note}</p>}
                                 <p className="mt-3 text-xs font-semibold text-indigo-600">Lihat rincian</p>
                             </button>
                         ))}
@@ -644,6 +956,7 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
 
 function UsageDetail({ item, calculationMethod, onClose }) {
     const isUsageMethod = calculationMethod === 'SALES';
+    const isCustomMethod = calculationMethod === 'CUSTOM';
     const calculatedQuantity = Number(item.calculated_qty ?? item.remainingQuantity ?? 0);
     const breakdown = [
         { label: 'Penggunaan pribadi owner', value: item.personal_use_qty, tone: 'text-violet-700 bg-violet-50' },
@@ -660,7 +973,7 @@ function UsageDetail({ item, calculationMethod, onClose }) {
                         <h2 className="truncate text-lg font-semibold text-slate-900">{item.name}</h2>
                         <p className="mt-1 inline-flex rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{item.outlet_name || 'Outlet'}</p>
                         <p className="mt-1 text-sm text-slate-500">
-                            {formatRupiah(item.restock_price)} per {formatQty(item.min_restock_qty, item.unit_name)}
+                            {isCustomMethod ? methodLabel(calculationMethod) : `${formatRupiah(item.restock_price)} per ${formatQty(item.min_restock_qty, item.unit_name)}`}
                         </p>
                     </div>
                     <button type="button" onClick={onClose} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
@@ -669,7 +982,27 @@ function UsageDetail({ item, calculationMethod, onClose }) {
                 </div>
 
                 <div className="overflow-y-auto p-5">
-                    {isUsageMethod ? (
+                    {isCustomMethod ? (
+                        <div className="space-y-4">
+                            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+                                <p className="text-sm text-indigo-700">{customKindLabel(item.custom_kind)}</p>
+                                <p className="mt-1 text-2xl font-bold text-indigo-900">{formatRupiah(item.subtotal)}</p>
+                                <p className="mt-2 text-sm leading-6 text-indigo-800">{item.custom_description || item.tracking_note || 'Tanpa catatan'}</p>
+                            </div>
+                            {item.custom_kind === 'STOCK_CREDIT' && (
+                                <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div className="rounded-md border border-slate-200 p-3">
+                                        <p className="text-xs text-slate-500">Quantity dikunci</p>
+                                        <p className="mt-1 font-semibold text-slate-900">{formatQty(item.calculated_qty, item.unit_name)}</p>
+                                    </div>
+                                    <div className="rounded-md border border-slate-200 p-3">
+                                        <p className="text-xs text-slate-500">Key tracking</p>
+                                        <p className="mt-1 break-all text-xs font-semibold text-slate-900">{item.settlement_item_key || '-'}</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ) : isUsageMethod ? (
                         <>
                             <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200">
                                 <UsageMetric label="Terjual" value={formatQty(item.sold_qty, item.unit_name)} tone="emerald" />

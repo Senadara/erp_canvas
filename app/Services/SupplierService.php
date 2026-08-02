@@ -8,7 +8,7 @@ class SupplierService
 {
     public function listSuppliers()
     {
-        return Supplier::withCount('stockItems')
+        return Supplier::withCount(['stockItems', 'mitraUsers'])
             ->orderBy('name')
             ->get();
     }

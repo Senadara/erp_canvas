@@ -261,8 +261,9 @@
         'PAID' => 'Lunas',
     ];
     $methodLabels = [
-        'RESTOCK' => 'Stok diterima outlet',
+        'RESTOCK' => 'Stok diterima gudang',
         'SALES' => 'Bahan terpakai',
+        'CUSTOM' => 'Setoran custom',
     ];
     $formatRupiah = fn ($value) => 'Rp '.number_format((float) $value, 0, ',', '.');
     $formatQty = fn ($value, $unit = '') => number_format((float) $value, 2, ',', '.').' '.$unit;
@@ -420,11 +421,22 @@
                                         | Pribadi {{ $formatQty($item['personal_use_qty'], $item['unit_name'] ?? '') }}
                                     @endif
                                 </div>
+                            @elseif ($settlement->calculation_method === 'CUSTOM')
+                                <div class="muted" style="margin-top: 3px; font-size: 8px;">
+                                    {{ $item['custom_description'] ?? $item['tracking_note'] ?? 'Setoran custom' }}
+                                </div>
+                            @endif
+                            @if (! empty($item['tracking_note']))
+                                <div class="muted" style="margin-top: 3px; font-size: 8px;">{{ $item['tracking_note'] }}</div>
                             @endif
                         </td>
                         <td>
-                            {{ $formatRupiah($item['restock_price'] ?? 0) }} /
-                            {{ $formatQty($item['min_restock_qty'] ?? 1, $item['unit_name'] ?? '') }}
+                            @if ($settlement->calculation_method === 'CUSTOM')
+                                {{ $item['custom_kind'] ?? 'CUSTOM' }}
+                            @else
+                                {{ $formatRupiah($item['restock_price'] ?? 0) }} /
+                                {{ $formatQty($item['min_restock_qty'] ?? 1, $item['unit_name'] ?? '') }}
+                            @endif
                         </td>
                         <td class="number">{{ $formatQty($item['calculated_qty'] ?? 0, $item['unit_name'] ?? '') }}</td>
                         <td class="number"><strong>{{ $formatRupiah($item['subtotal'] ?? 0) }}</strong></td>

@@ -91,7 +91,7 @@ export default function OwnerIndex({ outletSummaries }) {
                                     href={route('outlet.set')}
                                     method="post"
                                     as="button"
-                                    data={{ outlet_id: outlet.id }}
+                                    data={{ outlet_id: outlet.id, redirect_to: '/dashboard' }}
                                     className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-600 hover:text-white py-2.5 rounded-xl transition-all duration-300"
                                 >
                                     Inspeksi Outlet <ArrowRightIcon className="h-4 w-4" />
