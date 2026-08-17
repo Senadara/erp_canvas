@@ -9,13 +9,16 @@ use Illuminate\Support\Facades\DB;
 
 class ProductService
 {
-    public function __construct(private ConversionOutletResolver $conversionOutletResolver) {}
+    public function __construct(
+        private ConversionOutletResolver $conversionOutletResolver,
+        private ProductCostService $productCostService,
+    ) {}
 
     public function listProducts(string $outletId)
     {
         $products = Product::with([
             'displayGroup:id,name,sort_order',
-            'conversions.stockItem:id,name,outlet_id,current_stock_biji,unit_name,trackable,counting_basis'
+            'conversions.stockItem:id,name,outlet_id,current_stock_biji,unit_name,trackable,counting_basis,min_restock_qty,restock_price,cost_category'
         ])
         ->where('outlet_id', $outletId)
         ->orderBy('category')
@@ -30,6 +33,16 @@ class ProductService
                     ->filter()
                     ->values()
             );
+
+            $cost = $this->productCostService->calculateProduct($product, $outletId);
+            $product->setAttribute('material_hpp', $cost['material_hpp']);
+            $product->setAttribute('manual_hpp', $cost['manual_hpp']);
+            $product->setAttribute('effective_hpp', $cost['effective_hpp']);
+            $product->setAttribute('hpp_source', $cost['hpp_source']);
+            $product->setAttribute('margin_amount', $cost['margin_amount']);
+            $product->setAttribute('margin_percent', $cost['margin_percent']);
+            $product->setAttribute('cost_warnings', $cost['cost_warnings']);
+            $product->setAttribute('components', $cost['components']);
         });
 
         return $products;

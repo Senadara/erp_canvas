@@ -69,6 +69,7 @@ class OutletCloneService
                 'display_group_id' => $item->display_group_id ? ($groupMap[$item->display_group_id] ?? null) : null,
                 'min_restock_qty' => $item->min_restock_qty,
                 'restock_price' => $item->restock_price,
+                'cost_category' => $item->cost_category,
             ]);
             $map[$item->id] = $copy->id;
         }

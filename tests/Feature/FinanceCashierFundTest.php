@@ -1274,6 +1274,8 @@ class FinanceCashierFundTest extends TestCase
                     ->where('summary.expenseTotal', 100000)
                     ->where('summary.cashExpense', 50000)
                     ->where('summary.outsideExpense', 50000)
+                    ->where('summary.operatingExpenseTotal', 0)
+                    ->where('summary.inventoryExpenseTotal', 100000)
                     ->where('summary.cashRestockExpense', 50000)
                     ->where('summary.privateRestockExpense', 50000)
                     ->where('daily', function ($daily) {
@@ -1283,7 +1285,7 @@ class FinanceCashierFundTest extends TestCase
                             && (float) $day['expenses'] === 100000.0
                             && (float) $day['cashier_expenses'] === 50000.0
                             && (float) $day['private_expenses'] === 50000.0
-                            && (float) $day['profit'] === -50000.0;
+                            && (float) $day['profit'] === 0.0;
                     })
                 );
         } finally {

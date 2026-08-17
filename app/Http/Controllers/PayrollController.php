@@ -54,10 +54,18 @@ class PayrollController extends Controller
                 'payment_count' => $rows->count(),
                 'paid_total' => (float) $rows->sum(fn (EmployeeSalaryPayment $payment) => (float) $payment->total_amount),
             ]);
+        $latestPayments = EmployeeSalaryPayment::with(['payer:id,display_name'])
+            ->whereIn('employee_id', $filteredEmployees->pluck('id')->all())
+            ->orderByDesc('paid_at')
+            ->orderByDesc('created_at')
+            ->get()
+            ->groupBy('employee_id')
+            ->map(fn ($rows) => $rows->first());
 
-        $summaries = $filteredEmployees->map(function (User $employee) use ($shiftStats, $paymentTotals) {
+        $summaries = $filteredEmployees->map(function (User $employee) use ($shiftStats, $paymentTotals, $latestPayments) {
             $stats = $shiftStats[$employee->id] ?? $this->emptyShiftStats();
             $payment = $paymentTotals[$employee->id] ?? ['payment_count' => 0, 'paid_total' => 0];
+            $latestPayment = $latestPayments[$employee->id] ?? null;
 
             return [
                 'employee_id' => $employee->id,
@@ -66,6 +74,7 @@ class PayrollController extends Controller
                 ...$stats,
                 'payment_count' => $payment['payment_count'],
                 'paid_total' => $payment['paid_total'],
+                'last_payment' => $latestPayment ? $this->formatPayment($latestPayment) : null,
             ];
         })->values();
 
@@ -96,7 +105,10 @@ class PayrollController extends Controller
             'employee_id' => ['required', Rule::exists('users', 'id')->where('role', 'STAFF')],
             'period_start' => ['required', 'date_format:Y-m-d'],
             'period_end' => ['required', 'date_format:Y-m-d', 'after_or_equal:period_start'],
-            'base_amount' => ['required', 'numeric', 'min:0'],
+            'salary_type' => ['nullable', Rule::in(['DAILY', 'MONTHLY'])],
+            'base_amount' => ['nullable', 'numeric', 'min:0'],
+            'daily_rate' => ['nullable', 'numeric', 'min:0'],
+            'monthly_amount' => ['nullable', 'numeric', 'min:0'],
             'bonus_amount' => ['nullable', 'numeric', 'min:0'],
             'deduction_amount' => ['nullable', 'numeric', 'min:0'],
             'paid_at' => ['nullable', 'date'],
@@ -108,7 +120,30 @@ class PayrollController extends Controller
         $endDate = Carbon::createFromFormat('Y-m-d', $data['period_end'])->endOfDay();
         $stats = $this->shiftStatsForEmployees([$employee->id], $startDate, $endDate)[$employee->id] ?? $this->emptyShiftStats();
 
-        $baseAmount = (float) $data['base_amount'];
+        $salaryType = $data['salary_type'] ?? 'MONTHLY';
+        $dailyRate = 0.0;
+        $payableDays = (int) $stats['work_days'];
+        $monthlyAmount = 0.0;
+        if ($salaryType === 'DAILY') {
+            $dailyRate = (float) ($data['daily_rate'] ?? 0);
+            if ($dailyRate <= 0 || $payableDays <= 0) {
+                return back()
+                    ->withErrors(['daily_rate' => 'Gaji harian membutuhkan tarif harian dan minimal 1 hari kerja dari shift tertutup.'])
+                    ->withInput();
+            }
+            $baseAmount = $dailyRate * $payableDays;
+        } else {
+            $salaryType = 'MONTHLY';
+            $monthlyAmount = (float) ($data['monthly_amount'] ?? $data['base_amount'] ?? 0);
+            if ($monthlyAmount <= 0) {
+                return back()
+                    ->withErrors(['monthly_amount' => 'Gaji bulanan membutuhkan nominal gaji pokok.'])
+                    ->withInput();
+            }
+            $baseAmount = $monthlyAmount;
+            $payableDays = $stats['work_days'];
+        }
+
         $bonusAmount = (float) ($data['bonus_amount'] ?? 0);
         $deductionAmount = (float) ($data['deduction_amount'] ?? 0);
         $totalAmount = max(0, $baseAmount + $bonusAmount - $deductionAmount);
@@ -118,6 +153,10 @@ class PayrollController extends Controller
             'employee_name' => $employee->display_name,
             'period_start' => $startDate,
             'period_end' => $endDate,
+            'salary_type' => $salaryType,
+            'daily_rate' => round($dailyRate),
+            'payable_days' => $payableDays,
+            'monthly_amount' => round($monthlyAmount),
             'work_days' => $stats['work_days'],
             'shift_count' => $stats['shift_count'],
             'total_minutes' => $stats['total_minutes'],
@@ -217,6 +256,10 @@ class PayrollController extends Controller
             'employee_name' => $payment->employee?->display_name ?: $payment->employee_name,
             'period_start' => $payment->period_start->format('Y-m-d'),
             'period_end' => $payment->period_end->format('Y-m-d'),
+            'salary_type' => $payment->salary_type ?: 'MONTHLY',
+            'daily_rate' => (float) $payment->daily_rate,
+            'payable_days' => (int) $payment->payable_days,
+            'monthly_amount' => (float) $payment->monthly_amount,
             'work_days' => $payment->work_days,
             'shift_count' => $payment->shift_count,
             'total_minutes' => $payment->total_minutes,

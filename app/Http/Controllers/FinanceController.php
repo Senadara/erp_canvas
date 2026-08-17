@@ -8,6 +8,7 @@ use App\Models\PettyCash;
 use App\Models\ShiftRecord;
 use App\Models\Transaction;
 use App\Services\PettyCashService;
+use App\Services\ProductCostService;
 use App\Services\ShiftService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -21,7 +22,8 @@ class FinanceController extends Controller
 
     public function __construct(
         private PettyCashService $pettyCashService,
-        private ShiftService $shiftService
+        private ShiftService $shiftService,
+        private ProductCostService $productCostService,
     ) {}
 
     public function index(Request $request)
@@ -746,7 +748,7 @@ class FinanceController extends Controller
             }
 
             foreach ($transaction->items as $item) {
-                $hpp += (float) ($item->product?->hpp ?? 0) * (int) $item->qty_porsi;
+                $hpp += $this->productCostService->itemHppTotal($item);
             }
         }
 
@@ -812,7 +814,9 @@ class FinanceController extends Controller
         }
 
         $grossProfit = $omzet - $hpp;
-        $netProfit = $grossProfit - $expenseTotal;
+        $inventoryExpenseTotal = $cashRestockExpense + $qrisRestockExpense + $privateRestockExpense;
+        $operatingExpenseTotal = max(0, $expenseTotal - $inventoryExpenseTotal);
+        $netProfit = $grossProfit - $operatingExpenseTotal;
         $netAfterAllocations = $netProfit - $drawerCashierTopups;
 
         return [
@@ -825,6 +829,8 @@ class FinanceController extends Controller
             'cashExpense' => $cashExpense,
             'qrisExpense' => $qrisExpense,
             'outsideExpense' => $outsideExpense,
+            'operatingExpenseTotal' => $operatingExpenseTotal,
+            'inventoryExpenseTotal' => $inventoryExpenseTotal,
             'cashRestockExpense' => $cashRestockExpense,
             'qrisRestockExpense' => $qrisRestockExpense,
             'privateRestockExpense' => $privateRestockExpense,
@@ -966,6 +972,7 @@ class FinanceController extends Controller
                 'cashier_topups' => 0,
                 'drawer_cashier_topups' => 0,
                 'outside_cashier_topups' => 0,
+                'profit_expenses' => 0,
                 'profit' => 0,
             ];
             $cursor->addDay();
@@ -976,7 +983,7 @@ class FinanceController extends Controller
             if (isset($days[$key])) {
                 $days[$key]['omzet'] += (float) $transaction->total_amount;
                 foreach ($transaction->items as $item) {
-                    $days[$key]['profit'] -= (float) ($item->product?->hpp ?? 0) * (int) $item->qty_porsi;
+                    $days[$key]['profit'] -= $this->productCostService->itemHppTotal($item);
                 }
             }
         }
@@ -1009,12 +1016,15 @@ class FinanceController extends Controller
                     $days[$key]['private_expenses'] += $amount;
                 } else {
                     $days[$key]['cashier_expenses'] += $amount;
+                    if ($movement->category !== 'RESTOCK') {
+                        $days[$key]['profit_expenses'] += $amount;
+                    }
                 }
             }
         }
 
         foreach ($days as &$day) {
-            $day['profit'] += $day['omzet'] - $day['cashier_expenses'] - $day['drawer_cashier_topups'];
+            $day['profit'] += $day['omzet'] - $day['profit_expenses'] - $day['drawer_cashier_topups'];
         }
 
         return array_values($days);

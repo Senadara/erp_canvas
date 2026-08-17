@@ -21,6 +21,8 @@ Route::middleware(['auth', 'outlet'])->group(function () {
     Route::post('/products', [\App\Http\Controllers\ProductController::class, 'store'])->name('products.store');
     Route::delete('/products/{id}', [\App\Http\Controllers\ProductController::class, 'destroy'])->name('products.destroy');
     Route::post('/products/{id}/conversions', [\App\Http\Controllers\ProductController::class, 'setConversions'])->name('products.conversions');
+    Route::get('/product-costs', [\App\Http\Controllers\ProductCostController::class, 'index'])->name('product-costs');
+    Route::post('/product-costs/bulk-components', [\App\Http\Controllers\ProductCostController::class, 'bulkComponents'])->name('product-costs.bulk-components');
 
     // Stock
     Route::get('/stock', [\App\Http\Controllers\StockController::class, 'index'])->name('stock');

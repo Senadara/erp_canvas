@@ -12,7 +12,10 @@ use Illuminate\Support\Str;
 
 class TransactionService
 {
-    public function __construct(private ConversionOutletResolver $conversionOutletResolver) {}
+    public function __construct(
+        private ConversionOutletResolver $conversionOutletResolver,
+        private ProductCostService $productCostService,
+    ) {}
 
     private function startOfDayLocal()
     {
@@ -128,6 +131,7 @@ class TransactionService
                 $price = $product->price;
                 $sub = $price * $line['qty_porsi'];
                 $total += $sub;
+                $hppSnapshot = $this->productCostService->snapshotForSale($product, $outletId, (float) $line['qty_porsi']);
                 
                 $itemCreates[] = [
                     'id' => Str::ulid(),
@@ -137,6 +141,10 @@ class TransactionService
                     'price_per_porsi' => $price,
                     'subtotal' => $sub,
                     'note' => $line['note'] ?? null,
+                    'hpp_per_porsi' => $hppSnapshot['hpp_per_porsi'],
+                    'hpp_total' => $hppSnapshot['hpp_total'],
+                    'hpp_source' => $hppSnapshot['hpp_source'],
+                    'hpp_snapshot' => json_encode($hppSnapshot['hpp_snapshot']),
                 ];
             }
 

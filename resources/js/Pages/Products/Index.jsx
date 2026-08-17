@@ -16,6 +16,12 @@ function formatRupiah(value) {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
 }
 
+function costCategoryLabel(category) {
+    if (category === 'PACKAGING') return 'Kemasan';
+    if (category === 'SUPPLY') return 'Supply';
+    return 'Bahan';
+}
+
 export default function ProductsIndex({ products, displayGroups, stockItems }) {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isBomModalOpen, setIsBomModalOpen] = useState(false);
@@ -368,7 +374,19 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                         {p.display_group ? p.display_group.name : p.category}
                                     </td>
                                     <td className="px-4 py-3">{formatRupiah(p.price)}</td>
-                                    <td className="px-4 py-3">{formatRupiah(p.hpp)}</td>
+                                    <td className="px-4 py-3">
+                                        <div className="space-y-1">
+                                            <p className="font-semibold text-slate-900">{formatRupiah(p.effective_hpp ?? p.hpp)}</p>
+                                            <p className="text-xs text-slate-500">
+                                                BOM {formatRupiah(p.material_hpp || 0)} · Manual {formatRupiah(p.manual_hpp ?? p.hpp)}
+                                            </p>
+                                            {p.cost_warnings?.length > 0 && (
+                                                <p className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                                                    {p.cost_warnings.length} perlu dicek
+                                                </p>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td className="px-4 py-3">
                                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${p.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
                                             {p.is_active ? 'Aktif' : 'Nonaktif'}
@@ -459,7 +477,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                     {errors.price && <p className="text-rose-500 text-xs mt-1">{errors.price}</p>}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">HPP (Rp)</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">HPP Manual / Fallback (Rp)</label>
                                     <input
                                         type="number"
                                         min="0"
@@ -543,7 +561,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                         </div>
                         <form onSubmit={handleBomSubmit} className="p-6 space-y-4">
                             <p className="text-sm text-slate-600">
-                                Tentukan bahan stok yang akan dikurangi secara otomatis setiap kali produk ini terjual.
+                                Tentukan bahan stok dan kemasan yang membentuk HPP otomatis setiap kali produk ini terjual.
                             </p>
 
                             <div className="space-y-3">
@@ -559,7 +577,9 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                             >
                                                 <option value="">-- Pilih Bahan --</option>
                                                 {stockItems.map(item => (
-                                                    <option key={item.id} value={item.id}>{item.name} (Satuan: {item.unit_name})</option>
+                                                    <option key={item.id} value={item.id}>
+                                                        {item.name} · {costCategoryLabel(item.cost_category)} · {item.unit_name}
+                                                    </option>
                                                 ))}
                                             </select>
                                         </div>

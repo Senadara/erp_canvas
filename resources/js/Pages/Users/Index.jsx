@@ -410,6 +410,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                             { id: 'dashboard', label: 'Dashboard' },
                                             { id: 'cashier', label: 'Kasir & Shift' },
                                             { id: 'products', label: 'Produk' },
+                                            { id: 'product_costs', label: 'Biaya Produk' },
                                             { id: 'stock', label: 'Stok' },
                                             { id: 'expenses', label: 'Pengeluaran' },
                                             { id: 'waste', label: 'Waste' },

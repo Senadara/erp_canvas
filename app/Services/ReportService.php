@@ -11,6 +11,8 @@ use Carbon\Carbon;
 
 class ReportService
 {
+    public function __construct(private ProductCostService $productCostService) {}
+
     public function getMonthlyReport(string $outletId, int $month, int $year, ?array $mitraProductIds = null)
     {
         $start = Carbon::create($year, $month, 1)->startOfMonth();
@@ -37,9 +39,7 @@ class ReportService
             foreach ($t->items as $it) {
                 if ($mitraProductIds === null || in_array($it->product_id, $mitraProductIds)) {
                     $hasMitraProduct = true;
-                    if ($it->product) {
-                        $hpp += ($it->product->hpp * $it->qty_porsi);
-                    }
+                    $hpp += $this->productCostService->itemHppTotal($it);
                     $omzet += $it->subtotal; // Use subtotal instead of total_amount for specific items
                 }
             }
@@ -50,7 +50,7 @@ class ReportService
             $pengeluaran = PettyCash::where('outlet_id', $outletId)
                 ->whereBetween('created_at', [$start, $end])
                 ->where('cash_flow', 'OUT')
-                ->whereNotIn('category', ['Tambah Modal', 'Tambah Kas', 'Penarikan'])
+                ->whereNotIn('category', ['Tambah Modal', 'Tambah Kas', 'Penarikan', 'RESTOCK'])
                 ->sum('amount');
         }
 
@@ -107,7 +107,7 @@ class ReportService
             $expenses = PettyCash::where('outlet_id', $outletId)
                 ->whereBetween('created_at', [$start, $end])
                 ->where('cash_flow', 'OUT')
-                ->whereNotIn('category', ['Tambah Modal', 'Tambah Kas', 'Penarikan'])
+                ->whereNotIn('category', ['Tambah Modal', 'Tambah Kas', 'Penarikan', 'RESTOCK'])
                 ->sum('amount');
         }
 
@@ -223,7 +223,7 @@ class ReportService
             })
             ->with(['items' => function ($query) use ($allowedProductIds) {
                 $query->whereIn('product_id', $allowedProductIds);
-            }])
+            }, 'items.product'])
             ->orderBy('created_at')
             ->get();
 
@@ -252,7 +252,7 @@ class ReportService
 
                 $quantity = (int) $item->qty_porsi;
                 $revenue = (float) $item->subtotal;
-                $estimatedHpp = (float) $product->hpp * $quantity;
+                $estimatedHpp = $this->productCostService->itemHppTotal($item);
                 $grossProfit = $revenue - $estimatedHpp;
 
                 $performance[$item->product_id]['quantity_sold'] += $quantity;
@@ -370,7 +370,7 @@ class ReportService
                             ->whereBetween('created_at', [$start, $end]);
                     });
             })
-            ->with('items');
+            ->with('items.product');
 
         if ($mitraProductIds !== null) {
             $transactionQuery->whereHas('items', function ($query) use ($mitraProductIds) {
@@ -478,7 +478,7 @@ class ReportService
                 if ($mitraProductIds === null || in_array($item->product_id, $mitraProductIds, true)) {
                     $quantity = (float) $item->qty_porsi;
                     $revenue = (float) $item->subtotal;
-                    $hpp = (float) ($item->product?->hpp ?? 0) * $quantity;
+                    $hpp = $this->productCostService->itemHppTotal($item);
                     $grossProfit = $revenue - $hpp;
                     $productName = $item->product_name ?: ($item->product?->name ?? 'Produk');
 
@@ -606,9 +606,10 @@ class ReportService
                 }
             } else {
                 if (! $isWithdrawal && ! $isCashierTopup) {
-                    $summary['operating_expenses'] += $amount;
                     if ($movement->category === 'RESTOCK') {
                         $summary['restock_expenses'] += $amount;
+                    } else {
+                        $summary['operating_expenses'] += $amount;
                     }
                 }
 

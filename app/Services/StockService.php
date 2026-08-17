@@ -167,6 +167,7 @@ class StockService
             'display_group_id' => $data['display_group_id'] ?? null,
             'min_restock_qty' => $data['min_restock_qty'] ?? 1,
             'restock_price' => $data['restock_price'] ?? 0,
+            'cost_category' => $data['cost_category'] ?? ProductCostService::CATEGORY_MATERIAL,
         ]);
     }
 
@@ -184,6 +185,7 @@ class StockService
             'display_group_id' => array_key_exists('display_group_id', $data) ? $data['display_group_id'] : $item->display_group_id,
             'min_restock_qty' => $data['min_restock_qty'] ?? $item->min_restock_qty,
             'restock_price' => $data['restock_price'] ?? $item->restock_price,
+            'cost_category' => $data['cost_category'] ?? $item->cost_category ?? ProductCostService::CATEGORY_MATERIAL,
         ]);
 
         return $item;

@@ -64,6 +64,7 @@ export default function StockAuditIndex({ filters, report }) {
     const [startDate, setStartDate] = useState(filters.start_date || report.start_date || '');
     const [endDate, setEndDate] = useState(filters.end_date || report.end_date || '');
     const [stockItemId, setStockItemId] = useState(report.selected_stock_id || '');
+    const [inspectingStockId, setInspectingStockId] = useState(null);
     const selected = report.selected_stock;
     const rows = report.rows || [];
     const summary = report.summary || {};
@@ -80,8 +81,19 @@ export default function StockAuditIndex({ filters, report }) {
         setStartDate(filters.start_date || report.start_date || '');
         setEndDate(filters.end_date || report.end_date || '');
         setStockItemId(report.selected_stock_id || '');
-        setData('stock_item_id', report.selected_stock_id || '');
+        setData({
+            stock_item_id: report.selected_stock_id || '',
+            counted_stock: '',
+            counted_at: localDatetimeValue(),
+            note: '',
+        });
     }, [filters.start_date, filters.end_date, report.start_date, report.end_date, report.selected_stock_id]);
+
+    const scrollToDetail = () => {
+        window.setTimeout(() => {
+            document.getElementById('stock-audit-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 0);
+    };
 
     const applyFilter = (event) => {
         event.preventDefault();
@@ -93,11 +105,26 @@ export default function StockAuditIndex({ filters, report }) {
             preserveScroll: true,
             preserveState: true,
             replace: true,
+            only: ['filters', 'report'],
         });
     };
 
     const inspectStock = (id) => {
+        if (!id) return;
+
+        if (id === report.selected_stock_id) {
+            scrollToDetail();
+            return;
+        }
+
         setStockItemId(id);
+        setData({
+            stock_item_id: id,
+            counted_stock: '',
+            counted_at: localDatetimeValue(),
+            note: '',
+        });
+        setInspectingStockId(id);
         router.get(route('stock-audit'), {
             start_date: startDate,
             end_date: endDate,
@@ -106,6 +133,13 @@ export default function StockAuditIndex({ filters, report }) {
             preserveScroll: true,
             preserveState: true,
             replace: true,
+            only: ['filters', 'report'],
+            onSuccess: scrollToDetail,
+            onFinish: () => setInspectingStockId(null),
+            onError: () => {
+                setStockItemId(report.selected_stock_id || '');
+                setData('stock_item_id', report.selected_stock_id || '');
+            },
         });
     };
 
@@ -219,8 +253,12 @@ export default function StockAuditIndex({ filters, report }) {
                                     <tr>
                                         <td colSpan="12" className="px-4 py-8 text-center text-slate-500">Belum ada stok trackable pada outlet ini.</td>
                                     </tr>
-                                ) : rows.map((row) => (
-                                    <tr key={row.stock_item_id} className={row.stock_item_id === report.selected_stock_id ? 'bg-indigo-50/50' : 'hover:bg-slate-50'}>
+                                ) : rows.map((row) => {
+                                    const isSelected = row.stock_item_id === report.selected_stock_id;
+                                    const isLoading = inspectingStockId === row.stock_item_id;
+
+                                    return (
+                                    <tr key={row.stock_item_id} className={isSelected ? 'bg-indigo-50/70 ring-1 ring-inset ring-indigo-100' : 'hover:bg-slate-50'}>
                                         <td className="px-4 py-3">
                                             <p className="font-semibold text-slate-900">{row.name}</p>
                                             <p className="text-xs text-slate-500">{row.display_group || 'Tanpa grup'}{row.warehouse_stock ? ` | Gudang: ${row.warehouse_stock.name}` : ''}</p>
@@ -243,21 +281,27 @@ export default function StockAuditIndex({ filters, report }) {
                                             <button
                                                 type="button"
                                                 onClick={() => inspectStock(row.stock_item_id)}
-                                                className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                                disabled={Boolean(inspectingStockId)}
+                                                className={`inline-flex h-9 min-w-[98px] items-center justify-center gap-2 rounded-md border px-3 text-xs font-semibold disabled:cursor-wait disabled:opacity-70 ${
+                                                    isSelected
+                                                        ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                                                        : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                                                }`}
                                             >
                                                 <MagnifyingGlassIcon className="h-4 w-4" />
-                                                Inspeksi
+                                                {isLoading ? 'Membuka...' : isSelected ? 'Terbuka' : 'Inspeksi'}
                                             </button>
                                         </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
                 </section>
 
                 {selected && (
-                    <section className="space-y-5">
+                    <section id="stock-audit-detail" className="scroll-mt-6 space-y-5">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                             <div>
                                 <h2 className="text-lg font-semibold text-slate-900">Detail Audit {selected.name}</h2>
@@ -376,10 +420,10 @@ export default function StockAuditIndex({ filters, report }) {
 
                                 <button
                                     type="submit"
-                                    disabled={processing}
+                                    disabled={processing || Boolean(inspectingStockId)}
                                     className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                                 >
-                                    {processing ? 'Menyimpan...' : 'Simpan Cek Fisik'}
+                                    {processing ? 'Menyimpan...' : inspectingStockId ? 'Memuat inspeksi...' : 'Simpan Cek Fisik'}
                                 </button>
                             </form>
                         </div>

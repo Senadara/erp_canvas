@@ -163,6 +163,42 @@ class StockAuditTest extends TestCase
         }
     }
 
+    public function test_stock_audit_can_inspect_a_specific_stock_item_from_the_list(): void
+    {
+        $outlet = Outlet::create(['name' => 'Outlet Audit Pilihan']);
+        $owner = $this->user('OWNER');
+        $firstStock = $this->stock($outlet->id, 'Dimsum Ayam', 80);
+        $secondStock = $this->stock($outlet->id, 'Kulit Pangsit', 200);
+        $secondProduct = $this->product($outlet->id, 'Pangsit Goreng');
+
+        Conversion::create([
+            'product_id' => $secondProduct->id,
+            'stock_item_id' => $secondStock->id,
+            'ratio' => 1.5,
+        ]);
+
+        $this->sale($outlet->id, $secondProduct, 4, '2026-07-12 10:00:00');
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->get(route('stock-audit', [
+                'start_date' => '2026-07-12',
+                'end_date' => '2026-07-12',
+                'stock_item_id' => $secondStock->id,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.stock_item_id', $secondStock->id)
+                ->where('report.selected_stock_id', $secondStock->id)
+                ->where('report.selected_stock.name', 'Kulit Pangsit')
+                ->where('report.selected_stock.product_breakdown.0.product_name', 'Pangsit Goreng')
+                ->where('report.selected_stock.product_breakdown.0.qty_porsi', 4)
+                ->where('report.selected_stock.product_breakdown.0.estimated_usage', 6)
+                ->where('report.rows.0.stock_item_id', $firstStock->id)
+                ->where('report.rows.1.stock_item_id', $secondStock->id)
+            );
+    }
+
     public function test_mitra_cannot_open_stock_audit_page(): void
     {
         $outlet = Outlet::create(['name' => 'Outlet Audit']);

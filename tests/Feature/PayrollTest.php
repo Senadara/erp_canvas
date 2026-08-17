@@ -76,7 +76,8 @@ class PayrollTest extends TestCase
                     'employee_id' => $staff->id,
                     'period_start' => '2026-07-01',
                     'period_end' => '2026-07-31',
-                    'base_amount' => 100000,
+                    'salary_type' => 'MONTHLY',
+                    'monthly_amount' => 100000,
                     'bonus_amount' => 25000,
                     'deduction_amount' => 10000,
                     'paid_at' => '2026-07-15',
@@ -93,11 +94,59 @@ class PayrollTest extends TestCase
             $this->assertSame(420, $payment->average_minutes);
             $this->assertSame(480, $payment->longest_shift_minutes);
             $this->assertSame(360, $payment->shortest_shift_minutes);
+            $this->assertSame('MONTHLY', $payment->salary_type);
+            $this->assertSame(100000.0, (float) $payment->monthly_amount);
+            $this->assertSame(100000.0, (float) $payment->base_amount);
             $this->assertSame(115000.0, (float) $payment->total_amount);
             $this->assertCount(2, $payment->shift_snapshot);
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    public function test_daily_salary_payment_uses_rate_times_shift_work_days(): void
+    {
+        $outlet = Outlet::create(['name' => 'Outlet Gaji Harian']);
+        $owner = $this->createUser('owner-daily-payroll@karsa.local', 'OWNER', 'Owner Harian');
+        $staff = $this->createUser('staff-daily-payroll@karsa.local', 'STAFF', 'Dodi Harian');
+        $staff->outlets()->attach($outlet->id);
+
+        foreach (['2026-07-01', '2026-07-03', '2026-07-07'] as $date) {
+            ShiftRecord::create([
+                'outlet_id' => $outlet->id,
+                'name' => 'Shift Harian',
+                'opened_by' => $staff->id,
+                'closed_by' => $staff->id,
+                'opened_at' => Carbon::parse("{$date} 08:00:00"),
+                'closed_at' => Carbon::parse("{$date} 16:00:00"),
+                'opening_cash' => 50000,
+                'expected_cash' => 100000,
+                'actual_cash' => 100000,
+                'status' => 'CLOSED',
+            ]);
+        }
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('payroll.store'), [
+                'employee_id' => $staff->id,
+                'period_start' => '2026-07-01',
+                'period_end' => '2026-07-07',
+                'salary_type' => 'DAILY',
+                'daily_rate' => 75000,
+                'bonus_amount' => 5000,
+                'deduction_amount' => 10000,
+                'paid_at' => '2026-07-08',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $payment = EmployeeSalaryPayment::firstOrFail();
+        $this->assertSame('DAILY', $payment->salary_type);
+        $this->assertSame(75000.0, (float) $payment->daily_rate);
+        $this->assertSame(3, $payment->payable_days);
+        $this->assertSame(225000.0, (float) $payment->base_amount);
+        $this->assertSame(220000.0, (float) $payment->total_amount);
     }
 
     private function createUser(string $email, string $role, string $name): User

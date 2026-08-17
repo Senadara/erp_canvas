@@ -33,18 +33,20 @@ class StockAuditController extends Controller
             $endDate = $startDate->copy()->endOfDay();
         }
 
+        $report = $this->stockAuditService->getReport(
+            $outletId,
+            $startDate,
+            $endDate,
+            $validated['stock_item_id'] ?? null
+        );
+
         return Inertia::render('StockAudit/Index', [
             'filters' => [
                 'start_date' => $startDate->toDateString(),
                 'end_date' => $endDate->toDateString(),
-                'stock_item_id' => $validated['stock_item_id'] ?? null,
+                'stock_item_id' => $report['selected_stock_id'],
             ],
-            'report' => $this->stockAuditService->getReport(
-                $outletId,
-                $startDate,
-                $endDate,
-                $validated['stock_item_id'] ?? null
-            ),
+            'report' => $report,
         ]);
     }
 

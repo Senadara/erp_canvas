@@ -176,6 +176,7 @@ class DashboardController extends Controller
                 $this->action('Buka Kasir', '/cashier', 'cashier', 'cashier', 'emerald'),
                 $this->action('Pantau Outlet', '/owner', 'owner', 'outlet', 'indigo'),
                 $this->action('Laporan Reguler', '/reports', 'reports', 'chart', 'violet'),
+                $this->action('Biaya Produk', '/product-costs', 'product_costs', 'chart', 'emerald'),
                 $this->action('Keuangan', '/finance', 'finance', 'finance', 'amber'),
                 $this->action('Kelola Outlet', '/outlets', 'outlets', 'map', 'sky'),
                 $this->action('Pengguna', '/users', 'users', 'users', 'slate'),

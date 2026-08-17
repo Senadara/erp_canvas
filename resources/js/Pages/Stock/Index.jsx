@@ -24,6 +24,18 @@ function fundSourceLabel(source) {
     return 'Kas Kasir';
 }
 
+function costCategoryLabel(category) {
+    if (category === 'PACKAGING') return 'Kemasan';
+    if (category === 'SUPPLY') return 'Supply';
+    return 'Bahan Utama';
+}
+
+function costCategoryClass(category) {
+    if (category === 'PACKAGING') return 'bg-sky-100 text-sky-800';
+    if (category === 'SUPPLY') return 'bg-violet-100 text-violet-800';
+    return 'bg-emerald-100 text-emerald-800';
+}
+
 function deliveryStatus(delivery) {
     if (delivery.status === 'SENT') {
         return { label: 'Menunggu Gudang', className: 'bg-amber-100 text-amber-800' };
@@ -63,6 +75,7 @@ export default function StockIndex({
         display_group_id: '',
         min_restock_qty: '1',
         restock_price: '0',
+        cost_category: 'MATERIAL',
     });
 
     const { data: restockData, setData: setRestockData, post: postRestock, processing: restockProcessing, reset: resetRestock, errors: restockErrors } = useForm({
@@ -131,6 +144,7 @@ export default function StockIndex({
                 display_group_id: item.display_group_id || '',
                 min_restock_qty: item.min_restock_qty || '1',
                 restock_price: item.restock_price || '0',
+                cost_category: item.cost_category || 'MATERIAL',
             });
         } else {
             setEditingItem(null);
@@ -363,6 +377,7 @@ export default function StockIndex({
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-700">
                         <tr>
                             <th className="px-4 py-3 font-medium">Nama Bahan</th>
+                            <th className="px-4 py-3 font-medium">Kategori Biaya</th>
                             <th className="px-4 py-3 font-medium">Stok Saat Ini</th>
                             <th className="px-4 py-3 font-medium">Satuan</th>
                             <th className="px-4 py-3 font-medium">Trackable</th>
@@ -373,7 +388,7 @@ export default function StockIndex({
                     <tbody className="divide-y divide-slate-200">
                         {filteredStockItems.length === 0 ? (
                             <tr>
-                                <td colSpan={isMitra ? 6 : 5} className="px-4 py-8 text-center text-slate-500">
+                                <td colSpan={isMitra ? 7 : 6} className="px-4 py-8 text-center text-slate-500">
                                     Belum ada bahan stok.
                                 </td>
                             </tr>
@@ -381,6 +396,11 @@ export default function StockIndex({
                             filteredStockItems.map((item) => (
                                 <tr key={item.id} className="hover:bg-slate-50">
                                     <td className="px-4 py-3 font-medium text-slate-900">{item.name}</td>
+                                    <td className="px-4 py-3">
+                                        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${costCategoryClass(item.cost_category)}`}>
+                                            {costCategoryLabel(item.cost_category)}
+                                        </span>
+                                    </td>
                                     <td className="px-4 py-3 font-semibold">
                                         {Number(item.current_stock_biji).toFixed(2)}
                                         {item.min_stock_alert > 0 && Number(item.current_stock_biji) < Number(item.min_stock_alert) && (
@@ -732,6 +752,20 @@ export default function StockIndex({
                                         required
                                     />
                                 </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Kategori Biaya HPP</label>
+                                <select
+                                    value={data.cost_category}
+                                    onChange={e => setData('cost_category', e.target.value)}
+                                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                >
+                                    <option value="MATERIAL">Bahan Utama</option>
+                                    <option value="PACKAGING">Kemasan / Wadah</option>
+                                    <option value="SUPPLY">Supply Pendukung</option>
+                                </select>
+                                <p className="mt-1 text-[10px] text-slate-500">Kemasan seperti wadah bisa dimasukkan ke BOM produk agar HPP otomatis lengkap.</p>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
