@@ -41,7 +41,9 @@ class ShiftController extends Controller
 
     public function show(Request $request, string $id)
     {
-        $shift = ShiftRecord::with(['opener:id,display_name', 'closer:id,display_name'])->findOrFail($id);
+        $shift = $this->shiftService->applyComputedMoneySummary(
+            ShiftRecord::with(['opener:id,display_name', 'closer:id,display_name'])->findOrFail($id)
+        );
         $outletId = $shift->outlet_id;
 
         $endTime = $shift->closed_at ?? Carbon::now();

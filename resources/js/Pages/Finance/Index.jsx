@@ -155,7 +155,6 @@ export default function FinanceIndex({
     const withdrawalTooHigh = withdrawalAmount > 0 && withdrawalAmount > selectedWithdrawalBalance;
     const activeCashierTopups = Number(summary.activeCashierTopups || 0);
     const activeOutsideCashierTopups = Number(summary.activeOutsideCashierTopups || 0);
-    const cashDrawerSavingsExpense = Number(summary.cashDrawerSavingsExpense || 0);
     const currentCashierExpense = (Number(summary.cashExpense) || 0) + (Number(summary.qrisExpense) || 0);
     const currentPrivateExpense = Number(summary.outsideExpense) || 0;
     const currentDailyCashierExpenseAverage = currentCashierExpense / Math.max(1, Number(summary.periodDays) || 1);
@@ -169,7 +168,7 @@ export default function FinanceIndex({
         TODAY_WITH_WITHDRAWAL: 'Hari ini, penarikan hari yang sama tetap terlihat',
         TODAY: 'Berjalan sejak awal hari',
     }[summary.currentPeriodMode] || 'Berjalan sejak awal hari';
-    const periodGenerated = (Number(period.omzet) || 0) - periodCashierExpense - (Number(period.drawerCashierTopups ?? period.cashierTopups) || 0);
+    const periodGenerated = Number(period.netAfterAllocations) || 0;
     const closedShiftDiscrepancy = Number(summary.closedShiftDiscrepancy || 0);
     const discrepancyInfo = closedShiftDiscrepancy !== 0
         ? ` Selisih kas shift tertutup ${formatRupiah(closedShiftDiscrepancy)} sudah ikut dihitung.`
@@ -232,10 +231,10 @@ export default function FinanceIndex({
             sub: `QRIS masuk periode berjalan ${formatRupiah(summary.qrisSales)}. Pengeluaran/penarikan QRIS ${formatRupiah((Number(summary.qrisExpense) || 0) + (Number(summary.withdrawQris) || 0))}.`,
         },
         {
-            label: 'Pengeluaran Kas/QRIS',
+            label: 'Uang Keluar Laci/QRIS',
             value: currentCashierExpense,
             tone: 'text-rose-700',
-            sub: `${resetLabel}. Cash ${formatRupiah(summary.cashExpense)} | QRIS ${formatRupiah(summary.qrisExpense)}. Pengeluaran laci cash ${formatRupiah(cashDrawerSavingsExpense)}.`,
+            sub: `${resetLabel}. Cash ${formatRupiah(summary.cashExpense)} | QRIS ${formatRupiah(summary.qrisExpense)}. Restok laci ${formatRupiah(summary.cashRestockExpense || 0)} tidak mengurangi kas shift.`,
         },
         {
             label: 'Uang Pribadi',
@@ -247,7 +246,7 @@ export default function FinanceIndex({
             label: 'Rata-rata Pengeluaran',
             value: currentDailyCashierExpenseAverage,
             tone: 'text-amber-700',
-            sub: `Rata-rata kas/QRIS. Uang pribadi ${formatRupiah(currentPrivateExpense)} dicatat terpisah.`,
+            sub: `Rata-rata uang keluar laci/QRIS. Uang pribadi ${formatRupiah(currentPrivateExpense)} dicatat terpisah.`,
         },
     ];
 
@@ -262,7 +261,7 @@ export default function FinanceIndex({
             label: 'Penghasilan Bersih Periode',
             value: periodGenerated,
             tone: signedTone(periodGenerated),
-            sub: 'Omzet lunas dikurangi pengeluaran kas/QRIS dan top up dari laci, sebelum penarikan owner.',
+            sub: 'Omzet lunas dikurangi HPP snapshot, pengeluaran operasional, dan top up dari laci. Restok tidak dipotong dobel.',
         },
         {
             label: 'Total QRIS Masuk',

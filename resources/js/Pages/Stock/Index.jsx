@@ -21,7 +21,7 @@ function fundSourceLabel(source) {
     if (source === 'PRIVATE_CASH') return 'Uang Pribadi';
     if (source === 'MITRA_DELIVERY') return 'Kiriman Mitra';
     if (source === 'WAREHOUSE_TRANSFER') return 'Transfer Gudang';
-    return 'Kas Kasir';
+    return 'Laci Outlet';
 }
 
 function costCategoryLabel(category) {
@@ -1042,8 +1042,8 @@ export default function StockIndex({
                                 <label className="block text-sm font-medium text-slate-700 mb-2">Sumber Dana Restock</label>
                                 <div className="grid grid-cols-2 gap-2">
                                     {[
-                                        { value: 'CASHIER_CASH', label: 'Kas Kasir', description: 'Mengurangi saldo laci shift.', activeClass: 'border-emerald-500 bg-emerald-50 text-emerald-800' },
-                                        { value: 'PRIVATE_CASH', label: 'Uang Pribadi', description: 'Biaya luar kasir, saldo shift tetap.', activeClass: 'border-amber-500 bg-amber-50 text-amber-800' },
+                                        { value: 'CASHIER_CASH', label: 'Laci Outlet', description: 'Mengurangi saldo laci, bukan modal kas shift.', activeClass: 'border-emerald-500 bg-emerald-50 text-emerald-800' },
+                                        { value: 'PRIVATE_CASH', label: 'Uang Pribadi', description: 'Talangan luar laci, dicatat terpisah.', activeClass: 'border-amber-500 bg-amber-50 text-amber-800' },
                                     ].map(option => (
                                         <button
                                             key={option.value}

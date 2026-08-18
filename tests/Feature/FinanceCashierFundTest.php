@@ -1209,7 +1209,7 @@ class FinanceCashierFundTest extends TestCase
 
     public function test_restock_funding_source_keeps_cashier_and_private_money_separate(): void
     {
-        Carbon::setTestNow(Carbon::parse('2026-07-06 09:00:00'));
+        Carbon::setTestNow($this->financeTimestamp('2026-07-06 09:00:00'));
 
         try {
             $outlet = Outlet::create(['name' => 'Outlet Utama']);
@@ -1225,6 +1225,17 @@ class FinanceCashierFundTest extends TestCase
 
             $this->assertSame(125000, (int) $shift->opening_cash);
 
+            Transaction::create([
+                'outlet_id' => $outlet->id,
+                'shift_id' => $shift->id,
+                'invoice_number' => 'INV-RESTOCK-DRAWER-001',
+                'total_amount' => 100000,
+                'payment_method' => 'CASH',
+                'payment_status' => 'PAID',
+                'paid_at' => $this->financeTimestamp('2026-07-06 09:10:00'),
+                'created_at' => $this->financeTimestamp('2026-07-06 09:10:00'),
+            ]);
+
             $stock = StockItem::create([
                 'outlet_id' => $outlet->id,
                 'name' => 'Dimsum Ori',
@@ -1237,14 +1248,20 @@ class FinanceCashierFundTest extends TestCase
                 'restock_price' => 50000,
             ]);
 
+            Carbon::setTestNow($this->financeTimestamp('2026-07-06 09:20:00'));
             app(StockService::class)->addStock($stock->id, 10, 'Bayar dari laci', $outlet->id, 'CASHIER_CASH');
             app(StockService::class)->addStock($stock->id, 10, 'Talangan owner', $outlet->id, 'PRIVATE_CASH');
 
             $shiftSummary = app(ShiftService::class)->moneySummary($shift->fresh());
 
-            $this->assertSame(50000.0, $shiftSummary['cash']['expenses']);
+            $this->assertSame(0.0, (float) $shiftSummary['cash']['expenses']);
+            $this->assertSame(50000.0, $shiftSummary['cash']['drawer_expenses']);
             $this->assertSame(50000.0, $shiftSummary['outside']['expenses']);
-            $this->assertSame(75000.0, $shiftSummary['cash']['expected']);
+            $this->assertSame(225000.0, $shiftSummary['cash']['expected']);
+
+            $closedShift = app(ShiftService::class)->closeShift($shift->id, 225000, 'Restok laci tidak mengurangi kas shift', $owner->id);
+            $this->assertSame(225000.0, (float) $closedShift->fresh()->expected_cash);
+            $this->assertSame(0.0, (float) $closedShift->fresh()->discrepancy);
 
             $this->assertDatabaseHas('restock_logs', [
                 'stock_item_id' => $stock->id,
@@ -1271,6 +1288,7 @@ class FinanceCashierFundTest extends TestCase
                     ->where('summary.defaultOpeningCash', 50000)
                     ->where('summary.openingCash', 125000)
                     ->where('summary.standardOpeningCash', 125000)
+                    ->where('summary.omzet', 100000)
                     ->where('summary.expenseTotal', 100000)
                     ->where('summary.cashExpense', 50000)
                     ->where('summary.outsideExpense', 50000)
@@ -1278,6 +1296,10 @@ class FinanceCashierFundTest extends TestCase
                     ->where('summary.inventoryExpenseTotal', 100000)
                     ->where('summary.cashRestockExpense', 50000)
                     ->where('summary.privateRestockExpense', 50000)
+                    ->where('summary.closedShiftDiscrepancy', 0)
+                    ->where('summary.netAfterAllocations', 100000)
+                    ->where('summary.cashDrawerNet', 50000)
+                    ->where('summary.cleanFinance', 50000)
                     ->where('daily', function ($daily) {
                         $day = $daily->firstWhere('date', '2026-07-06');
 
@@ -1285,7 +1307,7 @@ class FinanceCashierFundTest extends TestCase
                             && (float) $day['expenses'] === 100000.0
                             && (float) $day['cashier_expenses'] === 50000.0
                             && (float) $day['private_expenses'] === 50000.0
-                            && (float) $day['profit'] === 0.0;
+                            && (float) $day['profit'] === 100000.0;
                     })
                 );
         } finally {

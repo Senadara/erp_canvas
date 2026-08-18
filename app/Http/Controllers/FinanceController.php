@@ -935,7 +935,11 @@ class FinanceController extends Controller
             ? $query->where('closed_at', '>', $periodStartForQuery)
             : $query->where('closed_at', '>=', $periodStartForQuery);
 
-        return (float) $query->sum('discrepancy');
+        return (float) $query->get()->sum(function (ShiftRecord $shift) {
+            $summary = $this->shiftService->moneySummary($shift);
+
+            return (float) ($shift->actual_cash ?? 0) - (float) ($summary['cash']['expected'] ?? 0);
+        });
     }
 
     private function resolveOpeningCash(?string $outletId, Carbon $periodStart, Carbon $periodEnd): float

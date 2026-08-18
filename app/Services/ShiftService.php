@@ -85,7 +85,8 @@ class ShiftService
             ->with(['opener:id,display_name', 'closer:id,display_name'])
             ->orderByDesc('opened_at')
             ->take($limit)
-            ->get();
+            ->get()
+            ->each(fn (ShiftRecord $shift) => $this->applyComputedMoneySummary($shift));
     }
 
     public function moneySummary(?ShiftRecord $shift): array
@@ -95,6 +96,23 @@ class ShiftService
         }
 
         return $this->calculateMoneySummary($shift);
+    }
+
+    public function applyComputedMoneySummary(ShiftRecord $shift): ShiftRecord
+    {
+        if ($shift->status !== 'CLOSED') {
+            return $shift;
+        }
+
+        $summary = $this->calculateMoneySummary($shift);
+        $shift->setAttribute('expected_cash', $summary['cash']['expected']);
+        $shift->setAttribute('expected_qris', $summary['qris']['expected']);
+        $shift->setAttribute('discrepancy', (float) ($shift->actual_cash ?? 0) - (float) $summary['cash']['expected']);
+        $shift->setAttribute('total_sales_cash', $summary['cash']['sales']);
+        $shift->setAttribute('total_sales_qris', $summary['qris']['sales']);
+        $shift->setAttribute('total_expenses', $this->operatingExpenseTotal($summary));
+
+        return $shift;
     }
 
     public function ownerUpdateShift(string $shiftId, string $outletId, array $data, string $ownerId): ShiftRecord
@@ -300,8 +318,7 @@ class ShiftService
 
     private function usesActiveShiftFunds(PettyCash $movement): bool
     {
-        return $movement->category === 'RESTOCK'
-            && in_array($movement->payment_method, ['CASH', 'QRIS'], true);
+        return false;
     }
 
     private function resolvePaymentBucket(PettyCash $movement): string

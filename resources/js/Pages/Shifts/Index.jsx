@@ -97,8 +97,6 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
         'Tambah Kas',
         'Lainnya'
     ];
-    const cashShiftExpenses = Number(cashSummary?.cash?.expenses || 0);
-    const qrisShiftExpenses = Number(cashSummary?.qris?.expenses || 0);
     const cashierTopups = Number(cashSummary?.cash?.cashier_topups || 0);
     const drawerExpenses = Number(cashSummary?.cash?.drawer_expenses || 0) + Number(cashSummary?.qris?.drawer_expenses || 0);
 
@@ -319,12 +317,12 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                     <div className="bg-white rounded-lg border border-emerald-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-emerald-600">Saldo Cash Kasir</p>
                         <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.cash?.expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Kas awal + penjualan {formatRupiah(cashSummary.cash?.sales)} + top up {formatRupiah(cashierTopups)} - restok kas shift {formatRupiah(cashShiftExpenses)}.</p>
+                        <p className="mt-1 text-xs text-slate-500">Kas awal + penjualan {formatRupiah(cashSummary.cash?.sales)} + top up {formatRupiah(cashierTopups)}. Restok laci tidak mengurangi kas shift.</p>
                     </div>
                     <div className="bg-white rounded-lg border border-blue-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-blue-600">Saldo QRIS</p>
                         <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.qris?.expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Penjualan {formatRupiah(cashSummary.qris?.sales)} - restok QRIS shift {formatRupiah(qrisShiftExpenses)}.</p>
+                        <p className="mt-1 text-xs text-slate-500">Penjualan {formatRupiah(cashSummary.qris?.sales)}. Pengeluaran QRIS/laci dicatat terpisah di finance.</p>
                     </div>
                     <div className="bg-white rounded-lg border border-indigo-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-indigo-600">Total Cash + QRIS</p>
@@ -714,7 +712,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                             <span className="text-blue-400">{formatRupiah(shiftDetail.shift?.total_sales_qris)}</span>
                                         </div>
                                         <div className="flex justify-between">
-                                            <span className="text-slate-400">- Pengeluaran kas shift/QRIS</span>
+                                            <span className="text-slate-400">- Pengeluaran aktif shift</span>
                                             <span className="text-rose-400">
                                                 {formatRupiah((Number(shiftDetail.cash_summary?.cash?.expenses) || 0) + (Number(shiftDetail.cash_summary?.qris?.expenses) || 0))}
                                             </span>

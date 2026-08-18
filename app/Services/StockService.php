@@ -50,7 +50,7 @@ class StockService
             ]);
 
             if ($cost > 0) {
-                $sourceLabel = $fundSource === RestockLog::FUND_SOURCE_PRIVATE ? 'uang pribadi/luar kasir' : 'kas kasir';
+                $sourceLabel = $fundSource === RestockLog::FUND_SOURCE_PRIVATE ? 'uang pribadi/luar laci' : 'laci outlet';
                 $movement = PettyCash::create([
                     'outlet_id' => $row->outlet_id,
                     'amount' => $cost,
