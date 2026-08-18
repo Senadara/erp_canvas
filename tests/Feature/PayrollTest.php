@@ -149,6 +149,59 @@ class PayrollTest extends TestCase
         $this->assertSame(220000.0, (float) $payment->total_amount);
     }
 
+    public function test_july_filter_counts_unique_closed_shift_dates(): void
+    {
+        $outlet = Outlet::create(['name' => 'Outlet Payroll Juli']);
+        $owner = $this->createUser('owner-july-payroll@karsa.local', 'OWNER', 'Owner Juli');
+        $staff = $this->createUser('staff-july-payroll@karsa.local', 'STAFF', 'Sari Juli');
+        $staff->outlets()->attach($outlet->id);
+
+        foreach ([
+            ['2026-07-01', '08:00:00', '16:00:00'],
+            ['2026-07-02', '08:00:00', '14:00:00'],
+            ['2026-07-02', '16:00:00', '21:00:00'],
+            ['2026-07-31', '08:00:00', '15:00:00'],
+        ] as [$date, $open, $close]) {
+            ShiftRecord::create([
+                'outlet_id' => $outlet->id,
+                'name' => "Shift {$date} {$open}",
+                'opened_by' => $staff->id,
+                'closed_by' => $staff->id,
+                'opened_at' => Carbon::parse("{$date} {$open}"),
+                'closed_at' => Carbon::parse("{$date} {$close}"),
+                'opening_cash' => 50000,
+                'expected_cash' => 100000,
+                'actual_cash' => 100000,
+                'status' => 'CLOSED',
+            ]);
+        }
+
+        ShiftRecord::create([
+            'outlet_id' => $outlet->id,
+            'name' => 'Shift Belum Tutup',
+            'opened_by' => $staff->id,
+            'opened_at' => Carbon::parse('2026-07-20 08:00:00'),
+            'opening_cash' => 50000,
+            'expected_cash' => 50000,
+            'status' => 'OPEN',
+        ]);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->get(route('payroll', [
+                'start_date' => '2026-07-01',
+                'end_date' => '2026-07-31',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Payroll/Index')
+                ->has('summaries', 1)
+                ->where('summaries.0.employee_name', 'Sari Juli')
+                ->where('summaries.0.work_days', 3)
+                ->where('summaries.0.shift_count', 4)
+            );
+    }
+
     private function createUser(string $email, string $role, string $name): User
     {
         return User::create([
