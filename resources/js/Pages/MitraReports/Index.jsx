@@ -36,6 +36,14 @@ function formatQty(value, unit = '') {
 
 function formatDate(value, withTime = false) {
     if (!value) return '-';
+
+    if (!withTime && typeof value === 'string') {
+        const dateOnly = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+        if (dateOnly) {
+            return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(new Date(`${dateOnly}T00:00:00`));
+        }
+    }
+
     return new Intl.DateTimeFormat('id-ID', withTime
         ? { dateStyle: 'medium', timeStyle: 'short' }
         : { dateStyle: 'medium' }
