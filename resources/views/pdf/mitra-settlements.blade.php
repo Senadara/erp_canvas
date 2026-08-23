@@ -144,6 +144,11 @@
             color: #9f1239;
         }
 
+        .status-canceled {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
         .status-paid {
             background: #dcfce7;
             color: #166534;
@@ -258,6 +263,7 @@
         'PENDING' => 'Menunggu Mitra',
         'APPROVED' => 'Disetujui Mitra',
         'REJECTED' => 'Ditolak Mitra',
+        'CANCELED' => 'Dibatalkan Owner',
         'PAID' => 'Lunas',
     ];
     $methodLabels = [
@@ -330,7 +336,9 @@
     @php
         $items = collect($settlement->receipt_data ?? []);
         $statusClass = strtolower($settlement->status);
-        $isValidated = in_array($settlement->status, ['APPROVED', 'REJECTED', 'PAID'], true);
+        $isCanceled = $settlement->status === 'CANCELED';
+        $isRejected = $settlement->status === 'REJECTED';
+        $isValidated = in_array($settlement->status, ['APPROVED', 'REJECTED', 'CANCELED', 'PAID'], true);
     @endphp
 
     <section class="settlement {{ ! $isSingle && ! $loop->first ? 'new-page' : '' }}">
@@ -378,17 +386,17 @@
                     <strong>1. Diajukan Owner</strong><br>
                     <span class="muted">{{ $settlement->created_at->format('d/m/Y H:i') }}</span>
                 </td>
-                <td class="{{ $settlement->status === 'REJECTED' ? 'rejected' : ($isValidated ? 'done' : '') }}">
-                    <strong>2. {{ $settlement->status === 'REJECTED' ? 'Ditolak Mitra' : 'Validasi Mitra' }}</strong><br>
+                <td class="{{ ($isRejected || $isCanceled) ? 'rejected' : ($isValidated ? 'done' : '') }}">
+                    <strong>2. {{ $isCanceled ? 'Dibatalkan Owner' : ($isRejected ? 'Ditolak Mitra' : 'Validasi Mitra') }}</strong><br>
                     <span class="muted">
-                        {{ $settlement->validated_at ? $settlement->validated_at->format('d/m/Y H:i') : 'Belum divalidasi' }}
+                        {{ $isCanceled ? $settlement->updated_at->format('d/m/Y H:i') : ($settlement->validated_at ? $settlement->validated_at->format('d/m/Y H:i') : 'Belum divalidasi') }}
                         {{ $settlement->validator ? ' oleh '.$settlement->validator->display_name : '' }}
                     </span>
                 </td>
                 <td class="{{ $settlement->status === 'PAID' ? 'done' : '' }}">
                     <strong>3. Pembayaran</strong><br>
                     <span class="muted">
-                        {{ $settlement->paid_at ? $settlement->paid_at->format('d/m/Y H:i') : 'Belum dibayar' }}
+                        {{ $settlement->paid_at ? $settlement->paid_at->format('d/m/Y H:i') : ($isCanceled ? 'Tidak dilanjutkan' : 'Belum dibayar') }}
                         {{ $settlement->payer ? ' oleh '.$settlement->payer->display_name : '' }}
                     </span>
                 </td>

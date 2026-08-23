@@ -237,7 +237,15 @@ class MitraSettlementController extends Controller
 
         $filename = 'setoran-'.Str::slug($settlement->mitra?->display_name ?: 'mitra').'-'.$settlement->created_at->format('Ymd').'.pdf';
 
-        return $pdf->download($filename);
+        if ($request->boolean('browser_pdf')) {
+            return response()->json([
+                'filename' => $filename,
+                'mime' => 'application/pdf',
+                'base64' => base64_encode($pdf->output()),
+            ]);
+        }
+
+        return $pdf->stream($filename);
     }
 
     public function exportPdf(Request $request)
@@ -277,7 +285,17 @@ class MitraSettlementController extends Controller
             'generatedAt' => now(),
         ])->setPaper('a4', 'portrait');
 
-        return $pdf->download("rekap-setoran-{$startDate->format('Ymd')}-{$endDate->format('Ymd')}.pdf");
+        $filename = "rekap-setoran-{$startDate->format('Ymd')}-{$endDate->format('Ymd')}.pdf";
+
+        if ($request->boolean('browser_pdf')) {
+            return response()->json([
+                'filename' => $filename,
+                'mime' => 'application/pdf',
+                'base64' => base64_encode($pdf->output()),
+            ]);
+        }
+
+        return $pdf->stream($filename);
     }
 
     public function validateByMitra(Request $request, string $id)
@@ -309,6 +327,41 @@ class MitraSettlementController extends Controller
         return back()->with('success', $approved
             ? 'Pengajuan setoran disetujui. Owner dapat melanjutkan pembayaran.'
             : 'Pengajuan setoran ditolak dan dikembalikan kepada owner.');
+    }
+
+    public function cancel(Request $request, string $id)
+    {
+        $user = $request->user();
+        if (!$user || (!$user->isOwner() && !($user->feature_overrides['settlements'] ?? false))) {
+            abort(403, 'Anda tidak memiliki akses ke halaman ini.');
+        }
+
+        $data = $request->validate([
+            'cancel_note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $settlementQuery = MitraSettlement::where('id', $id);
+        if (! $user->isOwner()) {
+            $settlementQuery->where('outlet_id', $request->session()->get('outlet_id'));
+        }
+        $settlement = $settlementQuery->firstOrFail();
+
+        if (! in_array($settlement->status, [
+            MitraSettlement::STATUS_PENDING,
+            MitraSettlement::STATUS_APPROVED,
+        ], true)) {
+            return back()->withErrors(['settlement' => 'Hanya pengajuan yang belum lunas dan belum dibatalkan yang dapat dibatalkan.']);
+        }
+
+        $note = trim((string) ($data['cancel_note'] ?? ''));
+        $settlement->update([
+            'status' => MitraSettlement::STATUS_CANCELED,
+            'validation_note' => $note !== ''
+                ? "Dibatalkan owner: {$note}"
+                : 'Dibatalkan owner karena pengajuan perlu diperbaiki.',
+        ]);
+
+        return back()->with('success', 'Pengajuan setoran dibatalkan. Quantity terkait sudah bisa diajukan ulang.');
     }
 
     public function pay(Request $request, string $id)

@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, router, usePage } from '@inertiajs/react';
+import { openPdfInBrowser } from '@/Utils/openPdfInBrowser';
 import {
-    ArrowDownTrayIcon,
     BanknotesIcon,
     CalendarDaysIcon,
     CheckCircleIcon,
@@ -41,6 +41,7 @@ function statusMeta(status) {
         PENDING: { label: 'Menunggu Mitra', className: 'bg-amber-100 text-amber-800', icon: ClockIcon },
         APPROVED: { label: 'Disetujui Mitra', className: 'bg-sky-100 text-sky-800', icon: CheckCircleIcon },
         REJECTED: { label: 'Ditolak Mitra', className: 'bg-rose-100 text-rose-800', icon: XCircleIcon },
+        CANCELED: { label: 'Dibatalkan Owner', className: 'bg-slate-100 text-slate-700', icon: XCircleIcon },
         PAID: { label: 'Lunas', className: 'bg-emerald-100 text-emerald-800', icon: BanknotesIcon },
     };
     return values[status] || { label: status, className: 'bg-slate-100 text-slate-700', icon: ClockIcon };
@@ -80,6 +81,8 @@ export default function SettlementsIndex({
     const [customItems, setCustomItems] = useState([]);
     const [viewSettlement, setViewSettlement] = useState(null);
     const [viewUsageItem, setViewUsageItem] = useState(null);
+    const [cancelSettlementTarget, setCancelSettlementTarget] = useState(null);
+    const [cancelNote, setCancelNote] = useState('');
     const [filterMitra, setFilterMitra] = useState(selectedMitraId || '');
     const [filterStart, setFilterStart] = useState(startDate);
     const [filterEnd, setFilterEnd] = useState(endDate);
@@ -224,6 +227,38 @@ export default function SettlementsIndex({
         });
     };
 
+    const openCancelDialog = (settlement) => {
+        if (!settlement || !['PENDING', 'APPROVED'].includes(settlement.status)) return;
+        setCancelSettlementTarget(settlement);
+        setCancelNote('');
+    };
+
+    const closeCancelDialog = () => {
+        if (submitting) return;
+        setCancelSettlementTarget(null);
+        setCancelNote('');
+    };
+
+    const submitCancelSettlement = () => {
+        if (!cancelSettlementTarget || !['PENDING', 'APPROVED'].includes(cancelSettlementTarget.status)) return;
+        const targetId = cancelSettlementTarget.id;
+        setSubmitting(true);
+        router.post(route('settlements.cancel', targetId), {
+            cancel_note: cancelNote,
+        }, {
+            preserveScroll: true,
+            onSuccess: () => {
+                if (viewSettlement?.id === targetId) {
+                    setViewSettlement(null);
+                }
+                setCancelSettlementTarget(null);
+                setCancelNote('');
+                setActiveTab('history');
+            },
+            onFinish: () => setSubmitting(false),
+        });
+    };
+
     const openDetail = (settlement) => {
         setViewSettlement(settlement);
         setValidationNote(settlement.validation_note || '');
@@ -238,7 +273,8 @@ export default function SettlementsIndex({
         start_date: exportStart,
         end_date: exportEnd,
         mitra_id: isOwner && exportMitra ? exportMitra : undefined,
-    });
+    }, false);
+    const canOpenExportPdf = Boolean(exportStart && exportEnd && exportEnd >= exportStart);
 
     return (
         <ErpLayout title="Setoran Mitra">
@@ -503,17 +539,15 @@ export default function SettlementsIndex({
                             ) : (
                                 <div className="hidden lg:block" />
                             )}
-                            <a
-                                href={exportUrl}
-                                className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold ${
-                                    exportStart && exportEnd && exportEnd >= exportStart
-                                        ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                                        : 'pointer-events-none bg-slate-300 text-white'
-                                }`}
+                            <button
+                                type="button"
+                                onClick={() => openPdfInBrowser(exportUrl)}
+                                disabled={!canOpenExportPdf}
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                             >
-                                <ArrowDownTrayIcon className="h-5 w-5" />
-                                Export PDF Periode
-                            </a>
+                                <DocumentMagnifyingGlassIcon className="h-5 w-5" />
+                                Buka PDF Periode
+                            </button>
                         </div>
                     )}
 
@@ -529,7 +563,8 @@ export default function SettlementsIndex({
                                     submitting={submitting}
                                     onInspect={() => openDetail(settlement)}
                                     onPay={() => markPaid(settlement)}
-                                    pdfUrl={route('settlements.pdf', settlement.id)}
+                                    onCancel={() => openCancelDialog(settlement)}
+                                    pdfUrl={route('settlements.pdf', settlement.id, false)}
                                 />
                             ))}
                         </div>
@@ -547,11 +582,23 @@ export default function SettlementsIndex({
                     onClose={() => setViewSettlement(null)}
                     onValidate={validateSettlement}
                     onPay={() => markPaid(viewSettlement)}
-                    pdfUrl={route('settlements.pdf', viewSettlement.id)}
+                    onCancel={() => openCancelDialog(viewSettlement)}
+                    pdfUrl={route('settlements.pdf', viewSettlement.id, false)}
                     onUsageInspect={(item) => setViewUsageItem({
                         item,
                         calculationMethod: viewSettlement.calculation_method,
                     })}
+                />
+            )}
+
+            {cancelSettlementTarget && (
+                <CancelSettlementDialog
+                    settlement={cancelSettlementTarget}
+                    cancelNote={cancelNote}
+                    setCancelNote={setCancelNote}
+                    submitting={submitting}
+                    onClose={closeCancelDialog}
+                    onSubmit={submitCancelSettlement}
                 />
             )}
 
@@ -792,12 +839,13 @@ function CustomSettlementForm({
     );
 }
 
-function SettlementCard({ settlement, isOwner, submitting, onInspect, onPay, pdfUrl }) {
+function SettlementCard({ settlement, isOwner, submitting, onInspect, onPay, onCancel, pdfUrl }) {
     const status = statusMeta(settlement.status);
     const StatusIcon = status.icon;
     const settlementItems = settlement.receipt_data || [];
     const itemCount = settlementItems.length;
     const outletCount = new Set(settlementItems.map((item) => item.outlet_id || item.outlet_name).filter(Boolean)).size;
+    const canCancel = isOwner && ['PENDING', 'APPROVED'].includes(settlement.status);
     return (
         <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3">
@@ -817,19 +865,25 @@ function SettlementCard({ settlement, isOwner, submitting, onInspect, onPay, pdf
             </div>
             <SettlementProgress settlement={settlement} compact />
             {settlement.validation_note && <p className="mt-3 line-clamp-2 text-sm text-rose-700">Catatan: {settlement.validation_note}</p>}
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={onInspect} className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                     <DocumentMagnifyingGlassIcon className="h-4 w-4" />
                     Periksa
                 </button>
-                <a href={pdfUrl} className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 text-sm font-semibold text-indigo-700 hover:bg-indigo-100" title="Unduh PDF setoran">
-                    <ArrowDownTrayIcon className="h-4 w-4" />
+                <button type="button" onClick={() => openPdfInBrowser(pdfUrl)} className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 text-sm font-semibold text-indigo-700 hover:bg-indigo-100" title="Buka PDF setoran">
+                    <DocumentMagnifyingGlassIcon className="h-4 w-4" />
                     PDF
-                </a>
+                </button>
                 {isOwner && settlement.status === 'APPROVED' && (
                     <button type="button" disabled={submitting} onClick={onPay} className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
                         <BanknotesIcon className="h-4 w-4" />
                         Tandai Lunas
+                    </button>
+                )}
+                {canCancel && (
+                    <button type="button" disabled={submitting} onClick={onCancel} className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-rose-200 px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50">
+                        <XCircleIcon className="h-4 w-4" />
+                        Batalkan
                     </button>
                 )}
             </div>
@@ -837,10 +891,107 @@ function SettlementCard({ settlement, isOwner, submitting, onInspect, onPay, pdf
     );
 }
 
-function SettlementDetail({ settlement, isOwner, validationNote, setValidationNote, submitting, onClose, onValidate, onPay, pdfUrl, onUsageInspect }) {
+function CancelSettlementDialog({ settlement, cancelNote, setCancelNote, submitting, onClose, onSubmit }) {
+    const status = statusMeta(settlement.status);
+    const StatusIcon = status.icon;
+    const itemCount = (settlement.receipt_data || []).length;
+
+    const handleSubmit = (event) => {
+        event.preventDefault();
+        onSubmit();
+    };
+
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-3 sm:p-5" role="dialog" aria-modal="true" aria-labelledby="cancel-settlement-title">
+            <form onSubmit={handleSubmit} className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
+                <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6">
+                    <div className="min-w-0">
+                        <h2 id="cancel-settlement-title" className="text-lg font-semibold text-slate-900">Batalkan Pengajuan Setoran</h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                            {settlement.mitra?.display_name || 'Mitra'} - {formatDate(settlement.period_start)} sampai {formatDate(settlement.period_end)}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={submitting}
+                        className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+                        aria-label="Tutup"
+                    >
+                        <XMarkIcon className="h-5 w-5" />
+                    </button>
+                </div>
+
+                <div className="overflow-y-auto px-5 py-5 sm:px-6">
+                    <dl className="grid gap-x-6 gap-y-4 border-b border-slate-200 pb-5 sm:grid-cols-2">
+                        <div>
+                            <dt className="text-xs font-semibold uppercase text-slate-500">Total Pengajuan</dt>
+                            <dd className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(settlement.total_amount)}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-xs font-semibold uppercase text-slate-500">Status Saat Ini</dt>
+                            <dd className="mt-2">
+                                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${status.className}`}>
+                                    <StatusIcon className="h-4 w-4" />
+                                    {status.label}
+                                </span>
+                            </dd>
+                        </div>
+                        <div>
+                            <dt className="text-xs font-semibold uppercase text-slate-500">Metode</dt>
+                            <dd className="mt-1 font-semibold text-slate-900">{methodLabel(settlement.calculation_method)}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-xs font-semibold uppercase text-slate-500">Rincian Stok</dt>
+                            <dd className="mt-1 font-semibold text-slate-900">{itemCount} item</dd>
+                        </div>
+                    </dl>
+
+                    <div className="mt-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                        Pembatalan akan melepas kunci quantity pada pengajuan ini, sehingga stok yang sama bisa diajukan ulang dengan data yang sudah diperbaiki. Setoran yang sudah lunas tetap tidak bisa dibatalkan.
+                    </div>
+
+                    <label className="mt-5 block">
+                        <span className="mb-1.5 block text-sm font-semibold text-slate-800">Alasan pembatalan</span>
+                        <textarea
+                            rows="4"
+                            value={cancelNote}
+                            onChange={(event) => setCancelNote(event.target.value)}
+                            className="w-full rounded-md border-slate-300 text-sm leading-6 focus:border-rose-500 focus:ring-rose-500"
+                            placeholder="Contoh: salah periode, salah quantity, atau perlu membuat ulang pengajuan."
+                        />
+                        <span className="mt-2 block text-xs text-slate-500">Opsional, tetapi disarankan diisi agar histori mudah ditelusuri.</span>
+                    </label>
+                </div>
+
+                <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={submitting}
+                        className="inline-flex h-11 items-center justify-center rounded-md border border-slate-300 px-5 text-sm font-semibold text-slate-700 hover:bg-white disabled:opacity-40"
+                    >
+                        Kembali
+                    </button>
+                    <button
+                        type="submit"
+                        disabled={submitting}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-rose-600 px-5 text-sm font-semibold text-white hover:bg-rose-700 disabled:bg-rose-300"
+                    >
+                        <XCircleIcon className="h-5 w-5" />
+                        {submitting ? 'Membatalkan...' : 'Batalkan Pengajuan'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+function SettlementDetail({ settlement, isOwner, validationNote, setValidationNote, submitting, onClose, onValidate, onPay, onCancel, pdfUrl, onUsageInspect }) {
     const status = statusMeta(settlement.status);
     const items = settlement.receipt_data || [];
     const outletCount = new Set(items.map((item) => item.outlet_id || item.outlet_name).filter(Boolean)).size;
+    const canCancel = isOwner && ['PENDING', 'APPROVED'].includes(settlement.status);
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 sm:p-5">
             <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
@@ -850,9 +1001,9 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
                         <p className="mt-1 text-sm text-slate-500">{formatDate(settlement.period_start)} - {formatDate(settlement.period_end)}</p>
                     </div>
                     <div className="flex items-center gap-1">
-                        <a href={pdfUrl} className="rounded-md p-2 text-indigo-600 hover:bg-indigo-50" aria-label="Unduh PDF" title="Unduh PDF setoran">
-                            <ArrowDownTrayIcon className="h-5 w-5" />
-                        </a>
+                        <button type="button" onClick={() => openPdfInBrowser(pdfUrl)} className="rounded-md p-2 text-indigo-600 hover:bg-indigo-50" aria-label="Buka PDF" title="Buka PDF setoran">
+                            <DocumentMagnifyingGlassIcon className="h-5 w-5" />
+                        </button>
                         <button type="button" onClick={onClose} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
                             <XMarkIcon className="h-5 w-5" />
                         </button>
@@ -940,12 +1091,20 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
                         </div>
                     )}
 
-                    {isOwner && settlement.status === 'APPROVED' && (
-                        <div className="mt-6 flex justify-end border-t border-slate-200 pt-5">
+                    {isOwner && (settlement.status === 'APPROVED' || canCancel) && (
+                        <div className="mt-6 flex flex-col justify-end gap-2 border-t border-slate-200 pt-5 sm:flex-row">
+                            {canCancel && (
+                                <button type="button" disabled={submitting} onClick={onCancel} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-rose-200 px-5 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50">
+                                    <XCircleIcon className="h-5 w-5" />
+                                    Batalkan Pengajuan
+                                </button>
+                            )}
+                            {settlement.status === 'APPROVED' && (
                             <button type="button" disabled={submitting} onClick={onPay} className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
                                 <BanknotesIcon className="h-5 w-5" />
                                 Tandai Sudah Dibayar
                             </button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1090,7 +1249,8 @@ function UsageMetric({ label, value, tone }) {
 }
 
 function SettlementProgress({ settlement, compact = false }) {
-    const isValidated = ['APPROVED', 'REJECTED', 'PAID'].includes(settlement.status);
+    const isCanceled = settlement.status === 'CANCELED';
+    const isValidated = ['APPROVED', 'REJECTED', 'PAID', 'CANCELED'].includes(settlement.status);
     const isPaid = settlement.status === 'PAID';
     const rejected = settlement.status === 'REJECTED';
     const steps = [
@@ -1101,18 +1261,20 @@ function SettlementProgress({ settlement, compact = false }) {
             rejected: false,
         },
         {
-            label: rejected ? 'Ditolak Mitra' : 'Validasi Mitra',
-            detail: settlement.validated_at
+            label: isCanceled ? 'Dibatalkan Owner' : (rejected ? 'Ditolak Mitra' : 'Validasi Mitra'),
+            detail: isCanceled
+                ? formatDate(settlement.updated_at, true)
+                : settlement.validated_at
                 ? `${formatDate(settlement.validated_at, true)}${settlement.validator?.display_name ? ` oleh ${settlement.validator.display_name}` : ''}`
                 : 'Menunggu pemeriksaan',
             complete: isValidated,
-            rejected,
+            rejected: rejected || isCanceled,
         },
         {
             label: 'Pembayaran',
             detail: settlement.paid_at
                 ? `${formatDate(settlement.paid_at, true)}${settlement.payer?.display_name ? ` oleh ${settlement.payer.display_name}` : ''}`
-                : 'Belum dibayar',
+                : isCanceled ? 'Tidak dilanjutkan' : 'Belum dibayar',
             complete: isPaid,
             rejected: false,
         },

@@ -53,6 +53,7 @@ function settlementBadge(status) {
         PENDING: ['Menunggu Validasi', 'bg-amber-100 text-amber-800'],
         APPROVED: ['Disetujui', 'bg-sky-100 text-sky-800'],
         REJECTED: ['Ditolak', 'bg-rose-100 text-rose-800'],
+        CANCELED: ['Dibatalkan Owner', 'bg-slate-100 text-slate-700'],
         PAID: ['Lunas', 'bg-emerald-100 text-emerald-800'],
     };
     const [label, className] = statuses[status] || [status, 'bg-slate-100 text-slate-700'];

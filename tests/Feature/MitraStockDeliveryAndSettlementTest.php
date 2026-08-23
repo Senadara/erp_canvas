@@ -207,7 +207,18 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
             ->assertOk()
             ->assertHeader('content-type', 'application/pdf');
         $this->assertStringStartsWith('%PDF-', $singlePdf->getContent());
-        $singlePdf->assertDownload('setoran-mitra-'.now()->format('Ymd').'.pdf');
+        $this->assertStringStartsWith('inline;', $singlePdf->headers->get('content-disposition'));
+        $this->assertStringContainsString('setoran-mitra-'.now()->format('Ymd').'.pdf', $singlePdf->headers->get('content-disposition'));
+
+        $singlePdfPayload = $this->actingAs($mitra)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->get(route('settlements.pdf', [
+                'id' => $settlement->id,
+                'browser_pdf' => 1,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('mime', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', base64_decode($singlePdfPayload->json('base64'), true));
 
         $periodPdf = $this->actingAs($owner)
             ->withSession(['outlet_id' => $outlet->id])
@@ -219,6 +230,23 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
             ->assertOk()
             ->assertHeader('content-type', 'application/pdf');
         $this->assertStringStartsWith('%PDF-', $periodPdf->getContent());
+        $this->assertStringStartsWith('inline;', $periodPdf->headers->get('content-disposition'));
+        $this->assertStringContainsString(
+            'rekap-setoran-'.now()->startOfMonth()->format('Ymd').'-'.now()->endOfMonth()->format('Ymd').'.pdf',
+            $periodPdf->headers->get('content-disposition')
+        );
+
+        $periodPdfPayload = $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->get(route('settlements.export-pdf', [
+                'start_date' => now()->startOfMonth()->format('Y-m-d'),
+                'end_date' => now()->endOfMonth()->format('Y-m-d'),
+                'mitra_id' => $mitra->id,
+                'browser_pdf' => 1,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('mime', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', base64_decode($periodPdfPayload->json('base64'), true));
 
         $otherMitra = $this->createUser('other-mitra@delivery.test', 'MITRA');
         $otherMitra->outlets()->attach($outlet->id);
@@ -227,6 +255,66 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
             ->withSession(['outlet_id' => $outlet->id])
             ->get(route('settlements.pdf', $settlement->id))
             ->assertNotFound();
+    }
+
+    public function test_owner_can_cancel_unpaid_settlement_and_submit_again(): void
+    {
+        [$outlet, $owner, $staff, $mitra, $stock] = $this->createContext();
+
+        $deliveryService = app(MitraStockDeliveryService::class);
+        $delivery = $deliveryService->create($mitra, $stock->id, 20, null);
+        $deliveryService->receive($delivery->id, $staff, 20, null);
+
+        $payload = [
+            'mitra_id' => $mitra->id,
+            'start_date' => now()->startOfMonth()->format('Y-m-d'),
+            'end_date' => now()->endOfMonth()->format('Y-m-d'),
+            'calculation_method' => 'RESTOCK',
+        ];
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), $payload)
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $firstSettlement = MitraSettlement::firstOrFail();
+        $this->assertSame(MitraSettlement::STATUS_PENDING, $firstSettlement->status);
+        $this->assertSame(20.0, (float) $firstSettlement->receipt_data[0]['calculated_qty']);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), $payload)
+            ->assertSessionHasErrors('settlement');
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.cancel', $firstSettlement->id), [
+                'cancel_note' => 'Salah periode input',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $firstSettlement->refresh();
+        $this->assertSame(MitraSettlement::STATUS_CANCELED, $firstSettlement->status);
+        $this->assertStringContainsString('Salah periode input', $firstSettlement->validation_note);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), $payload)
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame(2, MitraSettlement::count());
+        $newSettlement = MitraSettlement::where('status', MitraSettlement::STATUS_PENDING)->firstOrFail();
+        $this->assertSame(20.0, (float) $newSettlement->receipt_data[0]['calculated_qty']);
+
+        $this->actingAs($mitra)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.validate', $firstSettlement->id), [
+                'decision' => 'APPROVE',
+            ])
+            ->assertSessionHasErrors('settlement');
     }
 
     public function test_restock_settlement_counts_one_central_warehouse_instead_of_each_outlet_transfer(): void

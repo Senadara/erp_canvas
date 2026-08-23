@@ -79,6 +79,7 @@ Route::middleware(['auth', 'outlet'])->group(function () {
     Route::get('/settlements/export/pdf', [\App\Http\Controllers\MitraSettlementController::class, 'exportPdf'])->name('settlements.export-pdf');
     Route::get('/settlements/{id}/pdf', [\App\Http\Controllers\MitraSettlementController::class, 'downloadPdf'])->name('settlements.pdf');
     Route::post('/settlements', [\App\Http\Controllers\MitraSettlementController::class, 'store'])->name('settlements.store');
+    Route::post('/settlements/{id}/cancel', [\App\Http\Controllers\MitraSettlementController::class, 'cancel'])->name('settlements.cancel');
     Route::post('/settlements/{id}/validate', [\App\Http\Controllers\MitraSettlementController::class, 'validateByMitra'])->name('settlements.validate');
     Route::post('/settlements/{id}/pay', [\App\Http\Controllers\MitraSettlementController::class, 'pay'])->name('settlements.pay');
 

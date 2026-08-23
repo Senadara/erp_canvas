@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, router } from '@inertiajs/react';
+import { openPdfInBrowser } from '@/Utils/openPdfInBrowser';
 import {
     BanknotesIcon,
     CalendarDaysIcon,
     ClipboardDocumentListIcon,
     ClockIcon,
     CreditCardIcon,
+    DocumentMagnifyingGlassIcon,
     FunnelIcon,
     PrinterIcon,
     Squares2X2Icon,
@@ -102,6 +104,10 @@ export default function ESettlement({ filters, report = {} }) {
     const privateMoneyUsage = Number(summary.outside_out) || 0;
     const privateMoneyIn = Number(summary.outside_in) || 0;
     const ownerWithdrawalTotal = (Number(summary.withdraw_cash) || 0) + (Number(summary.withdraw_qris) || 0);
+    const pdfUrl = route('reports.e-settlement.pdf', {
+        start_date: startDate,
+        end_date: endDate,
+    }, false);
 
     const applyFilter = (event) => {
         event.preventDefault();
@@ -170,6 +176,15 @@ export default function ESettlement({ filters, report = {} }) {
                         >
                             <PrinterIcon className="h-4 w-4" />
                             Print / Simpan PDF
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => openPdfInBrowser(pdfUrl)}
+                            disabled={invalidRange || !startDate || !endDate}
+                            className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                        >
+                            <DocumentMagnifyingGlassIcon className="h-4 w-4" />
+                            Buka PDF
                         </button>
                     </div>
                 </div>

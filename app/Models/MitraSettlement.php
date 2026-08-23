@@ -13,6 +13,7 @@ class MitraSettlement extends Model
     public const STATUS_PENDING = 'PENDING';
     public const STATUS_APPROVED = 'APPROVED';
     public const STATUS_REJECTED = 'REJECTED';
+    public const STATUS_CANCELED = 'CANCELED';
     public const STATUS_PAID = 'PAID';
 
     protected $fillable = [

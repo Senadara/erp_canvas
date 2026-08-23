@@ -102,7 +102,17 @@ class ReportController extends Controller
             'generatedAt' => now(),
         ])->setPaper('a4', 'portrait');
 
-        return $pdf->download("e-settlement-{$startDate->format('Ymd')}-{$endDate->format('Ymd')}.pdf");
+        $filename = "e-settlement-{$startDate->format('Ymd')}-{$endDate->format('Ymd')}.pdf";
+
+        if ($request->boolean('browser_pdf')) {
+            return response()->json([
+                'filename' => $filename,
+                'mime' => 'application/pdf',
+                'base64' => base64_encode($pdf->output()),
+            ]);
+        }
+
+        return $pdf->stream($filename);
     }
 
     private function settlementDateRange(Request $request): array

@@ -253,7 +253,20 @@ class ProductPerformanceReportTest extends TestCase
                 ->assertHeader('content-type', 'application/pdf');
 
             $this->assertStringStartsWith('%PDF-', $pdf->getContent());
-            $pdf->assertDownload('e-settlement-20260710-20260710.pdf');
+            $this->assertStringStartsWith('inline;', $pdf->headers->get('content-disposition'));
+            $this->assertStringContainsString('e-settlement-20260710-20260710.pdf', $pdf->headers->get('content-disposition'));
+
+            $pdfPayload = $this->actingAs($owner)
+                ->withSession(['outlet_id' => $outlet->id])
+                ->get(route('reports.e-settlement.pdf', [
+                    'start_date' => '2026-07-10',
+                    'end_date' => '2026-07-10',
+                    'browser_pdf' => 1,
+                ]))
+                ->assertOk()
+                ->assertJsonPath('mime', 'application/pdf');
+
+            $this->assertStringStartsWith('%PDF-', base64_decode($pdfPayload->json('base64'), true));
         } finally {
             Carbon::setTestNow();
         }
