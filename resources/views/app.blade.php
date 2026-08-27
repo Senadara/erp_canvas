@@ -6,6 +6,9 @@
 
         <title inertia>{{ config('app.name', 'ERP Karsa') }}</title>
         <meta name="theme-color" content="#065f46">
+        <link rel="icon" href="/favicon.ico" sizes="any">
+        <link rel="icon" type="image/png" href="/brand/karsa-logo-512.png">
+        <link rel="apple-touch-icon" href="/brand/karsa-logo-180.png">
         <link rel="manifest" href="/manifest.webmanifest">
 
         <!-- Fonts -->

@@ -36,6 +36,20 @@ function costCategoryClass(category) {
     return 'bg-emerald-100 text-emerald-800';
 }
 
+function settlementUsageLabel(method) {
+    if (method === 'MANUAL') return 'Manual';
+    if (method === 'RESTOCK_AS_USED') return 'Restok habis';
+    if (method === 'RESTOCK_MINUS_STOCK_OPNAME') return 'Restok - opname';
+    return 'BOM penjualan';
+}
+
+function settlementUsageClass(method) {
+    if (method === 'MANUAL') return 'bg-amber-100 text-amber-800';
+    if (method === 'RESTOCK_AS_USED') return 'bg-rose-100 text-rose-800';
+    if (method === 'RESTOCK_MINUS_STOCK_OPNAME') return 'bg-blue-100 text-blue-800';
+    return 'bg-slate-100 text-slate-700';
+}
+
 function deliveryStatus(delivery) {
     if (delivery.status === 'SENT') {
         return { label: 'Menunggu Gudang', className: 'bg-amber-100 text-amber-800' };
@@ -76,6 +90,7 @@ export default function StockIndex({
         min_restock_qty: '1',
         restock_price: '0',
         cost_category: 'MATERIAL',
+        settlement_usage_method: 'BOM',
     });
 
     const { data: restockData, setData: setRestockData, post: postRestock, processing: restockProcessing, reset: resetRestock, errors: restockErrors } = useForm({
@@ -145,6 +160,7 @@ export default function StockIndex({
                 min_restock_qty: item.min_restock_qty || '1',
                 restock_price: item.restock_price || '0',
                 cost_category: item.cost_category || 'MATERIAL',
+                settlement_usage_method: item.settlement_usage_method || 'BOM',
             });
         } else {
             setEditingItem(null);
@@ -381,6 +397,7 @@ export default function StockIndex({
                             <th className="px-4 py-3 font-medium">Stok Saat Ini</th>
                             <th className="px-4 py-3 font-medium">Satuan</th>
                             <th className="px-4 py-3 font-medium">Trackable</th>
+                            <th className="px-4 py-3 font-medium">Metode Setoran</th>
                             {isMitra && <th className="px-4 py-3 font-medium">Harga Mitra (HPP)</th>}
                             <th className="px-4 py-3 font-medium">Aksi</th>
                         </tr>
@@ -388,7 +405,7 @@ export default function StockIndex({
                     <tbody className="divide-y divide-slate-200">
                         {filteredStockItems.length === 0 ? (
                             <tr>
-                                <td colSpan={isMitra ? 7 : 6} className="px-4 py-8 text-center text-slate-500">
+                                <td colSpan={isMitra ? 8 : 7} className="px-4 py-8 text-center text-slate-500">
                                     Belum ada bahan stok.
                                 </td>
                             </tr>
@@ -414,6 +431,11 @@ export default function StockIndex({
                                         ) : (
                                             <span className="text-slate-500 bg-slate-100 px-2 py-1 rounded text-xs font-medium">Tidak</span>
                                         )}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${settlementUsageClass(item.settlement_usage_method)}`}>
+                                            {settlementUsageLabel(item.settlement_usage_method)}
+                                        </span>
                                     </td>
                                     {isMitra && (
                                         <td className="px-4 py-3">
@@ -766,6 +788,24 @@ export default function StockIndex({
                                     <option value="SUPPLY">Supply Pendukung</option>
                                 </select>
                                 <p className="mt-1 text-[10px] text-slate-500">Kemasan seperti wadah bisa dimasukkan ke BOM produk agar HPP otomatis lengkap.</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Metode Hitung Setoran Mitra</label>
+                                <select
+                                    value={data.settlement_usage_method}
+                                    onChange={e => setData('settlement_usage_method', e.target.value)}
+                                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                                >
+                                    <option value="BOM">BOM / penjualan produk</option>
+                                    <option value="MANUAL">Catatan pemakaian manual</option>
+                                    <option value="RESTOCK_AS_USED">Restok outlet dianggap terpakai</option>
+                                    <option value="RESTOCK_MINUS_STOCK_OPNAME">Restok dikurangi stok akhir/opname</option>
+                                </select>
+                                <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                                    Pakai manual/opname untuk bahan untrackable seperti saus, topping, atau stok yang tidak punya rasio pasti di produk.
+                                </p>
+                                {errors.settlement_usage_method && <p className="text-rose-500 text-xs mt-1">{errors.settlement_usage_method}</p>}
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">

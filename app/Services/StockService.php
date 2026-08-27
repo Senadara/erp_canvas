@@ -168,6 +168,7 @@ class StockService
             'min_restock_qty' => $data['min_restock_qty'] ?? 1,
             'restock_price' => $data['restock_price'] ?? 0,
             'cost_category' => $data['cost_category'] ?? ProductCostService::CATEGORY_MATERIAL,
+            'settlement_usage_method' => $data['settlement_usage_method'] ?? StockItem::SETTLEMENT_USAGE_BOM,
         ]);
     }
 
@@ -186,6 +187,7 @@ class StockService
             'min_restock_qty' => $data['min_restock_qty'] ?? $item->min_restock_qty,
             'restock_price' => $data['restock_price'] ?? $item->restock_price,
             'cost_category' => $data['cost_category'] ?? $item->cost_category ?? ProductCostService::CATEGORY_MATERIAL,
+            'settlement_usage_method' => $data['settlement_usage_method'] ?? $item->settlement_usage_method ?? StockItem::SETTLEMENT_USAGE_BOM,
         ]);
 
         return $item;

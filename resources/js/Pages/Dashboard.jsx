@@ -1,12 +1,17 @@
 import ErpLayout from '@/Layouts/ErpLayout';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 import {
     ArchiveBoxIcon,
+    ArrowPathIcon,
     ArrowTrendingUpIcon,
     BanknotesIcon,
     BuildingOfficeIcon,
     CalculatorIcon,
+    CalendarDaysIcon,
     ChartBarIcon,
+    ChevronLeftIcon,
+    ChevronRightIcon,
     ClockIcon,
     CubeIcon,
     ExclamationTriangleIcon,
@@ -26,9 +31,52 @@ function formatNumber(value) {
     return new Intl.NumberFormat('id-ID').format(Number(value) || 0);
 }
 
+function formatQuantity(value) {
+    const n = Number(value) || 0;
+
+    return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
+}
+
+function formatLocalDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+}
+
+function todayDateString() {
+    return formatLocalDate(new Date());
+}
+
+function dateFromString(dateString) {
+    const [year, month, day] = String(dateString || '').split('-').map(Number);
+
+    if (!year || !month || !day) return new Date();
+
+    return new Date(year, month - 1, day);
+}
+
+function addDays(dateString, amount) {
+    const date = dateFromString(dateString);
+    date.setDate(date.getDate() + amount);
+
+    return formatLocalDate(date);
+}
+
+function formatDateLabel(dateString) {
+    return new Intl.DateTimeFormat('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+    }).format(dateFromString(dateString));
+}
+
 const iconMap = {
     cashier: CalculatorIcon,
     chart: ChartBarIcon,
+    expense: BanknotesIcon,
     finance: BanknotesIcon,
     map: MapPinIcon,
     outlet: BuildingOfficeIcon,
@@ -115,6 +163,93 @@ function legacyDashboard(stats = {}, chartData = []) {
     };
 }
 
+function DashboardDateFilter({ dailyView }) {
+    const currentDate = dailyView?.date || todayDateString();
+    const today = dailyView?.today_date || todayDateString();
+    const [date, setDate] = useState(currentDate);
+
+    useEffect(() => {
+        setDate(currentDate);
+    }, [currentDate]);
+
+    const visitDate = (targetDate) => {
+        if (!targetDate) return;
+
+        router.get(
+            route('dashboard'),
+            targetDate === today ? {} : { date: targetDate },
+            {
+                preserveScroll: true,
+                preserveState: false,
+                replace: true,
+            },
+        );
+    };
+
+    const submit = (event) => {
+        event.preventDefault();
+        visitDate(date);
+    };
+
+    return (
+        <form onSubmit={submit} className="w-full rounded-lg border border-slate-200 bg-white p-3 shadow-sm lg:w-auto lg:min-w-[430px]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="min-w-0 flex-1">
+                    <label htmlFor="dashboard-date" className="text-xs font-semibold uppercase text-slate-500">
+                        Tanggal Dashboard
+                    </label>
+                    <div className="mt-1 flex min-h-[42px] items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3">
+                        <CalendarDaysIcon className="h-5 w-5 shrink-0 text-slate-500" />
+                        <input
+                            id="dashboard-date"
+                            type="date"
+                            value={date}
+                            onChange={(event) => setDate(event.target.value)}
+                            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-semibold text-slate-900 focus:ring-0"
+                        />
+                    </div>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => visitDate(dailyView?.previous_date || addDays(currentDate, -1))}
+                        className="flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                        title="Hari sebelumnya"
+                        aria-label="Hari sebelumnya"
+                    >
+                        <ChevronLeftIcon className="h-5 w-5" />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => visitDate(dailyView?.next_date || addDays(currentDate, 1))}
+                        className="flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                        title="Hari berikutnya"
+                        aria-label="Hari berikutnya"
+                    >
+                        <ChevronRightIcon className="h-5 w-5" />
+                    </button>
+                    <button
+                        type="submit"
+                        className="min-h-[42px] rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    >
+                        Terapkan
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => visitDate(today)}
+                        className="flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                        title="Reset ke hari ini"
+                        aria-label="Reset ke hari ini"
+                    >
+                        <ArrowPathIcon className="h-5 w-5" />
+                    </button>
+                </div>
+            </div>
+        </form>
+    );
+}
+
 function StatCard({ card }) {
     const tone = toneMap[card.tone] || toneMap.slate;
     const Icon = iconMap[card.icon] || CubeIcon;
@@ -132,6 +267,114 @@ function StatCard({ card }) {
                 </div>
             </div>
         </div>
+    );
+}
+
+function DailySoldProducts({ dailyView }) {
+    const summary = dailyView?.summary || {};
+    const soldProducts = dailyView?.soldProducts || [];
+    const selectedLabel = formatDateLabel(dailyView?.date);
+    const showExpenses = dailyView?.show_expenses !== false;
+    const netAfterExpenses = Number(summary.totalSales || 0) - Number(summary.expenses || 0);
+
+    const summaryRows = [
+        { label: 'Pendapatan', value: formatRupiah(summary.totalSales), className: 'text-emerald-700' },
+        ...(showExpenses ? [
+            { label: 'Pengeluaran', value: formatRupiah(summary.expenses), className: 'text-rose-700' },
+            { label: 'Sisa Setelah Pengeluaran', value: formatRupiah(netAfterExpenses), className: netAfterExpenses >= 0 ? 'text-slate-900' : 'text-rose-700' },
+        ] : []),
+        { label: 'Produk Terjual', value: `${formatQuantity(summary.soldQuantity)} porsi`, className: 'text-indigo-700' },
+        { label: 'Tunai', value: formatRupiah(summary.cashSales), className: 'text-slate-700' },
+        { label: 'QRIS', value: formatRupiah(summary.qrisSales), className: 'text-slate-700' },
+    ];
+
+    return (
+        <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(280px,0.75fr)_minmax(0,1.25fr)]">
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <h2 className="text-base font-semibold text-slate-900">Ringkasan Harian</h2>
+                        <p className="mt-1 text-sm text-slate-500">{selectedLabel}</p>
+                    </div>
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                        <CalendarDaysIcon className="h-5 w-5" />
+                    </div>
+                </div>
+
+                <dl className="mt-5 divide-y divide-slate-100">
+                    {summaryRows.map((row) => (
+                        <div key={row.label} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                            <dt className="text-sm font-medium text-slate-500">{row.label}</dt>
+                            <dd className={`text-right text-sm font-bold ${row.className}`}>{row.value}</dd>
+                        </div>
+                    ))}
+                </dl>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-2 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h2 className="text-base font-semibold text-slate-900">Daftar Produk Terjual</h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                            {formatNumber(summary.transactionCount)} transaksi pada {selectedLabel}
+                        </p>
+                    </div>
+                    <span className="w-fit rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                        {formatNumber(summary.soldProductCount)} jenis produk
+                    </span>
+                </div>
+
+                {soldProducts.length > 0 ? (
+                    <>
+                        <div className="hidden max-h-[420px] overflow-auto md:block">
+                            <table className="min-w-full divide-y divide-slate-100 text-sm">
+                                <thead className="sticky top-0 bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
+                                    <tr>
+                                        <th className="px-5 py-3">Produk</th>
+                                        <th className="px-5 py-3 text-right">Qty</th>
+                                        <th className="px-5 py-3 text-right">Pendapatan</th>
+                                        <th className="px-5 py-3 text-right">Transaksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {soldProducts.map((product) => (
+                                        <tr key={product.product_id} className="hover:bg-slate-50">
+                                            <td className="min-w-[180px] px-5 py-3 font-semibold text-slate-900">{product.product_name}</td>
+                                            <td className="px-5 py-3 text-right font-semibold text-indigo-700">{formatQuantity(product.quantity_sold)}</td>
+                                            <td className="px-5 py-3 text-right font-semibold text-emerald-700">{formatRupiah(product.revenue)}</td>
+                                            <td className="px-5 py-3 text-right text-slate-600">{formatNumber(product.transaction_count)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="grid gap-3 p-4 md:hidden">
+                            {soldProducts.map((product) => (
+                                <div key={product.product_id} className="rounded-lg border border-slate-200 p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <p className="min-w-0 flex-1 text-sm font-semibold text-slate-900">{product.product_name}</p>
+                                        <span className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700">
+                                            {formatQuantity(product.quantity_sold)}
+                                        </span>
+                                    </div>
+                                    <div className="mt-3 flex items-center justify-between gap-3 text-sm">
+                                        <span className="text-slate-500">{formatNumber(product.transaction_count)} transaksi</span>
+                                        <span className="font-semibold text-emerald-700">{formatRupiah(product.revenue)}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                ) : (
+                    <div className="flex min-h-[220px] items-center justify-center p-5">
+                        <p className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm font-medium text-slate-400">
+                            Belum ada produk terjual pada tanggal ini.
+                        </p>
+                    </div>
+                )}
+            </div>
+        </section>
     );
 }
 
@@ -264,24 +507,31 @@ function Alerts({ alerts }) {
 
 export default function Dashboard({ stats, chartData, dashboard }) {
     const data = dashboard || legacyDashboard(stats, chartData);
+    const cards = data.cards || [];
+    const cardGridClass = cards.length > 4
+        ? 'sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6'
+        : 'sm:grid-cols-2 xl:grid-cols-4';
 
     return (
         <ErpLayout title={data.title || 'Dashboard'}>
             <Head title={data.title || 'Dashboard'} />
 
-            <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                     <p className="text-xs font-semibold uppercase text-slate-500">{data.role}</p>
                     <h1 className="mt-1 text-2xl font-semibold text-slate-950">{data.title}</h1>
                     {data.subtitle && <p className="mt-1 text-sm text-slate-500">{data.subtitle}</p>}
                 </div>
+                <DashboardDateFilter dailyView={data.dailyView} />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {(data.cards || []).map((card) => (
+            <div className={`grid gap-4 ${cardGridClass}`}>
+                {cards.map((card) => (
                     <StatCard key={card.key} card={card} />
                 ))}
             </div>
+
+            <DailySoldProducts dailyView={data.dailyView} />
 
             <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
                 <DashboardChart chart={data.chart} />

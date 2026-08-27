@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, Link, router } from '@inertiajs/react';
 import {
@@ -77,27 +77,61 @@ function wasteTypeLabel(type) {
     }[type] || type;
 }
 
-export default function MitraReportsIndex({ reportData = [], overview = {}, startDate, endDate }) {
+export default function MitraReportsIndex({
+    reportData = [],
+    overview = {},
+    startDate,
+    endDate,
+    mitras = [],
+    selectedMitraId = null,
+    selectedMitra = null,
+    isOwner = false,
+}) {
     const [activeTab, setActiveTab] = useState('summary');
     const [filterStart, setFilterStart] = useState(startDate);
     const [filterEnd, setFilterEnd] = useState(endDate);
+    const [filterMitraId, setFilterMitraId] = useState(selectedMitraId || '');
     const summary = overview.summary || {};
     const items = overview.items || reportData;
     const productUsage = overview.product_usage || [];
     const deliveries = overview.deliveries || [];
     const restockHistory = overview.restock_history || [];
     const settlements = overview.settlements || [];
+    const selectedMitraLabel = selectedMitra?.display_name || selectedMitra?.email || 'Mitra';
+    const filterGridClass = isOwner
+        ? 'grid gap-2 sm:grid-cols-[minmax(190px,1.35fr)_1fr_1fr_auto]'
+        : 'grid gap-2 sm:grid-cols-[1fr_1fr_auto]';
+
+    useEffect(() => {
+        setFilterStart(startDate);
+        setFilterEnd(endDate);
+        setFilterMitraId(selectedMitraId || '');
+    }, [startDate, endDate, selectedMitraId]);
 
     const applyFilter = () => {
-        router.get(route('mitra-reports'), {
+        const query = {
             start_date: filterStart,
             end_date: filterEnd,
-        }, {
+        };
+
+        if (isOwner && filterMitraId) {
+            query.mitra_id = filterMitraId;
+        }
+
+        router.get(route('mitra-reports'), query, {
             preserveState: true,
             preserveScroll: true,
             replace: true,
         });
     };
+
+    const settlementsHref = isOwner && selectedMitraId
+        ? route('settlements', {
+            mitra_id: selectedMitraId,
+            start_date: filterStart,
+            end_date: filterEnd,
+        })
+        : route('settlements');
 
     return (
         <ErpLayout title="Laporan Mitra">
@@ -106,9 +140,28 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
             <div className="mb-6 flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
                 <div>
                     <h1 className="text-2xl font-semibold text-slate-900">Laporan Stok Mitra</h1>
-                    <p className="mt-1 text-sm text-slate-500">Rekap aktivitas stok dan pembayaran dari outlet.</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                        {isOwner
+                            ? `Rekap aktivitas stok dan pembayaran untuk ${selectedMitra ? selectedMitraLabel : 'mitra terpilih'}.`
+                            : 'Rekap aktivitas stok dan pembayaran mitra.'}
+                    </p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                <div className={filterGridClass}>
+                    {isOwner && (
+                        <select
+                            value={filterMitraId}
+                            onChange={(event) => setFilterMitraId(event.target.value)}
+                            className="h-10 rounded-md border-slate-300 text-sm font-semibold text-slate-800 focus:border-indigo-500 focus:ring-indigo-500"
+                        >
+                            {mitras.length === 0 ? (
+                                <option value="">Belum ada mitra</option>
+                            ) : mitras.map((mitra) => (
+                                <option key={mitra.id} value={mitra.id}>
+                                    {mitra.display_name || mitra.email}
+                                </option>
+                            ))}
+                        </select>
+                    )}
                     <input
                         type="date"
                         value={filterStart}
@@ -125,7 +178,7 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                     <button
                         type="button"
                         onClick={applyFilter}
-                        disabled={!filterStart || !filterEnd || filterEnd < filterStart}
+                        disabled={!filterStart || !filterEnd || filterEnd < filterStart || (isOwner && !filterMitraId)}
                         className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:bg-slate-300"
                     >
                         <FunnelIcon className="h-4 w-4" />
@@ -189,6 +242,7 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                                                 <div className="min-w-0">
                                                     <h3 className="truncate font-semibold text-slate-900">{item.name}</h3>
                                                     <p className="mt-0.5 text-xs text-slate-500">{formatRupiah(item.restock_price)} per {formatQty(item.min_restock_qty, item.unit_name)}</p>
+                                                    {item.outlet_name && <p className="mt-0.5 text-xs font-medium text-indigo-600">{item.outlet_name}</p>}
                                                 </div>
                                                 <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
                                                     Number(item.current_stock) <= 0
@@ -312,7 +366,9 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                                                 <CubeIcon className="h-5 w-5 shrink-0 text-indigo-600" />
                                                 <h3 className="truncate font-semibold text-slate-900">{product.name}</h3>
                                             </div>
-                                            <p className="mt-1 text-xs text-slate-500">{product.transaction_count} transaksi</p>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                {product.transaction_count} transaksi{product.outlet_name ? ` - ${product.outlet_name}` : ''}
+                                            </p>
                                         </div>
                                         <p className="shrink-0 text-sm font-bold text-slate-900">{formatRupiah(product.revenue)}</p>
                                     </div>
@@ -390,7 +446,9 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                                                 <div className="min-w-0">
                                                     <h3 className="truncate font-semibold text-slate-900">{delivery.stock_name}</h3>
                                                     <p className="mt-0.5 text-xs text-slate-500">{formatDate(delivery.sent_at, true)}</p>
-                                                    <p className="mt-0.5 text-xs font-medium text-indigo-600">{delivery.warehouse_name || 'Gudang Pusat'}</p>
+                                                    <p className="mt-0.5 text-xs font-medium text-indigo-600">
+                                                        {[delivery.outlet_name, delivery.warehouse_name || 'Gudang Pusat'].filter(Boolean).join(' - ')}
+                                                    </p>
                                                 </div>
                                                 <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${badge.className}`}>{badge.label}</span>
                                             </div>
@@ -434,7 +492,9 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                                             </div>
                                             <div className="min-w-0">
                                                 <p className="truncate font-semibold text-slate-900">{restock.stock_name}</p>
-                                                <p className="text-xs text-slate-500">{formatDate(restock.created_at, true)}</p>
+                                                <p className="text-xs text-slate-500">
+                                                    {formatDate(restock.created_at, true)}{restock.outlet_name ? ` - ${restock.outlet_name}` : ''}
+                                                </p>
                                             </div>
                                         </div>
                                         <div className="text-left sm:text-right">
@@ -456,7 +516,7 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                             <h2 className="text-lg font-semibold text-slate-900">Histori Setoran</h2>
                             <p className="mt-1 text-sm text-slate-500">Periksa pengajuan owner dan status pembayarannya.</p>
                         </div>
-                        <Link href={route('settlements')} className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-700">
+                        <Link href={settlementsHref} className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-700">
                             <CheckCircleIcon className="h-4 w-4" />
                             Buka Validasi Setoran
                         </Link>
@@ -472,6 +532,7 @@ export default function MitraReportsIndex({ reportData = [], overview = {}, star
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
                                                 <p className="text-xs text-slate-500">{formatDate(settlement.created_at)}</p>
+                                                {settlement.outlet_name && <p className="mt-1 text-xs font-medium text-indigo-600">{settlement.outlet_name}</p>}
                                                 <p className="mt-1 text-xl font-bold text-slate-900">{formatRupiah(settlement.total_amount)}</p>
                                             </div>
                                             <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${badge.className}`}>{badge.label}</span>

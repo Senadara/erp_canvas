@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use App\Services\MitraReportService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -14,8 +15,8 @@ class MitraReportController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        if (!$user || !$user->isMitra()) {
-            abort(403, 'Hanya mitra yang dapat mengakses halaman ini.');
+        if (!$user || (!$user->isOwner() && !$user->isMitra())) {
+            abort(403, 'Hanya owner dan mitra yang dapat mengakses halaman ini.');
         }
 
         $outletId = $request->session()->get('outlet_id');
@@ -37,7 +38,36 @@ class MitraReportController extends Controller
             'restock_history' => [],
             'settlements' => [],
         ];
-        if ($outletId) {
+
+        $mitras = [];
+        $selectedMitraId = null;
+        $selectedMitra = null;
+
+        if ($user->isOwner()) {
+            $mitras = User::where('role', 'MITRA')
+                ->where('is_active', true)
+                ->orderBy('display_name')
+                ->get(['id', 'display_name', 'email'])
+                ->map(fn (User $mitra) => [
+                    'id' => $mitra->id,
+                    'display_name' => $mitra->display_name,
+                    'email' => $mitra->email,
+                ])
+                ->values()
+                ->all();
+
+            $selectedMitraId = $request->query('mitra_id') ?: ($mitras[0]['id'] ?? null);
+            $selectedMitra = $selectedMitraId
+                ? User::where('role', 'MITRA')->where('is_active', true)->find($selectedMitraId)
+                : null;
+
+            if ($selectedMitra) {
+                $overview = $this->mitraReportService->getMitraReportOverviewAcrossOutlets($selectedMitra, $startDate, $endDate);
+                $reportData = $overview['items'];
+            }
+        } elseif ($outletId) {
+            $selectedMitraId = $user->id;
+            $selectedMitra = $user;
             $overview = $this->mitraReportService->getMitraReportOverview($outletId, $user, $startDate, $endDate);
             $reportData = $overview['items'];
         }
@@ -47,6 +77,14 @@ class MitraReportController extends Controller
             'overview' => $overview,
             'startDate' => $startDate->format('Y-m-d'),
             'endDate' => $endDate->format('Y-m-d'),
+            'mitras' => $mitras,
+            'selectedMitraId' => $selectedMitraId,
+            'selectedMitra' => $selectedMitra ? [
+                'id' => $selectedMitra->id,
+                'display_name' => $selectedMitra->display_name,
+                'email' => $selectedMitra->email,
+            ] : null,
+            'isOwner' => $user->isOwner(),
         ]);
     }
 }

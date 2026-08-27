@@ -141,6 +141,7 @@ class StockController extends Controller
             'min_restock_qty' => 'nullable|numeric|min:0',
             'restock_price' => 'nullable|numeric|min:0',
             'cost_category' => 'nullable|in:MATERIAL,PACKAGING,SUPPLY',
+            'settlement_usage_method' => 'nullable|in:BOM,MANUAL,RESTOCK_AS_USED,RESTOCK_MINUS_STOCK_OPNAME',
         ]);
 
         $data['outlet_id'] = $outletId;

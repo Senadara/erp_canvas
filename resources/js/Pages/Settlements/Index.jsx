@@ -69,6 +69,18 @@ function customKindLabel(kind) {
     return 'Setoran custom';
 }
 
+function settlementUsageMethodLabel(method) {
+    if (method === 'MANUAL') return 'Manual';
+    if (method === 'RESTOCK_AS_USED') return 'Restok dianggap habis';
+    if (method === 'RESTOCK_MINUS_STOCK_OPNAME') return 'Restok - opname';
+    return 'BOM penjualan';
+}
+
+function usageAdjustmentTypeLabel(type) {
+    if (type === 'STOCK_OPNAME') return 'Stok akhir / opname';
+    return 'Pemakaian manual';
+}
+
 export default function SettlementsIndex({
     mitras = [],
     selectedMitraId,
@@ -77,6 +89,7 @@ export default function SettlementsIndex({
     reportData = [],
     warehouseReportData = [],
     settlements = [],
+    usageAdjustments = [],
     isOwner,
 }) {
     const pendingSettlements = settlements.filter((settlement) => settlement.status === 'PENDING');
@@ -98,6 +111,13 @@ export default function SettlementsIndex({
     const [exportEnd, setExportEnd] = useState(endDate);
     const [exportMitra, setExportMitra] = useState(selectedMitraId || '');
     const [validationNote, setValidationNote] = useState('');
+    const [usageAdjustmentData, setUsageAdjustmentData] = useState({
+        stock_item_id: '',
+        usage_type: 'MANUAL_USAGE',
+        quantity: '',
+        reported_at: endDate || new Date().toISOString().slice(0, 10),
+        note: '',
+    });
     const [submitting, setSubmitting] = useState(false);
     const { errors = {} } = usePage().props;
 
@@ -124,6 +144,17 @@ export default function SettlementsIndex({
         });
         return map;
     }, [customStockOptions]);
+    const usageStockOptions = useMemo(() => {
+        const seen = new Set();
+        return reportData
+            .filter((item) => {
+                if (!item.stock_item_id || seen.has(item.stock_item_id)) return false;
+                seen.add(item.stock_item_id);
+                return true;
+            })
+            .sort((a, b) => `${a.outlet_name || ''} ${a.name}`.localeCompare(`${b.outlet_name || ''} ${b.name}`));
+    }, [reportData]);
+    const selectedUsageStock = usageStockOptions.find((item) => item.stock_item_id === usageAdjustmentData.stock_item_id);
     const proposalItems = useMemo(() => calculationData.map((item) => {
         const rawQuantity = calcMethod === 'SALES' ? Number(item.sales_qty) : Number(item.restock_qty);
         const remainingQuantity = Number(item.remaining_qty ?? Math.max(0, rawQuantity - Number(item.committed_qty ?? item.settled_qty ?? 0)));
@@ -206,6 +237,29 @@ export default function SettlementsIndex({
         }, {
             preserveScroll: true,
             onSuccess: () => setActiveTab('history'),
+            onFinish: () => setSubmitting(false),
+        });
+    };
+
+    const submitUsageAdjustment = (event) => {
+        event.preventDefault();
+        if (!filterMitra || !usageAdjustmentData.stock_item_id || usageAdjustmentData.quantity === '') return;
+
+        setSubmitting(true);
+        router.post(route('settlements.usage-adjustments.store'), {
+            mitra_id: filterMitra,
+            stock_item_id: usageAdjustmentData.stock_item_id,
+            usage_type: usageAdjustmentData.usage_type,
+            quantity: usageAdjustmentData.quantity,
+            reported_at: usageAdjustmentData.reported_at || filterEnd,
+            note: usageAdjustmentData.note,
+        }, {
+            preserveScroll: true,
+            onSuccess: () => setUsageAdjustmentData((current) => ({
+                ...current,
+                quantity: '',
+                note: '',
+            })),
             onFinish: () => setSubmitting(false),
         });
     };
@@ -390,6 +444,19 @@ export default function SettlementsIndex({
                                             : 'Gunakan custom untuk pelunasan manual. Pilih nominal bebas, atau kaitkan ke bahan tertentu agar quantity ikut terkunci.'}
                                 </div>
 
+                                {calcMethod === 'SALES' && (
+                                    <UsageAdjustmentPanel
+                                        stockOptions={usageStockOptions}
+                                        selectedStock={selectedUsageStock}
+                                        data={usageAdjustmentData}
+                                        setData={setUsageAdjustmentData}
+                                        adjustments={usageAdjustments}
+                                        submitting={submitting}
+                                        errors={errors}
+                                        onSubmit={submitUsageAdjustment}
+                                    />
+                                )}
+
                                 <div className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 lg:grid-cols-4">
                                     <Metric label="Periode" value={`${formatDate(startDate)} - ${formatDate(endDate)}`} />
                                     <Metric label="Jenis Bahan" value={calcMethod === 'CUSTOM' ? (customKind === 'STOCK_CREDIT' ? 'Custom bahan' : 'Penyesuaian') : `${proposalItems.length} bahan`} />
@@ -442,6 +509,30 @@ export default function SettlementsIndex({
                                                         <p className="text-xs text-rose-700">Waste & pribadi</p>
                                                         <p className="mt-0.5 font-bold text-rose-900">{formatQty(item.waste_qty, item.unit_name)}</p>
                                                     </div>
+                                                    {Number(item.manual_usage_qty || 0) > 0 && (
+                                                        <div className="rounded-md bg-amber-50 px-3 py-2">
+                                                            <p className="text-xs text-amber-700">Manual</p>
+                                                            <p className="mt-0.5 font-bold text-amber-900">{formatQty(item.manual_usage_qty, item.unit_name)}</p>
+                                                        </div>
+                                                    )}
+                                                    {Number(item.opname_usage_qty || 0) > 0 && (
+                                                        <div className="rounded-md bg-blue-50 px-3 py-2">
+                                                            <p className="text-xs text-blue-700">Dari opname</p>
+                                                            <p className="mt-0.5 font-bold text-blue-900">{formatQty(item.opname_usage_qty, item.unit_name)}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {calcMethod === 'SALES' && (
+                                                <div className="mt-3 space-y-2">
+                                                    <p className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                                                        {settlementUsageMethodLabel(item.settlement_usage_method)}
+                                                    </p>
+                                                    {item.usage_warning && (
+                                                        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                                                            {item.usage_warning}
+                                                        </p>
+                                                    )}
                                                 </div>
                                             )}
                                             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -651,6 +742,161 @@ function Metric({ label, value, emphasis = false }) {
             <p className="truncate text-xs font-medium text-slate-500">{label}</p>
             <p className={`mt-1 truncate font-bold ${emphasis ? 'text-lg text-indigo-700' : 'text-slate-900'}`} title={value}>{value}</p>
         </div>
+    );
+}
+
+function UsageAdjustmentPanel({
+    stockOptions,
+    selectedStock,
+    data,
+    setData,
+    adjustments,
+    submitting,
+    errors,
+    onSubmit,
+}) {
+    const update = (key, value) => setData((current) => ({ ...current, [key]: value }));
+    const canSubmit = data.stock_item_id
+        && data.quantity !== ''
+        && (data.usage_type === 'STOCK_OPNAME' ? Number(data.quantity) >= 0 : Number(data.quantity) > 0);
+
+    return (
+        <section className="mb-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                <div>
+                    <h3 className="font-semibold text-slate-900">Catatan Pemakaian Bahan Untrackable</h3>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+                        Gunakan ini untuk bahan seperti saus, topping, atau bahan cair yang tidak punya rasio pasti di produk. Catatan akan masuk ke perhitungan bahan terpakai sesuai periode filter.
+                    </p>
+                </div>
+                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                    {adjustments.length} catatan periode ini
+                </span>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+                <form onSubmit={onSubmit} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+                    <label className="block sm:col-span-2">
+                        <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Bahan</span>
+                        <select
+                            value={data.stock_item_id}
+                            onChange={(event) => update('stock_item_id', event.target.value)}
+                            className="h-10 w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        >
+                            <option value="">Pilih bahan</option>
+                            {stockOptions.map((item) => (
+                                <option key={item.stock_item_id} value={item.stock_item_id}>
+                                    {item.name} - {item.outlet_name || 'Outlet'} ({settlementUsageMethodLabel(item.settlement_usage_method)})
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Jenis Catatan</span>
+                        <select
+                            value={data.usage_type}
+                            onChange={(event) => update('usage_type', event.target.value)}
+                            className="h-10 w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        >
+                            <option value="MANUAL_USAGE">Pemakaian manual</option>
+                            <option value="STOCK_OPNAME">Stok akhir / opname</option>
+                        </select>
+                    </label>
+
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">
+                            {data.usage_type === 'STOCK_OPNAME' ? 'Stok akhir fisik' : 'Jumlah terpakai'}
+                        </span>
+                        <input
+                            type="number"
+                            min={data.usage_type === 'STOCK_OPNAME' ? '0' : '0.0001'}
+                            step="0.0001"
+                            value={data.quantity}
+                            onChange={(event) => update('quantity', event.target.value)}
+                            className="h-10 w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            placeholder="Contoh: 12.5"
+                        />
+                    </label>
+
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Tanggal</span>
+                        <input
+                            type="date"
+                            value={data.reported_at}
+                            onChange={(event) => update('reported_at', event.target.value)}
+                            className="h-10 w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        />
+                    </label>
+
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Catatan</span>
+                        <input
+                            type="text"
+                            value={data.note}
+                            onChange={(event) => update('note', event.target.value)}
+                            className="h-10 w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            placeholder="Contoh: sisa saus habis dipakai promo"
+                        />
+                    </label>
+
+                    {errors.usage_adjustment && <p className="sm:col-span-2 text-sm font-medium text-rose-600">{errors.usage_adjustment}</p>}
+
+                    <div className="sm:col-span-2 flex justify-end">
+                        <button
+                            type="submit"
+                            disabled={submitting || !canSubmit}
+                            className="inline-flex h-10 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:bg-slate-300"
+                        >
+                            {submitting ? 'Menyimpan...' : 'Catat Pemakaian'}
+                        </button>
+                    </div>
+                </form>
+
+                <div className="space-y-3">
+                    <div className="rounded-lg border border-slate-200 p-4">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Konteks bahan</p>
+                        {selectedStock ? (
+                            <div className="mt-3 space-y-2 text-sm text-slate-600">
+                                <p className="font-semibold text-slate-900">{selectedStock.name}</p>
+                                <p>{selectedStock.outlet_name || 'Outlet'} - {selectedStock.trackable ? 'trackable' : 'untrackable'}</p>
+                                <p>Metode: <span className="font-semibold text-slate-900">{settlementUsageMethodLabel(selectedStock.settlement_usage_method)}</span></p>
+                                {selectedStock.usage_warning && (
+                                    <p className="rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">{selectedStock.usage_warning}</p>
+                                )}
+                            </div>
+                        ) : (
+                            <p className="mt-3 text-sm leading-6 text-slate-500">Pilih bahan untuk melihat metode setoran dan status tracking-nya.</p>
+                        )}
+                    </div>
+
+                    <div className="rounded-lg border border-slate-200 p-4">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Histori catatan periode</p>
+                        {adjustments.length > 0 ? (
+                            <div className="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
+                                {adjustments.slice(0, 8).map((adjustment) => (
+                                    <div key={adjustment.id} className="rounded-md bg-slate-50 px-3 py-2 text-sm">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <p className="truncate font-semibold text-slate-900">{adjustment.stock_name}</p>
+                                                <p className="text-xs text-slate-500">{adjustment.outlet_name || 'Outlet'} - {formatDate(adjustment.reported_at)}</p>
+                                            </div>
+                                            <span className="shrink-0 rounded bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">
+                                                {usageAdjustmentTypeLabel(adjustment.usage_type)}
+                                            </span>
+                                        </div>
+                                        <p className="mt-1 font-bold text-indigo-700">{formatQty(adjustment.quantity, adjustment.unit_name)}</p>
+                                        {adjustment.note && <p className="mt-1 text-xs leading-5 text-slate-500">{adjustment.note}</p>}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="mt-3 text-sm leading-6 text-slate-500">Belum ada pemakaian manual atau opname pada periode ini.</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </section>
     );
 }
 
@@ -1060,6 +1306,12 @@ function SettlementDetail({ settlement, isOwner, validationNote, setValidationNo
                                     <div className="mt-3 flex flex-wrap gap-3 text-xs">
                                         <span className="font-medium text-emerald-700">Terjual {formatQty(item.sold_qty, item.unit_name)}</span>
                                         <span className="font-medium text-rose-700">Waste {formatQty(item.waste_qty, item.unit_name)}</span>
+                                        {Number(item.manual_usage_qty || 0) > 0 && (
+                                            <span className="font-medium text-amber-700">Manual {formatQty(item.manual_usage_qty, item.unit_name)}</span>
+                                        )}
+                                        {Number(item.opname_usage_qty || 0) > 0 && (
+                                            <span className="font-medium text-blue-700">Opname {formatQty(item.opname_usage_qty, item.unit_name)}</span>
+                                        )}
                                     </div>
                                 )}
                                 {item.tracking_note && <p className="mt-3 text-xs leading-5 text-slate-500">{item.tracking_note}</p>}
@@ -1175,6 +1427,41 @@ function UsageDetail({ item, calculationMethod, onClose }) {
                                 <UsageMetric label="Terjual" value={formatQty(item.sold_qty, item.unit_name)} tone="emerald" />
                                 <UsageMetric label="Waste & Pribadi" value={formatQty(item.waste_qty, item.unit_name)} tone="rose" />
                                 <UsageMetric label="Total Terpakai" value={formatQty(item.sales_qty, item.unit_name)} tone="slate" />
+                            </div>
+
+                            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <p className="font-semibold text-slate-900">{settlementUsageMethodLabel(item.settlement_usage_method)}</p>
+                                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                                        {item.trackable === false ? 'Untrackable' : 'Trackable'}
+                                    </span>
+                                </div>
+                                {item.usage_source_note && <p className="mt-2 text-sm leading-6 text-slate-600">{item.usage_source_note}</p>}
+                                {item.usage_warning && (
+                                    <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">{item.usage_warning}</p>
+                                )}
+                                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                                    <div className="rounded-md bg-white px-3 py-2">
+                                        <p className="text-xs text-slate-500">Manual</p>
+                                        <p className="mt-1 font-bold text-amber-700">{formatQty(item.manual_usage_qty, item.unit_name)}</p>
+                                    </div>
+                                    <div className="rounded-md bg-white px-3 py-2">
+                                        <p className="text-xs text-slate-500">Dari opname</p>
+                                        <p className="mt-1 font-bold text-blue-700">{formatQty(item.opname_usage_qty, item.unit_name)}</p>
+                                    </div>
+                                    {item.ending_stock_opname_qty !== null && item.ending_stock_opname_qty !== undefined && (
+                                        <>
+                                            <div className="rounded-md bg-white px-3 py-2">
+                                                <p className="text-xs text-slate-500">Opname awal</p>
+                                                <p className="mt-1 font-semibold text-slate-900">{formatQty(item.opening_stock_opname_qty, item.unit_name)}</p>
+                                            </div>
+                                            <div className="rounded-md bg-white px-3 py-2">
+                                                <p className="text-xs text-slate-500">Opname akhir</p>
+                                                <p className="mt-1 font-semibold text-slate-900">{formatQty(item.ending_stock_opname_qty, item.unit_name)}</p>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="mt-5">

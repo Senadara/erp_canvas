@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Conversion;
 use App\Models\MitraSettlement;
 use App\Models\MitraStockDelivery;
+use App\Models\MitraStockUsageAdjustment;
 use App\Models\Outlet;
 use App\Models\RestockLog;
 use App\Models\StockItem;
@@ -14,6 +15,7 @@ use App\Models\WasteLog;
 use App\Models\WarehouseStockItem;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class MitraReportService
 {
@@ -148,6 +150,141 @@ class MitraReportService
             ->all();
 
         return $this->allocateCommittedQuantitiesAcrossRows($rows, 'sales_qty');
+    }
+
+    public function getMitraReportOverviewAcrossOutlets(User $mitra, Carbon $startDate, Carbon $endDate): array
+    {
+        $reportData = $this->getMitraReportDataAcrossOutlets($mitra, $startDate, $endDate);
+        $periodStart = $startDate->copy()->startOfDay();
+        $periodEnd = $endDate->copy()->endOfDay();
+        $rows = collect($reportData);
+        $stockIds = $rows->pluck('stock_item_id')->filter()->unique()->values()->all();
+        $outletNames = $rows
+            ->filter(fn (array $row) => ! empty($row['outlet_id']))
+            ->mapWithKeys(fn (array $row) => [$row['outlet_id'] => $row['outlet_name'] ?? 'Outlet'])
+            ->all();
+
+        $productUsage = $rows
+            ->filter(fn (array $row) => ! empty($row['outlet_id']) && ! empty($row['stock_item_id']))
+            ->groupBy('outlet_id')
+            ->flatMap(function ($outletRows, string $outletId) use ($periodStart, $periodEnd, $outletNames) {
+                $outletStockIds = $outletRows->pluck('stock_item_id')->unique()->values()->all();
+
+                return collect($this->getProductUsageOverview($outletId, $outletStockIds, $periodStart, $periodEnd))
+                    ->map(fn (array $product) => [
+                        ...$product,
+                        'outlet_id' => $outletId,
+                        'outlet_name' => $outletNames[$outletId] ?? 'Outlet',
+                    ]);
+            })
+            ->sortByDesc('total_usage_qty')
+            ->values()
+            ->all();
+
+        $deliveries = MitraStockDelivery::with([
+            'outlet:id,name',
+            'warehouse:id,name',
+            'warehouseStockItem:id,name,unit_name',
+            'receiver:id,display_name',
+        ])
+            ->where('mitra_id', $mitra->id)
+            ->whereBetween('sent_at', [$periodStart, $periodEnd])
+            ->orderByDesc('sent_at')
+            ->get()
+            ->map(fn (MitraStockDelivery $delivery) => [
+                'id' => $delivery->id,
+                'outlet_id' => $delivery->outlet_id,
+                'outlet_name' => $delivery->outlet?->name,
+                'stock_item_id' => $delivery->stock_item_id,
+                'warehouse_stock_item_id' => $delivery->warehouse_stock_item_id,
+                'stock_name' => $delivery->warehouseStockItem?->name,
+                'unit_name' => $delivery->warehouseStockItem?->unit_name,
+                'warehouse_name' => $delivery->warehouse?->name,
+                'qty_sent' => (float) $delivery->qty_sent,
+                'qty_received' => $delivery->qty_received !== null ? (float) $delivery->qty_received : null,
+                'difference' => $delivery->qty_received !== null
+                    ? round((float) $delivery->qty_received - (float) $delivery->qty_sent, 4)
+                    : null,
+                'status' => $delivery->status,
+                'sender_note' => $delivery->sender_note,
+                'receiver_note' => $delivery->receiver_note,
+                'sent_at' => $delivery->sent_at?->toIso8601String(),
+                'received_at' => $delivery->received_at?->toIso8601String(),
+                'receiver_name' => $delivery->receiver?->display_name,
+            ])
+            ->values()
+            ->all();
+
+        $restockHistory = empty($stockIds)
+            ? collect()
+            : RestockLog::with(['outlet:id,name', 'stockItem:id,name,unit_name'])
+                ->whereIn('stock_item_id', $stockIds)
+                ->whereBetween('created_at', [$periodStart, $periodEnd])
+                ->orderByDesc('created_at')
+                ->get()
+                ->map(fn (RestockLog $log) => [
+                    'id' => $log->id,
+                    'outlet_id' => $log->outlet_id,
+                    'outlet_name' => $log->outlet?->name,
+                    'stock_name' => $log->stockItem?->name,
+                    'unit_name' => $log->stockItem?->unit_name,
+                    'qty_added' => (float) $log->qty_added,
+                    'stock_before' => (float) $log->stock_before,
+                    'stock_after' => (float) $log->stock_after,
+                    'source' => $log->fund_source,
+                    'created_at' => $log->created_at?->toIso8601String(),
+                ]);
+
+        $settlements = MitraSettlement::with('outlet:id,name')
+            ->where('mitra_id', $mitra->id)
+            ->orderByDesc('created_at')
+            ->take(50)
+            ->get()
+            ->map(fn (MitraSettlement $settlement) => [
+                'id' => $settlement->id,
+                'outlet_id' => $settlement->outlet_id,
+                'outlet_name' => $settlement->outlet?->name,
+                'period_start' => $settlement->period_start?->format('Y-m-d'),
+                'period_end' => $settlement->period_end?->format('Y-m-d'),
+                'calculation_method' => $settlement->calculation_method,
+                'total_amount' => (float) $settlement->total_amount,
+                'status' => $settlement->status,
+                'validation_note' => $settlement->validation_note,
+                'created_at' => $settlement->created_at?->toIso8601String(),
+            ])
+            ->values()
+            ->all();
+
+        $deliveryRows = collect($deliveries);
+        $settlementRows = collect($settlements);
+
+        return [
+            'items' => $reportData,
+            'summary' => [
+                'stock_item_count' => $rows->count(),
+                'used_stock_item_count' => $rows->filter(fn ($row) => (float) $row['sales_qty'] > 0)->count(),
+                'restock_event_count' => $restockHistory->count(),
+                'current_stock' => round((float) $rows->sum('current_stock'), 2),
+                'raw_material_out' => round((float) $rows->sum('sales_qty'), 2),
+                'sold_usage' => round((float) $rows->sum('sold_qty'), 2),
+                'waste' => round((float) $rows->sum('waste_qty'), 2),
+                'restocked' => round((float) $rows->sum('restock_qty'), 2),
+                'sent' => round((float) $deliveryRows->sum('qty_sent'), 2),
+                'received' => round((float) $deliveryRows->sum(fn ($row) => $row['qty_received'] ?? 0), 2),
+                'pending_deliveries' => $deliveryRows->where('status', MitraStockDelivery::STATUS_SENT)->count(),
+                'different_deliveries' => $deliveryRows->where('status', MitraStockDelivery::STATUS_RECEIVED_DIFFERENCE)->count(),
+                'pending_settlements' => $settlementRows->where('status', MitraSettlement::STATUS_PENDING)->count(),
+                'paid_settlements' => round((float) $settlementRows
+                    ->where('status', MitraSettlement::STATUS_PAID)
+                    ->sum('total_amount')),
+                'products_used' => count($productUsage),
+                'product_waste' => round((float) collect($productUsage)->sum('waste_qty'), 2),
+            ],
+            'product_usage' => $productUsage,
+            'deliveries' => $deliveries,
+            'restock_history' => $restockHistory->values()->all(),
+            'settlements' => $settlements,
+        ];
     }
 
     public function getMitraReportOverview(string $outletId, User $mitra, Carbon $startDate, Carbon $endDate): array
@@ -432,7 +569,11 @@ class MitraReportService
             ->whereBetween('created_at', [$periodStart, $periodEnd])
             ->get();
 
-        $conversions = Conversion::whereIn('stock_item_id', $mitraStockIds)->get()->groupBy('product_id');
+        $allConversions = Conversion::whereIn('stock_item_id', $mitraStockIds)->get();
+        $conversions = $allConversions->groupBy('product_id');
+        $conversionCountsByStock = $allConversions
+            ->groupBy('stock_item_id')
+            ->map(fn ($rows) => $rows->count());
 
         $salesPerStock = [];
         foreach ($mitraStockIds as $id) {
@@ -475,6 +616,41 @@ class MitraReportService
             ->get()
             ->groupBy('stock_item_id');
 
+        $hasUsageAdjustmentTable = Schema::hasTable('mitra_stock_usage_adjustments');
+        $manualUsageRows = collect();
+        $endingOpnameRows = collect();
+        $openingOpnameRows = collect();
+
+        if ($hasUsageAdjustmentTable) {
+            $manualUsageRows = MitraStockUsageAdjustment::where('mitra_id', $mitra->id)
+                ->where('outlet_id', $outletId)
+                ->whereIn('stock_item_id', $mitraStockIds)
+                ->where('usage_type', MitraStockUsageAdjustment::TYPE_MANUAL_USAGE)
+                ->whereBetween('reported_at', [$periodStart, $periodEnd])
+                ->groupBy('stock_item_id')
+                ->select('stock_item_id', DB::raw('SUM(quantity) as total_manual_usage'))
+                ->get()
+                ->keyBy('stock_item_id');
+            $endingOpnameRows = MitraStockUsageAdjustment::where('mitra_id', $mitra->id)
+                ->where('outlet_id', $outletId)
+                ->whereIn('stock_item_id', $mitraStockIds)
+                ->where('usage_type', MitraStockUsageAdjustment::TYPE_STOCK_OPNAME)
+                ->whereBetween('reported_at', [$periodStart, $periodEnd])
+                ->orderByDesc('reported_at')
+                ->get()
+                ->unique('stock_item_id')
+                ->keyBy('stock_item_id');
+            $openingOpnameRows = MitraStockUsageAdjustment::where('mitra_id', $mitra->id)
+                ->where('outlet_id', $outletId)
+                ->whereIn('stock_item_id', $mitraStockIds)
+                ->where('usage_type', MitraStockUsageAdjustment::TYPE_STOCK_OPNAME)
+                ->where('reported_at', '<', $periodStart)
+                ->orderByDesc('reported_at')
+                ->get()
+                ->unique('stock_item_id')
+                ->keyBy('stock_item_id');
+        }
+
         // 3. Track paid quantities and quantities reserved by active proposals.
         $settledPerItemKey = $this->getSettlementQtyByItemKey(
             $mitra->id,
@@ -507,6 +683,13 @@ class MitraReportService
             $restockQty = $restocks->has($stockId) ? (float) $restocks->get($stockId)->total_restock : 0;
             $soldQty = $salesPerStock[$stockId] ?? 0;
             $wasteQty = $wasteRows->has($stockId) ? (float) $wasteRows->get($stockId)->total_waste : 0;
+            $manualUsageQty = $manualUsageRows->has($stockId) ? (float) $manualUsageRows->get($stockId)->total_manual_usage : 0;
+            $openingOpname = $openingOpnameRows->get($stockId);
+            $endingOpname = $endingOpnameRows->get($stockId);
+            $openingOpnameQty = $openingOpname ? (float) $openingOpname->quantity : 0.0;
+            $endingOpnameQty = $endingOpname ? (float) $endingOpname->quantity : null;
+            $hasBomConversion = (int) ($conversionCountsByStock->get($stockId) ?? 0) > 0;
+            $usageMethod = $stockItem->settlement_usage_method ?: StockItem::SETTLEMENT_USAGE_BOM;
             $stockWasteBreakdown = collect($wasteBreakdowns->get($stockId, collect()))
                 ->map(fn ($row) => [
                     'type' => $row->waste_type,
@@ -520,7 +703,17 @@ class MitraReportService
             $wasteQtyBySource = fn (string $source) => (float) $stockWasteBreakdown
                 ->where('source_type', $source)
                 ->sum('quantity');
-            $salesQty = $soldQty + $wasteQty;
+            [$salesQty, $usageSourceNote, $usageWarning, $opnameUsageQty] = $this->calculateSettlementUsageQuantity(
+                $usageMethod,
+                $stockItem,
+                $soldQty,
+                $wasteQty,
+                $manualUsageQty,
+                $restockQty,
+                $openingOpnameQty,
+                $endingOpnameQty,
+                $hasBomConversion,
+            );
             $restockPrice = (float) ($stockItem->restock_price ?? 0);
             $minRestockQty = $stockItem->min_restock_qty > 0 ? (float) $stockItem->min_restock_qty : 1;
             $settlementItemKey = $itemKeysByStockId[$stockId] ?? "stock:{$stockId}";
@@ -541,11 +734,21 @@ class MitraReportService
                 'item_key' => $settlementItemKey,
                 'name' => $stockItem->name,
                 'unit_name' => $stockItem->unit_name,
+                'trackable' => (bool) $stockItem->trackable,
+                'settlement_usage_method' => $usageMethod,
+                'has_bom_conversion' => $hasBomConversion,
+                'usage_source_note' => $usageSourceNote,
+                'usage_warning' => $usageWarning,
                 'current_stock' => (float) $stockItem->current_stock_biji,
                 'restock_price' => $restockPrice,
                 'min_restock_qty' => $minRestockQty,
                 'restock_qty' => round($restockQty, 2),
                 'sold_qty' => round($soldQty, 2),
+                'manual_usage_qty' => round($manualUsageQty, 2),
+                'opname_usage_qty' => round($opnameUsageQty, 2),
+                'opening_stock_opname_qty' => round($openingOpnameQty, 2),
+                'ending_stock_opname_qty' => $endingOpnameQty !== null ? round($endingOpnameQty, 2) : null,
+                'ending_stock_opname_at' => $endingOpname?->reported_at?->toIso8601String(),
                 'waste_qty' => round($wasteQty, 2),
                 'personal_use_qty' => round($wasteQtyByType(WasteLog::TYPE_OWNER_REQUEST), 2),
                 'expired_waste_qty' => round($wasteQtyByType(WasteLog::TYPE_EXPIRED), 2),
@@ -568,6 +771,84 @@ class MitraReportService
         }
 
         return $reportData;
+    }
+
+    private function calculateSettlementUsageQuantity(
+        string $usageMethod,
+        StockItem $stockItem,
+        float $soldQty,
+        float $wasteQty,
+        float $manualUsageQty,
+        float $restockQty,
+        float $openingOpnameQty,
+        ?float $endingOpnameQty,
+        bool $hasBomConversion,
+    ): array {
+        $baseBomUsage = $soldQty + $wasteQty;
+        $warning = null;
+
+        if ($usageMethod === StockItem::SETTLEMENT_USAGE_MANUAL) {
+            $usageQty = $manualUsageQty + $wasteQty;
+            if ($usageQty <= 0) {
+                $warning = 'Metode manual dipilih, tetapi belum ada catatan pemakaian manual atau waste pada periode ini.';
+            }
+
+            return [
+                max(0, $usageQty),
+                "Manual {$this->formatQty($manualUsageQty)} + waste {$this->formatQty($wasteQty)}.",
+                $warning,
+                0.0,
+            ];
+        }
+
+        if ($usageMethod === StockItem::SETTLEMENT_USAGE_RESTOCK_AS_USED) {
+            if ($restockQty <= 0) {
+                $warning = 'Restok dianggap terpakai dipilih, tetapi tidak ada restok/transfer outlet pada periode ini.';
+            }
+
+            return [
+                max(0, $restockQty),
+                "Restok/transfer periode ini dianggap habis: {$this->formatQty($restockQty)}.",
+                $warning,
+                0.0,
+            ];
+        }
+
+        if ($usageMethod === StockItem::SETTLEMENT_USAGE_RESTOCK_MINUS_STOCK_OPNAME) {
+            if ($endingOpnameQty === null) {
+                return [
+                    0.0,
+                    'Menunggu stok akhir/opname periode untuk menghitung pemakaian.',
+                    'Metode restok dikurangi opname dipilih, tetapi stok akhir periode belum dicatat.',
+                    0.0,
+                ];
+            }
+
+            $usageQty = max(0, $openingOpnameQty + $restockQty - $endingOpnameQty);
+
+            return [
+                $usageQty,
+                "Opname: awal {$this->formatQty($openingOpnameQty)} + restok {$this->formatQty($restockQty)} - akhir {$this->formatQty($endingOpnameQty)}.",
+                null,
+                $usageQty,
+            ];
+        }
+
+        if (! $stockItem->trackable && ! $hasBomConversion && $manualUsageQty <= 0 && $wasteQty <= 0 && $restockQty > 0) {
+            $warning = 'Bahan untrackable ini belum punya BOM atau catatan manual, sehingga restoknya tidak otomatis menjadi bahan terpakai.';
+        }
+
+        return [
+            max(0, $baseBomUsage + $manualUsageQty),
+            "BOM penjualan {$this->formatQty($soldQty)} + waste {$this->formatQty($wasteQty)} + manual {$this->formatQty($manualUsageQty)}.",
+            $warning,
+            0.0,
+        ];
+    }
+
+    private function formatQty(float $value): string
+    {
+        return number_format($value, 2, ',', '.');
     }
 
     /**

@@ -11,12 +11,18 @@ class StockItem extends Model
 {
     use HasUlidPrimary;
 
+    public const SETTLEMENT_USAGE_BOM = 'BOM';
+    public const SETTLEMENT_USAGE_MANUAL = 'MANUAL';
+    public const SETTLEMENT_USAGE_RESTOCK_AS_USED = 'RESTOCK_AS_USED';
+    public const SETTLEMENT_USAGE_RESTOCK_MINUS_STOCK_OPNAME = 'RESTOCK_MINUS_STOCK_OPNAME';
+
     protected $table = 'stock_items';
 
     protected $fillable = [
         'outlet_id', 'name', 'current_stock_biji', 'unit_name', 'min_stock_alert',
         'supplier_id', 'trackable', 'counting_basis', 'display_group_id',
         'min_restock_qty', 'restock_price', 'warehouse_stock_item_id', 'cost_category',
+        'settlement_usage_method',
     ];
 
     protected function casts(): array

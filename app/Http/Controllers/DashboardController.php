@@ -23,6 +23,7 @@ class DashboardController extends Controller
     {
         $outletId = $request->session()->get('outlet_id');
         $user = $request->user();
+        $selectedDate = $this->selectedDashboardDate($request);
 
         $mitraProductIds = null;
         $mitraStockIds = null;
@@ -50,6 +51,7 @@ class DashboardController extends Controller
         $openShift = null;
         $openShiftSummary = ['transactionCount' => 0, 'totalSales' => 0];
         $unpaidSummary = ['transactionCount' => 0, 'totalSales' => 0];
+        $dailyProductSales = [];
         $chartData = [];
 
         if ($outletId) {
@@ -72,7 +74,8 @@ class DashboardController extends Controller
                 ->where('status', 'OPEN')
                 ->first();
 
-            $dailySummary = $this->reportService->getDailySummary($outletId, Carbon::now(), $mitraProductIds);
+            $dailySummary = $this->reportService->getDailySummary($outletId, $selectedDate, $mitraProductIds);
+            $dailyProductSales = $this->reportService->getDailyProductSales($outletId, $selectedDate, $mitraProductIds);
 
             if ($openShift) {
                 $openShiftSummary = $this->summarizeTransactions(
@@ -112,6 +115,7 @@ class DashboardController extends Controller
             'openShift' => (bool) $openShift,
             'openShiftSummary' => $openShiftSummary,
             'unpaidSummary' => $unpaidSummary,
+            'dailyView' => $this->dailyView($selectedDate, $dailySummary, $dailyProductSales),
             'outletCount' => $user?->isOwner() ? Outlet::count() : ($user?->outlets()->count() ?? 0),
             'ownerOutletAlerts' => $user?->isOwner() ? $this->ownerOutletAlerts() : [],
         ];
@@ -152,21 +156,37 @@ class DashboardController extends Controller
     {
         $role = $user?->role ?? 'STAFF';
 
-        return match ($role) {
+        $payload = match ($role) {
             'OWNER' => $this->ownerDashboard($user, $context, $chartData),
             'MITRA' => $this->mitraDashboard($user, $context, $chartData),
             default => $this->staffDashboard($user, $context, $chartData),
         };
+
+        $dailyView = $context['dailyView'];
+        $dailyView['show_expenses'] = (bool) $user?->isOwner();
+        if (! $dailyView['show_expenses']) {
+            $dailyView['summary']['expenses'] = 0;
+        }
+
+        return [
+            ...$payload,
+            'dailyView' => $dailyView,
+        ];
     }
 
     private function ownerDashboard(?User $user, array $context, array $chartData): array
     {
+        $dailyView = $context['dailyView'];
+        $dailySummary = $dailyView['summary'];
+
         return [
             'role' => 'OWNER',
             'title' => 'Dashboard Owner',
-            'subtitle' => 'Ringkasan performa outlet aktif dan kontrol operasional.',
+            'subtitle' => 'Ringkasan harian outlet aktif dan kontrol operasional.',
             'cards' => [
-                $this->card('today_sales', 'Penjualan Hari Ini', $context['dailySummary']['totalSales'], 'currency', 'sales', 'emerald', $context['dailySummary']['transactionCount'].' transaksi'),
+                $this->card('daily_revenue', 'Pendapatan', $dailySummary['totalSales'], 'currency', 'sales', 'emerald', $dailySummary['transactionCount'].' transaksi - '.$dailyView['label']),
+                $this->card('daily_expenses', 'Pengeluaran', $dailySummary['expenses'], 'currency', 'expense', $dailySummary['expenses'] > 0 ? 'rose' : 'slate', 'Operasional - '.$dailyView['label']),
+                $this->card('daily_products', 'Produk Terjual', $dailySummary['soldQuantity'], 'number', 'product', 'indigo', $dailySummary['soldProductCount'].' jenis produk'),
                 $this->card('outlets', 'Total Outlet', $context['outletCount'], 'number', 'outlet', 'indigo', 'Jaringan aktif'),
                 $this->card('low_stock', 'Stok Menipis', $context['lowStockCount'], 'number', 'stock', $context['lowStockCount'] > 0 ? 'rose' : 'slate', 'Outlet aktif'),
                 $this->card('unpaid', 'Belum Lunas', $context['unpaidSummary']['totalSales'], 'currency', 'receipt', $context['unpaidSummary']['transactionCount'] > 0 ? 'amber' : 'slate', $context['unpaidSummary']['transactionCount'].' order'),
@@ -219,7 +239,7 @@ class DashboardController extends Controller
             'cards' => [
                 $this->card('stock_scope', 'Stok Dalam Scope', $context['stockCount'], 'number', 'stock', 'indigo', 'Bahan yang dipantau'),
                 $this->card('product_scope', 'Produk Terkait', $context['productCount'], 'number', 'product', 'slate', 'Menu yang memakai stok Anda'),
-                $this->card('today_sales', 'Estimasi Penjualan', $context['dailySummary']['totalSales'], 'currency', 'sales', 'emerald', 'Hari ini'),
+                $this->card('today_sales', 'Estimasi Penjualan', $context['dailySummary']['totalSales'], 'currency', 'sales', 'emerald', $context['dailyView']['label']),
                 $this->card('low_stock', 'Stok Menipis', $context['lowStockCount'], 'number', 'stock', $context['lowStockCount'] > 0 ? 'rose' : 'slate', 'Perlu perhatian'),
             ],
             'chart' => $this->chart('Tren Estimasi Penjualan', '7 hari terakhir', $chartData),
@@ -322,5 +342,37 @@ class DashboardController extends Controller
     private function rupiahText(float|int|string $value): string
     {
         return 'Rp'.number_format((float) $value, 0, ',', '.');
+    }
+
+    private function selectedDashboardDate(Request $request): Carbon
+    {
+        $validated = $request->validate([
+            'date' => 'nullable|date_format:Y-m-d',
+        ]);
+
+        return ! empty($validated['date'])
+            ? Carbon::createFromFormat('Y-m-d', $validated['date'])->startOfDay()
+            : Carbon::now()->startOfDay();
+    }
+
+    private function dailyView(Carbon $date, array $summary, array $soldProducts): array
+    {
+        $soldQuantity = collect($soldProducts)->sum('quantity_sold');
+        $today = Carbon::now()->startOfDay();
+
+        return [
+            'date' => $date->toDateString(),
+            'label' => $date->translatedFormat('d M Y'),
+            'is_today' => $date->isSameDay($today),
+            'today_date' => $today->toDateString(),
+            'previous_date' => $date->copy()->subDay()->toDateString(),
+            'next_date' => $date->copy()->addDay()->toDateString(),
+            'summary' => [
+                ...$summary,
+                'soldProductCount' => count($soldProducts),
+                'soldQuantity' => round((float) $soldQuantity, 2),
+            ],
+            'soldProducts' => $soldProducts,
+        ];
     }
 }

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\MitraSettlement;
 use App\Models\MitraStockDelivery;
+use App\Models\MitraStockUsageAdjustment;
 use App\Models\Outlet;
 use App\Models\PettyCash;
 use App\Models\Product;
@@ -641,6 +642,91 @@ class MitraStockDeliveryAndSettlementTest extends TestCase
         $this->assertSame(70000.0, (float) $restockSettlement->total_amount);
         $this->assertNotNull($advanceRow);
         $this->assertSame(-30000.0, (float) $advanceRow['subtotal']);
+    }
+
+    public function test_manual_usage_for_untrackable_stock_is_counted_in_sales_settlement(): void
+    {
+        [$outlet, $owner, $staff, $mitra, $stock] = $this->createContext();
+        $stock->update([
+            'name' => 'Saus Mentai',
+            'trackable' => false,
+            'settlement_usage_method' => StockItem::SETTLEMENT_USAGE_MANUAL,
+            'min_restock_qty' => 10,
+            'restock_price' => 50000,
+        ]);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.usage-adjustments.store'), [
+                'mitra_id' => $mitra->id,
+                'stock_item_id' => $stock->id,
+                'usage_type' => MitraStockUsageAdjustment::TYPE_MANUAL_USAGE,
+                'quantity' => 12,
+                'reported_at' => now()->toDateString(),
+                'note' => 'Sisa saus dipakai promo',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                'mitra_id' => $mitra->id,
+                'start_date' => now()->startOfMonth()->format('Y-m-d'),
+                'end_date' => now()->endOfMonth()->format('Y-m-d'),
+                'calculation_method' => 'SALES',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $settlement = MitraSettlement::firstOrFail();
+        $this->assertSame(60000.0, (float) $settlement->total_amount);
+        $this->assertSame('Saus Mentai', $settlement->receipt_data[0]['name']);
+        $this->assertSame(12.0, (float) $settlement->receipt_data[0]['calculated_qty']);
+        $this->assertSame(12.0, (float) $settlement->receipt_data[0]['manual_usage_qty']);
+        $this->assertSame(StockItem::SETTLEMENT_USAGE_MANUAL, $settlement->receipt_data[0]['settlement_usage_method']);
+        $this->assertStringContainsString('Manual', $settlement->receipt_data[0]['usage_source_note']);
+    }
+
+    public function test_untrackable_stock_can_treat_restock_as_used_for_sales_settlement(): void
+    {
+        [$outlet, $owner, $staff, $mitra, $stock] = $this->createContext();
+        $stock->update([
+            'name' => 'Saus Mentai',
+            'trackable' => false,
+            'settlement_usage_method' => StockItem::SETTLEMENT_USAGE_RESTOCK_AS_USED,
+            'min_restock_qty' => 10,
+            'restock_price' => 50000,
+        ]);
+
+        RestockLog::create([
+            'outlet_id' => $outlet->id,
+            'stock_item_id' => $stock->id,
+            'qty_added' => 30,
+            'stock_before' => 0,
+            'stock_after' => 30,
+            'note' => 'Restok saus periode ini',
+            'fund_source' => RestockLog::FUND_SOURCE_WAREHOUSE_TRANSFER,
+            'restock_cost' => 0,
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->post(route('settlements.store'), [
+                'mitra_id' => $mitra->id,
+                'start_date' => now()->startOfMonth()->format('Y-m-d'),
+                'end_date' => now()->endOfMonth()->format('Y-m-d'),
+                'calculation_method' => 'SALES',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $settlement = MitraSettlement::firstOrFail();
+        $this->assertSame(150000.0, (float) $settlement->total_amount);
+        $this->assertSame(30.0, (float) $settlement->receipt_data[0]['calculated_qty']);
+        $this->assertSame(StockItem::SETTLEMENT_USAGE_RESTOCK_AS_USED, $settlement->receipt_data[0]['settlement_usage_method']);
+        $this->assertStringContainsString('dianggap habis', $settlement->receipt_data[0]['usage_source_note']);
     }
 
     private function createContext(): array

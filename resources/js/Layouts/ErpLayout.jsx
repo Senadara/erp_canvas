@@ -92,9 +92,24 @@ function NavItem({ item, collapsed }) {
     );
 }
 
+function BrandMark({ className = 'h-9 w-9' }) {
+    return (
+        <img
+            src="/brand/karsa-logo.png"
+            alt="Karsa ERP"
+            className={`${className} object-contain`}
+        />
+    );
+}
+
 export default function ErpLayout({ title, children }) {
-    const { auth, nav, outlet, flash, errors } = usePage().props;
+    const { auth, nav, outlet: pageOutlet, outletContext, flash, errors } = usePage().props;
     const user = auth.user;
+    const outletSwitcher = outletContext || {
+        currentId: pageOutlet?.currentId ?? pageOutlet?.id ?? null,
+        currentName: pageOutlet?.currentName ?? pageOutlet?.name ?? null,
+        list: pageOutlet?.list ?? [],
+    };
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [collapsed, setCollapsed] = useState(false);
     const [profileOpen, setProfileOpen] = useState(false);
@@ -102,16 +117,16 @@ export default function ErpLayout({ title, children }) {
 
     // Add meta tags for offline sync
     useEffect(() => {
-        if (outlet.currentId) {
+        if (outletSwitcher.currentId) {
             let meta = document.querySelector('meta[name="outlet-id"]');
             if (!meta) {
                 meta = document.createElement('meta');
                 meta.name = 'outlet-id';
                 document.head.appendChild(meta);
             }
-            meta.content = outlet.currentId;
+            meta.content = outletSwitcher.currentId;
         }
-    }, [outlet.currentId]);
+    }, [outletSwitcher.currentId]);
 
     const changeOutlet = (e) => {
         router.post(route('outlet.set'), { outlet_id: e.target.value }, { preserveScroll: true });
@@ -153,16 +168,12 @@ export default function ErpLayout({ title, children }) {
                 <div className={`flex h-16 shrink-0 items-center border-b border-slate-100 px-4 ${collapsed ? 'justify-center' : 'justify-between'}`}>
                     {!collapsed && (
                         <Link href={route('dashboard')} className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 shadow-md shadow-brand-500/20">
-                                <span className="text-sm font-bold text-white">K</span>
-                            </div>
+                            <BrandMark className="h-9 w-9 shrink-0" />
                             <span className="font-display text-lg font-bold tracking-tight text-slate-900">Karsa ERP</span>
                         </Link>
                     )}
                     {collapsed && (
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 shadow-md shadow-brand-500/20">
-                            <span className="text-sm font-bold text-white">K</span>
-                        </div>
+                        <BrandMark className="h-10 w-10 shrink-0" />
                     )}
                     <button
                         onClick={() => setCollapsed(v => !v)}
@@ -239,14 +250,14 @@ export default function ErpLayout({ title, children }) {
                         )}
 
                         {/* Outlet Selector */}
-                        {outlet.list?.length > 0 && (
+                        {outletSwitcher.list?.length > 0 && (
                             <select
-                                value={outlet.currentId ?? ''}
+                                value={outletSwitcher.currentId ?? ''}
                                 onChange={changeOutlet}
                                 className="max-w-[10rem] rounded-lg border-slate-200 bg-slate-50 py-2 pl-3 pr-8 text-sm font-medium text-slate-700 transition-colors hover:border-brand-300 focus:border-brand-500 focus:ring-brand-500 sm:max-w-xs"
                                 aria-label="Pilih outlet"
                             >
-                                {outlet.list.map((o) => (
+                                {outletSwitcher.list.map((o) => (
                                     <option key={o.id} value={o.id}>{o.name}</option>
                                 ))}
                             </select>

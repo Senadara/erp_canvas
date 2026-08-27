@@ -46,6 +46,11 @@ class HandleInertiaRequests extends Middleware
                 'currentName' => $outlet?->name,
                 'list' => $outlets,
             ],
+            'outletContext' => [
+                'currentId' => $outletId,
+                'currentName' => $outlet?->name,
+                'list' => $outlets,
+            ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),

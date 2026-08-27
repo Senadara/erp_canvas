@@ -120,6 +120,71 @@ class ReportService
         ];
     }
 
+    public function getDailyProductSales(string $outletId, Carbon $date, ?array $mitraProductIds = null): array
+    {
+        $start = $date->copy()->startOfDay();
+        $end = $date->copy()->endOfDay();
+
+        $query = Transaction::where('outlet_id', $outletId)
+            ->where('payment_status', 'PAID')
+            ->whereBetween('created_at', [$start, $end])
+            ->with('items.product');
+
+        if ($mitraProductIds !== null) {
+            $query->whereHas('items', function ($q) use ($mitraProductIds) {
+                $q->whereIn('product_id', $mitraProductIds);
+            });
+        }
+
+        $products = [];
+
+        foreach ($query->get() as $transaction) {
+            foreach ($transaction->items as $item) {
+                if ($mitraProductIds !== null && ! in_array($item->product_id, $mitraProductIds, true)) {
+                    continue;
+                }
+
+                $productId = (string) $item->product_id;
+                $productName = $item->product_name ?: ($item->product?->name ?? 'Produk');
+
+                if (! isset($products[$productId])) {
+                    $products[$productId] = [
+                        'product_id' => $productId,
+                        'product_name' => $productName,
+                        'quantity_sold' => 0.0,
+                        'revenue' => 0.0,
+                        'transaction_ids' => [],
+                    ];
+                }
+
+                $products[$productId]['product_name'] = $productName;
+                $products[$productId]['quantity_sold'] += (float) $item->qty_porsi;
+                $products[$productId]['revenue'] += (float) $item->subtotal;
+                $products[$productId]['transaction_ids'][$transaction->id] = true;
+            }
+        }
+
+        return collect($products)
+            ->map(function (array $row) {
+                $transactionCount = count($row['transaction_ids']);
+                unset($row['transaction_ids']);
+
+                return [
+                    ...$row,
+                    'quantity_sold' => round((float) $row['quantity_sold'], 2),
+                    'revenue' => round((float) $row['revenue']),
+                    'average_price' => (float) $row['quantity_sold'] > 0
+                        ? round((float) $row['revenue'] / (float) $row['quantity_sold'])
+                        : 0,
+                    'transaction_count' => $transactionCount,
+                ];
+            })
+            ->sort(fn (array $a, array $b) => [$b['quantity_sold'], $b['revenue'], $a['product_name']]
+                <=> [$a['quantity_sold'], $a['revenue'], $b['product_name']])
+            ->values()
+            ->all();
+    }
+
     public function getLast7DaysRevenue(string $outletId, ?array $mitraProductIds = null)
     {
         $end = Carbon::now()->endOfDay();

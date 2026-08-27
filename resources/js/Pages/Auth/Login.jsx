@@ -24,7 +24,7 @@ export default function Login({ status }) {
 
             <div className="mb-6 text-center">
                 <h1 className="text-2xl font-bold text-emerald-900">ERP Karsa Canvas</h1>
-                <p className="mt-1 text-sm text-slate-600">Laravel + PWA — masuk dengan akun outlet</p>
+                <p className="mt-1 text-sm text-slate-600">Karsa ERP PWA - masuk dengan akun outlet</p>
             </div>
 
             {status && <div className="mb-4 text-sm font-medium text-green-600">{status}</div>}

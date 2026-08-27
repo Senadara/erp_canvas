@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\MitraSettlement;
+use App\Models\MitraStockUsageAdjustment;
+use App\Models\StockItem;
 use App\Models\User;
 use App\Services\MitraReportService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 
@@ -48,6 +51,7 @@ class MitraSettlementController extends Controller
                 'reportData' => [],
                 'warehouseReportData' => [],
                 'settlements' => $settlements,
+                'usageAdjustments' => [],
                 'isOwner' => false,
             ]);
         }
@@ -65,11 +69,38 @@ class MitraSettlementController extends Controller
 
         $reportData = [];
         $warehouseReportData = [];
+        $usageAdjustments = [];
         if ($outletId && $selectedMitraId) {
             $mitra = User::find($selectedMitraId);
             if ($mitra) {
                 $reportData = $this->mitraReportService->getMitraReportDataAcrossOutlets($mitra, $startDate, $endDate);
                 $warehouseReportData = $this->mitraReportService->getMitraWarehouseRestockData($mitra, $startDate, $endDate);
+                if (Schema::hasTable('mitra_stock_usage_adjustments')) {
+                    $usageAdjustments = MitraStockUsageAdjustment::with([
+                        'outlet:id,name',
+                        'stockItem:id,name,unit_name',
+                        'creator:id,display_name',
+                    ])
+                        ->where('mitra_id', $mitra->id)
+                        ->whereBetween('reported_at', [$startDate->copy()->startOfDay(), $endDate->copy()->endOfDay()])
+                        ->orderByDesc('reported_at')
+                        ->take(150)
+                        ->get()
+                        ->map(fn (MitraStockUsageAdjustment $adjustment) => [
+                            'id' => $adjustment->id,
+                            'usage_type' => $adjustment->usage_type,
+                            'quantity' => (float) $adjustment->quantity,
+                            'note' => $adjustment->note,
+                            'reported_at' => $adjustment->reported_at?->toDateString(),
+                            'created_at' => $adjustment->created_at?->toIso8601String(),
+                            'outlet_name' => $adjustment->outlet?->name,
+                            'stock_item_id' => $adjustment->stock_item_id,
+                            'stock_name' => $adjustment->stockItem?->name,
+                            'unit_name' => $adjustment->stockItem?->unit_name,
+                            'created_by_name' => $adjustment->creator?->display_name,
+                        ])
+                        ->values();
+                }
             }
         }
 
@@ -89,8 +120,60 @@ class MitraSettlementController extends Controller
             'reportData' => $reportData,
             'warehouseReportData' => $warehouseReportData,
             'settlements' => $settlements,
+            'usageAdjustments' => $usageAdjustments,
             'isOwner' => true,
         ]);
+    }
+
+    public function storeUsageAdjustment(Request $request)
+    {
+        $user = $request->user();
+        if (!$user || (!$user->isOwner() && !($user->feature_overrides['settlements'] ?? false))) {
+            abort(403, 'Anda tidak memiliki akses ke halaman ini.');
+        }
+
+        if (! Schema::hasTable('mitra_stock_usage_adjustments')) {
+            return back()->withErrors(['usage_adjustment' => 'Tabel catatan pemakaian belum tersedia. Jalankan migrasi database terlebih dahulu.']);
+        }
+
+        $data = $request->validate([
+            'mitra_id' => ['required', 'exists:users,id'],
+            'stock_item_id' => ['required', 'string', 'max:36'],
+            'usage_type' => ['required', 'in:MANUAL_USAGE,STOCK_OPNAME'],
+            'quantity' => ['required', 'numeric', 'min:0'],
+            'reported_at' => ['required', 'date_format:Y-m-d'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if ($data['usage_type'] === MitraStockUsageAdjustment::TYPE_MANUAL_USAGE && (float) $data['quantity'] <= 0) {
+            return back()->withErrors(['usage_adjustment' => 'Jumlah pemakaian manual wajib lebih dari 0.']);
+        }
+
+        $mitra = User::find($data['mitra_id']);
+        if (! $mitra || ! $mitra->isMitra()) {
+            return back()->withErrors(['usage_adjustment' => 'Mitra tidak valid.']);
+        }
+
+        $stockItem = StockItem::find($data['stock_item_id']);
+        if (! $stockItem || ! $mitra->mitraStockItems()->where('stock_items.id', $stockItem->id)->exists()) {
+            return back()->withErrors(['usage_adjustment' => 'Bahan tidak terhubung ke mitra yang dipilih.']);
+        }
+
+        MitraStockUsageAdjustment::create([
+            'outlet_id' => $stockItem->outlet_id,
+            'mitra_id' => $mitra->id,
+            'stock_item_id' => $stockItem->id,
+            'warehouse_stock_item_id' => $stockItem->warehouse_stock_item_id,
+            'usage_type' => $data['usage_type'],
+            'quantity' => (float) $data['quantity'],
+            'note' => $data['note'] ?? null,
+            'reported_at' => Carbon::createFromFormat('Y-m-d', $data['reported_at'])->startOfDay(),
+            'created_by' => $user->id,
+        ]);
+
+        return back()->with('success', $data['usage_type'] === MitraStockUsageAdjustment::TYPE_STOCK_OPNAME
+            ? 'Stok akhir/opname bahan berhasil dicatat.'
+            : 'Pemakaian manual bahan berhasil dicatat.');
     }
 
     public function store(Request $request)
@@ -563,12 +646,12 @@ class MitraSettlementController extends Controller
         $pending = (float) ($item['pending_settlement_qty'] ?? 0);
 
         if ($same <= 0 && $cross <= 0 && $pending <= 0) {
-            return 'Belum ada setoran aktif/lunas untuk bahan ini pada periode overlap.';
+            return trim(($item['usage_source_note'] ?? '').' Belum ada setoran aktif/lunas untuk bahan ini pada periode overlap.');
         }
 
         $methodLabel = $method === 'RESTOCK' ? 'metode stok diterima' : 'metode bahan terpakai';
 
-        return "Terkunci {$same} dari {$methodLabel}, {$cross} dari metode lain, dan {$pending} masih diajukan/menunggu pembayaran.";
+        return trim(($item['usage_source_note'] ?? '')." Terkunci {$same} dari {$methodLabel}, {$cross} dari metode lain, dan {$pending} masih diajukan/menunggu pembayaran.");
     }
 
     private function authorizeSettlementAccess(?User $user): void

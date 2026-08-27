@@ -1,4 +1,4 @@
-const CACHE_NAME = 'erp-karsa-v4';
+const CACHE_NAME = 'erp-karsa-v5';
 const API_CACHE = 'erp-api-cache-v1';
 
 // Install: precache shell
@@ -9,7 +9,9 @@ self.addEventListener('install', (event) => {
                 // Cache the manifest and icon
                 return cache.addAll([
                     '/manifest.webmanifest',
-                    '/favicon.ico'
+                    '/favicon.ico',
+                    '/brand/karsa-logo-192.png',
+                    '/brand/karsa-logo-512.png'
                 ]);
             })
             .then(() => self.skipWaiting())
