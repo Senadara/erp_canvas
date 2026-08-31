@@ -159,11 +159,21 @@ class DashboardController extends Controller
         $payload = match ($role) {
             'OWNER' => $this->ownerDashboard($user, $context, $chartData),
             'MITRA' => $this->mitraDashboard($user, $context, $chartData),
+            'PARTNER' => $this->partnerDashboard($user, $context, $chartData),
             default => $this->staffDashboard($user, $context, $chartData),
         };
 
         $dailyView = $context['dailyView'];
         $dailyView['show_expenses'] = (bool) $user?->isOwner();
+        if ($user?->isPartner()) {
+            $dailyView['summary']['transactionCount'] = 0;
+            $dailyView['summary']['totalSales'] = 0;
+            $dailyView['summary']['cashSales'] = 0;
+            $dailyView['summary']['qrisSales'] = 0;
+            $dailyView['summary']['soldProductCount'] = 0;
+            $dailyView['summary']['soldQuantity'] = 0;
+            $dailyView['soldProducts'] = [];
+        }
         if (! $dailyView['show_expenses']) {
             $dailyView['summary']['expenses'] = 0;
         }
@@ -249,6 +259,28 @@ class DashboardController extends Controller
                 $this->action('Struk', '/receipts', 'receipts', 'receipt', 'sky'),
             ]),
             'alerts' => $this->mitraAlerts($context),
+        ];
+    }
+
+    private function partnerDashboard(?User $user, array $context, array $chartData): array
+    {
+        return [
+            'role' => 'PARTNER',
+            'title' => 'Dashboard Partner',
+            'subtitle' => 'Ringkasan modal, dividen, dan akses partner bisnis.',
+            'cards' => [
+                $this->card('outlets', 'Outlet Terkait', $context['outletCount'], 'number', 'outlet', 'indigo', 'Akses partner'),
+                $this->card('owner_finance', 'Bagi Hasil Saya', 'Aktif', 'text', 'finance', 'emerald', 'Gaji, dividen, dan pinjaman modal'),
+                $this->card('investments', 'Modal Partner', 'Terhubung', 'text', 'finance', 'indigo', 'Lot dan status modal'),
+                $this->card('access', 'Akses Tambahan', 'Custom', 'text', 'users', 'slate', 'Diatur owner lewat override fitur'),
+            ],
+            'chart' => $this->chart('Tren Partner', 'Data operasional detail dibatasi untuk partner', []),
+            'quickActions' => $this->quickActions($user, [
+                $this->action('Bagi Hasil', '/owner-finance', 'owner_finance', 'finance', 'emerald'),
+                $this->action('Modal Partner', '/investments', 'investments', 'finance', 'indigo'),
+                $this->action('Kasir', '/cashier', 'cashier', 'cashier', 'emerald'),
+            ]),
+            'alerts' => [],
         ];
     }
 

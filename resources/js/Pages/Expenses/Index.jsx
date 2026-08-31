@@ -35,7 +35,7 @@ function categoryTone(item, cashierFund, outsideTopup, incoming) {
     if (cashierFund) return 'bg-amber-100 text-amber-800';
     if (item.payment_method === 'PRIVATE') return 'bg-amber-100 text-amber-800';
     if (incoming) return 'bg-emerald-100 text-emerald-800';
-    if (item.category === 'Penarikan') return 'bg-slate-100 text-slate-700';
+    if (OWNER_ONLY_CATEGORIES.includes(item.category)) return 'bg-slate-100 text-slate-700';
     return 'bg-rose-100 text-rose-800';
 }
 
@@ -61,6 +61,8 @@ function formatDateLabel(value) {
 
 const ALL_CATEGORIES = 'ALL';
 const CUSTOM_CATEGORY = '__custom__';
+const OWNER_DISTRIBUTION_CATEGORY = 'Distribusi Owner';
+const OWNER_ONLY_CATEGORIES = ['Penarikan', OWNER_DISTRIBUTION_CATEGORY];
 
 const FALLBACK_CATEGORIES = [
     'Operasional',
@@ -167,7 +169,7 @@ export default function ExpensesIndex({ expenses = [], openShift, categoryOption
         ...expenses.map(expense => expense.category),
     ]), [categoryOptions, expenses]);
     const editableCategoryOptions = useMemo(
-        () => normalizedCategoryOptions.filter(category => isOwner || category !== 'Penarikan'),
+        () => normalizedCategoryOptions.filter(category => isOwner || !OWNER_ONLY_CATEGORIES.includes(category)),
         [isOwner, normalizedCategoryOptions]
     );
     const summaryRows = useMemo(() => {

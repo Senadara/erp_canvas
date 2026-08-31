@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Outlet;
+use App\Models\Investment;
 use App\Support\NavPermission;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -24,9 +25,18 @@ class HandleInertiaRequests extends Middleware
 
         $outlets = [];
         if ($user) {
-            $outlets = $user->isOwner()
-                ? Outlet::orderBy('name')->get(['id', 'name'])
-                : $user->outlets()->orderBy('name')->get(['outlets.id', 'outlets.name']);
+            if ($user->isOwner()) {
+                $outlets = Outlet::orderBy('name')->get(['id', 'name']);
+            } elseif ($user->isPartner()) {
+                $partnerOutletIds = $user->outlets()->pluck('outlets.id')
+                    ->merge(Investment::where('user_id', $user->id)->where('status', 'APPROVED')->pluck('outlet_id'))
+                    ->filter()
+                    ->unique()
+                    ->values();
+                $outlets = Outlet::whereIn('id', $partnerOutletIds)->orderBy('name')->get(['id', 'name']);
+            } else {
+                $outlets = $user->outlets()->orderBy('name')->get(['outlets.id', 'outlets.name']);
+            }
         }
 
         return [

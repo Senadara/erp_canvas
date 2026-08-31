@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Outlet;
+use App\Models\Product;
 use App\Models\StockItem;
 use App\Models\User;
 use App\Services\ProductCostService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
@@ -20,12 +22,21 @@ class ProductCostController extends Controller
         abort_if(! $this->canView($request->user()), 403, 'Anda tidak memiliki akses ke menu Biaya Produk.');
 
         $outletId = $request->session()->get('outlet_id');
-        $startDate = $request->query('start_date')
-            ? Carbon::parse($request->query('start_date'))->startOfDay()
+        $filters = $request->validate([
+            'start_date' => ['nullable', 'date_format:Y-m-d'],
+            'end_date' => ['nullable', 'date_format:Y-m-d'],
+            'salary_total' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $startDate = ! empty($filters['start_date'])
+            ? Carbon::parse($filters['start_date'])->startOfDay()
             : now()->startOfMonth();
-        $endDate = $request->query('end_date')
-            ? Carbon::parse($request->query('end_date'))->endOfDay()
+        $endDate = ! empty($filters['end_date'])
+            ? Carbon::parse($filters['end_date'])->endOfDay()
             : now()->endOfDay();
+        $customSalaryTotal = array_key_exists('salary_total', $filters) && $filters['salary_total'] !== null
+            ? (float) $filters['salary_total']
+            : null;
 
         if ($endDate->lt($startDate)) {
             $endDate = $startDate->copy()->endOfDay();
@@ -36,9 +47,39 @@ class ProductCostController extends Controller
             'filters' => [
                 'start_date' => $startDate->format('Y-m-d'),
                 'end_date' => $endDate->format('Y-m-d'),
+                'salary_total' => $customSalaryTotal !== null ? (string) $customSalaryTotal : null,
             ],
-            'report' => $this->productCostService->dashboardData($outletId, $startDate, $endDate),
+            'report' => $this->productCostService->dashboardData($outletId, $startDate, $endDate, $customSalaryTotal),
         ]);
+    }
+
+    public function fixedHpp(Request $request, string $id)
+    {
+        abort_if(! $request->user()?->isOwner(), 403, 'Hanya owner yang dapat menyimpan HPP fix.');
+
+        $outletId = $request->session()->get('outlet_id');
+        $data = $request->validate([
+            'hpp' => ['required', 'numeric', 'min:0'],
+            'hpp_mode' => ['required', Rule::in([
+                ProductCostService::HPP_MODE_AUTO,
+                ProductCostService::HPP_MODE_FIXED,
+            ])],
+        ]);
+
+        $product = Product::where('id', $id)->where('outlet_id', $outletId)->firstOrFail();
+        $updates = ['hpp_mode' => $data['hpp_mode']];
+
+        if ($data['hpp_mode'] === ProductCostService::HPP_MODE_FIXED) {
+            $updates['hpp'] = $data['hpp'];
+        }
+
+        $product->update($updates);
+
+        $message = $data['hpp_mode'] === ProductCostService::HPP_MODE_FIXED
+            ? 'HPP fix berhasil disimpan untuk produk ini.'
+            : 'Produk kembali memakai HPP otomatis dari BOM.';
+
+        return redirect()->back()->with('success', $message);
     }
 
     public function bulkComponents(Request $request)

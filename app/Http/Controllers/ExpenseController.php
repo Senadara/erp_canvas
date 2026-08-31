@@ -60,7 +60,7 @@ class ExpenseController extends Controller
         }
 
         $data = $this->validateExpenseData($request);
-        if (($data['category'] ?? null) === 'Penarikan' && ! $request->user()?->isOwner()) {
+        if (in_array($data['category'] ?? null, ['Penarikan', PettyCashService::OWNER_DISTRIBUTION_CATEGORY], true) && ! $request->user()?->isOwner()) {
             abort(403, 'Hanya owner yang dapat melakukan penarikan kas.');
         }
 
@@ -77,7 +77,7 @@ class ExpenseController extends Controller
         $outletId = $request->session()->get('outlet_id');
 
         $data = $this->validateExpenseData($request);
-        if (($data['category'] ?? null) === 'Penarikan' && ! $request->user()?->isOwner()) {
+        if (in_array($data['category'] ?? null, ['Penarikan', PettyCashService::OWNER_DISTRIBUTION_CATEGORY], true) && ! $request->user()?->isOwner()) {
             abort(403, 'Hanya owner yang dapat melakukan penarikan kas.');
         }
 

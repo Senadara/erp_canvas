@@ -12,7 +12,7 @@ class Product extends Model
     use HasUlidPrimary;
 
     protected $fillable = [
-        'outlet_id', 'name', 'category', 'price', 'hpp', 'image_url', 'is_active', 'display_group_id',
+        'outlet_id', 'name', 'category', 'price', 'hpp', 'hpp_mode', 'image_url', 'is_active', 'display_group_id',
     ];
 
     protected function casts(): array

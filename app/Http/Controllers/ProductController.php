@@ -42,6 +42,7 @@ class ProductController extends Controller
             'category' => 'required|string',
             'price' => 'required|numeric|min:0',
             'hpp' => 'nullable|numeric|min:0',
+            'hpp_mode' => 'nullable|in:AUTO,FIXED',
             'is_active' => 'boolean',
             'display_group_id' => 'nullable|string',
             'image' => 'nullable|image|max:2048', // 2MB max
@@ -59,6 +60,7 @@ class ProductController extends Controller
             $data['category'] = $existing->category;
             $data['price'] = $existing->price;
             $data['hpp'] = $existing->hpp;
+            $data['hpp_mode'] = $existing->hpp_mode;
             $data['is_active'] = $existing->is_active;
             $data['display_group_id'] = $existing->display_group_id;
         }

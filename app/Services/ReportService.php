@@ -50,7 +50,7 @@ class ReportService
             $pengeluaran = PettyCash::where('outlet_id', $outletId)
                 ->whereBetween('created_at', [$start, $end])
                 ->where('cash_flow', 'OUT')
-                ->whereNotIn('category', ['Tambah Modal', 'Tambah Kas', 'Penarikan', 'RESTOCK'])
+                ->whereNotIn('category', ['Tambah Modal', 'Tambah Kas', 'Penarikan', 'RESTOCK', PettyCashService::OWNER_DISTRIBUTION_CATEGORY])
                 ->sum('amount');
         }
 
@@ -107,7 +107,7 @@ class ReportService
             $expenses = PettyCash::where('outlet_id', $outletId)
                 ->whereBetween('created_at', [$start, $end])
                 ->where('cash_flow', 'OUT')
-                ->whereNotIn('category', ['Tambah Modal', 'Tambah Kas', 'Penarikan', 'RESTOCK'])
+                ->whereNotIn('category', ['Tambah Modal', 'Tambah Kas', 'Penarikan', 'RESTOCK', PettyCashService::OWNER_DISTRIBUTION_CATEGORY])
                 ->sum('amount');
         }
 
@@ -472,6 +472,8 @@ class ReportService
             'outside_cashier_topups' => 0.0,
             'withdraw_cash' => 0.0,
             'withdraw_qris' => 0.0,
+            'owner_distribution_cash' => 0.0,
+            'owner_distribution_qris' => 0.0,
         ];
 
         $daily = [];
@@ -632,6 +634,7 @@ class ReportService
             $isCashierTopup = in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true);
             $isDrawerCashierTopup = $isCashierTopup && $method !== 'PRIVATE';
             $isWithdrawal = $movement->category === 'Penarikan';
+            $isOwnerDistribution = $movement->category === PettyCashService::OWNER_DISTRIBUTION_CATEGORY;
             $flow = $movement->cash_flow === 'IN' ? 'IN' : 'OUT';
             $settlementFlow = $isDrawerCashierTopup ? 'OUT' : ($isCashierTopup ? 'IN' : $flow);
             $createdAt = Carbon::parse($movement->created_at);
@@ -656,6 +659,14 @@ class ReportService
                 }
             }
 
+            if ($isOwnerDistribution) {
+                if ($method === 'QRIS') {
+                    $summary['owner_distribution_qris'] += $amount;
+                } else {
+                    $summary['owner_distribution_cash'] += $amount;
+                }
+            }
+
             if ($settlementFlow === 'IN') {
                 if ($method === 'QRIS') {
                     $summary['qris_in'] += $amount;
@@ -670,7 +681,7 @@ class ReportService
                     $daily[$dayKey]['net_cash'] += $amount;
                 }
             } else {
-                if (! $isWithdrawal && ! $isCashierTopup) {
+                if (! $isWithdrawal && ! $isOwnerDistribution && ! $isCashierTopup) {
                     if ($movement->category === 'RESTOCK') {
                         $summary['restock_expenses'] += $amount;
                     } else {
@@ -748,6 +759,7 @@ class ReportService
             'restock_expenses' => round((float) $summary['restock_expenses']),
             'cashier_topups' => round((float) $summary['cashier_topups']),
             'owner_withdrawals' => round((float) $summary['withdraw_cash'] + (float) $summary['withdraw_qris']),
+            'owner_finance_payouts' => round((float) $summary['owner_distribution_cash'] + (float) $summary['owner_distribution_qris']),
             'money_in_total' => round((float) $summary['money_in_total']),
             'money_out_total' => round((float) $summary['money_out_total']),
         ];

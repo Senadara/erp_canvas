@@ -23,6 +23,7 @@ Route::middleware(['auth', 'outlet'])->group(function () {
     Route::post('/products/{id}/conversions', [\App\Http\Controllers\ProductController::class, 'setConversions'])->name('products.conversions');
     Route::get('/product-costs', [\App\Http\Controllers\ProductCostController::class, 'index'])->name('product-costs');
     Route::post('/product-costs/bulk-components', [\App\Http\Controllers\ProductCostController::class, 'bulkComponents'])->name('product-costs.bulk-components');
+    Route::put('/product-costs/{id}/fixed-hpp', [\App\Http\Controllers\ProductCostController::class, 'fixedHpp'])->name('product-costs.fixed-hpp');
 
     // Stock
     Route::get('/stock', [\App\Http\Controllers\StockController::class, 'index'])->name('stock');
@@ -66,6 +67,13 @@ Route::middleware(['auth', 'outlet'])->group(function () {
     Route::get('/reports/e-settlement/pdf', [\App\Http\Controllers\ReportController::class, 'eSettlementPdf'])->name('reports.e-settlement.pdf');
     Route::get('/finance', [\App\Http\Controllers\FinanceController::class, 'index'])->name('finance');
     Route::post('/finance/withdraw', [\App\Http\Controllers\FinanceController::class, 'withdraw'])->name('finance.withdraw');
+    Route::get('/owner-finance', [\App\Http\Controllers\OwnerFinanceController::class, 'index'])->name('owner-finance');
+    Route::post('/owner-finance/batches', [\App\Http\Controllers\OwnerFinanceController::class, 'storeBatch'])->name('owner-finance.batches.store');
+    Route::post('/owner-finance/batches/{batch}/post', [\App\Http\Controllers\OwnerFinanceController::class, 'postBatch'])->name('owner-finance.batches.post');
+    Route::post('/partner-profiles', [\App\Http\Controllers\OwnerFinanceController::class, 'storeProfile'])->name('partner-profiles.store');
+    Route::put('/partner-profiles/{profile}', [\App\Http\Controllers\OwnerFinanceController::class, 'updateProfile'])->name('partner-profiles.update');
+    Route::post('/partner-capital-loans', [\App\Http\Controllers\OwnerFinanceController::class, 'storeLoan'])->name('partner-capital-loans.store');
+    Route::put('/partner-capital-loans/{loan}', [\App\Http\Controllers\OwnerFinanceController::class, 'updateLoan'])->name('partner-capital-loans.update');
 
     // Payroll
     Route::get('/payroll', [\App\Http\Controllers\PayrollController::class, 'index'])->name('payroll');

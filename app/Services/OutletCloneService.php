@@ -89,6 +89,7 @@ class OutletCloneService
                 'category' => $product->category,
                 'price' => $product->price,
                 'hpp' => $product->hpp,
+                'hpp_mode' => $product->hpp_mode ?: ProductCostService::HPP_MODE_AUTO,
                 'image_url' => $product->image_url,
                 'is_active' => $product->is_active,
                 'display_group_id' => $product->display_group_id ? ($groupMap[$product->display_group_id] ?? null) : null,

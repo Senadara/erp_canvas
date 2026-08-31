@@ -381,6 +381,126 @@ class ProductCostManagementTest extends TestCase
         $this->assertSame(-160000.0, (float) $report['payroll_evaluation']['profit_after_labor']);
     }
 
+    public function test_product_cost_payroll_evaluation_can_use_custom_salary_total(): void
+    {
+        $outlet = Outlet::create(['name' => 'Outlet Gaji Custom']);
+        $staff = $this->createUser('staff-custom-salary@karsa.local', 'STAFF');
+        $product = $this->createProduct($outlet->id, 'Dimsum Gaji Custom', 10000, 3000);
+
+        ShiftRecord::create([
+            'outlet_id' => $outlet->id,
+            'name' => 'Shift Gaji Custom',
+            'opened_by' => $staff->id,
+            'closed_by' => $staff->id,
+            'opened_at' => Carbon::parse('2026-07-15 08:00:00'),
+            'closed_at' => Carbon::parse('2026-07-15 16:00:00'),
+            'opening_cash' => 50000,
+            'expected_cash' => 100000,
+            'actual_cash' => 100000,
+            'status' => 'CLOSED',
+        ]);
+
+        EmployeeSalaryPayment::create([
+            'employee_id' => $staff->id,
+            'employee_name' => $staff->display_name,
+            'period_start' => Carbon::parse('2026-07-15'),
+            'period_end' => Carbon::parse('2026-07-15'),
+            'salary_type' => 'MONTHLY',
+            'monthly_amount' => 100000,
+            'payable_days' => 1,
+            'work_days' => 1,
+            'shift_count' => 1,
+            'base_amount' => 100000,
+            'bonus_amount' => 0,
+            'deduction_amount' => 0,
+            'total_amount' => 100000,
+            'shift_snapshot' => [],
+            'paid_at' => Carbon::parse('2026-07-15'),
+        ]);
+
+        $transaction = Transaction::create([
+            'outlet_id' => $outlet->id,
+            'invoice_number' => 'INV-GAJI-CUSTOM',
+            'total_amount' => 200000,
+            'payment_method' => 'CASH',
+            'payment_status' => 'PAID',
+            'paid_at' => Carbon::parse('2026-07-15 12:00:00'),
+            'created_at' => Carbon::parse('2026-07-15 12:00:00'),
+        ]);
+
+        TransactionItem::create([
+            'transaction_id' => $transaction->id,
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'qty_porsi' => 20,
+            'price_per_porsi' => 10000,
+            'subtotal' => 200000,
+            'hpp_per_porsi' => 2500,
+            'hpp_total' => 50000,
+            'hpp_source' => ProductCostService::SOURCE_BOM_LATEST,
+            'hpp_snapshot' => ['source' => ProductCostService::SOURCE_BOM_LATEST],
+        ]);
+
+        $report = app(ProductCostService::class)->dashboardData(
+            $outlet->id,
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+            300000,
+        );
+
+        $this->assertSame(100000.0, (float) $report['payroll_evaluation']['recorded_salary_total']);
+        $this->assertSame(300000.0, (float) $report['payroll_evaluation']['custom_salary_total']);
+        $this->assertTrue($report['payroll_evaluation']['custom_salary_enabled']);
+        $this->assertSame(300000.0, (float) $report['payroll_evaluation']['salary_total']);
+        $this->assertSame(15000.0, (float) $report['payroll_evaluation']['labor_cost_per_portion']);
+        $this->assertSame(-150000.0, (float) $report['payroll_evaluation']['profit_after_labor']);
+    }
+
+    public function test_owner_can_save_fixed_hpp_and_return_product_to_auto_bom_cost(): void
+    {
+        $outlet = Outlet::create(['name' => 'Outlet HPP Fix']);
+        $owner = $this->createUser('owner-fixed-hpp@karsa.local', 'OWNER');
+        $product = $this->createProduct($outlet->id, 'Dimsum HPP Fix', 15000, 5000);
+        $material = $this->createStock($outlet->id, 'Adonan HPP Fix', 100, 10, 10000, 'MATERIAL');
+        $packaging = $this->createStock($outlet->id, 'Box HPP Fix', 100, 100, 50000, 'PACKAGING');
+
+        Conversion::create(['product_id' => $product->id, 'stock_item_id' => $material->id, 'ratio' => 2]);
+        Conversion::create(['product_id' => $product->id, 'stock_item_id' => $packaging->id, 'ratio' => 1]);
+
+        $autoCost = app(ProductCostService::class)->calculateProduct($product->fresh('conversions.stockItem'), $outlet->id);
+
+        $this->assertSame(2500.0, (float) $autoCost['effective_hpp']);
+        $this->assertSame(ProductCostService::SOURCE_BOM_LATEST, $autoCost['hpp_source']);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->put(route('product-costs.fixed-hpp', $product->id), [
+                'hpp' => 6500,
+                'hpp_mode' => ProductCostService::HPP_MODE_FIXED,
+            ])
+            ->assertRedirect();
+
+        $fixedCost = app(ProductCostService::class)->calculateProduct($product->fresh('conversions.stockItem'), $outlet->id);
+
+        $this->assertSame(6500.0, (float) $fixedCost['effective_hpp']);
+        $this->assertSame(ProductCostService::SOURCE_FIXED_MANUAL, $fixedCost['hpp_source']);
+        $this->assertTrue($fixedCost['uses_fixed_hpp']);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->put(route('product-costs.fixed-hpp', $product->id), [
+                'hpp' => 6500,
+                'hpp_mode' => ProductCostService::HPP_MODE_AUTO,
+            ])
+            ->assertRedirect();
+
+        $latestCost = app(ProductCostService::class)->calculateProduct($product->fresh('conversions.stockItem'), $outlet->id);
+
+        $this->assertSame(2500.0, (float) $latestCost['effective_hpp']);
+        $this->assertSame(ProductCostService::SOURCE_BOM_LATEST, $latestCost['hpp_source']);
+        $this->assertFalse($latestCost['uses_fixed_hpp']);
+    }
+
     private function createUser(string $email, string $role): User
     {
         return User::create([

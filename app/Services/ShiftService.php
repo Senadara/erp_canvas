@@ -192,7 +192,7 @@ class ShiftService
             $end = $shift->closed_at ? $this->storedTime($shift->closed_at) : $this->storageNow();
             $expenseCount = PettyCash::where('outlet_id', $outletId)
                 ->whereBetween('created_at', [$this->storedTime($shift->opened_at), $end])
-                ->where('category', '!=', 'Penarikan')
+                ->whereNotIn('category', ['Penarikan', PettyCashService::OWNER_DISTRIBUTION_CATEGORY])
                 ->count();
 
             if ($shift->transactions_count > 0 || $expenseCount > 0) {
@@ -234,7 +234,7 @@ class ShiftService
             $flow = $this->resolveCashFlow($movement);
             $amount = (float) $movement->amount;
 
-            if ($movement->category === 'Penarikan') {
+            if (in_array($movement->category, ['Penarikan', PettyCashService::OWNER_DISTRIBUTION_CATEGORY], true)) {
                 continue;
             }
 

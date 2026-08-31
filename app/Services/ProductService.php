@@ -38,6 +38,8 @@ class ProductService
             $product->setAttribute('material_hpp', $cost['material_hpp']);
             $product->setAttribute('manual_hpp', $cost['manual_hpp']);
             $product->setAttribute('effective_hpp', $cost['effective_hpp']);
+            $product->setAttribute('hpp_mode', $cost['hpp_mode']);
+            $product->setAttribute('uses_fixed_hpp', $cost['uses_fixed_hpp']);
             $product->setAttribute('hpp_source', $cost['hpp_source']);
             $product->setAttribute('margin_amount', $cost['margin_amount']);
             $product->setAttribute('margin_percent', $cost['margin_percent']);
@@ -59,6 +61,7 @@ class ProductService
                 'category' => $data['category'],
                 'price' => $data['price'],
                 'hpp' => $data['hpp'] ?? 0,
+                'hpp_mode' => $data['hpp_mode'] ?? $product->hpp_mode ?? ProductCostService::HPP_MODE_AUTO,
                 'image_url' => $data['image_url'] ?? null,
                 'is_active' => $data['is_active'] ?? true,
                 'display_group_id' => $data['display_group_id'] ?? null,
@@ -72,6 +75,7 @@ class ProductService
             'category' => $data['category'],
             'price' => $data['price'],
             'hpp' => $data['hpp'] ?? 0,
+            'hpp_mode' => $data['hpp_mode'] ?? ProductCostService::HPP_MODE_AUTO,
             'image_url' => $data['image_url'] ?? null,
             'is_active' => $data['is_active'] ?? true,
             'display_group_id' => $data['display_group_id'] ?? null,

@@ -27,6 +27,7 @@ class NavPermission
         'outlets' => false,
         'suppliers' => false,
         'investments' => false,
+        'owner_finance' => false,
     ];
 
     /** @var array<string, bool> */
@@ -50,6 +51,31 @@ class NavPermission
         'outlets' => false,
         'suppliers' => false,
         'investments' => false,
+        'owner_finance' => false,
+    ];
+
+    /** @var array<string, bool> */
+    private const PARTNER_NAV = [
+        'dashboard' => true,
+        'cashier' => false,
+        'products' => false,
+        'product_costs' => false,
+        'stock' => false,
+        'stock_audit' => false,
+        'expenses' => false,
+        'waste' => false,
+        'reports' => false,
+        'finance' => false,
+        'mitra_reports' => false,
+        'settlements' => false,
+        'payroll' => false,
+        'receipts' => false,
+        'owner' => false,
+        'users' => false,
+        'outlets' => false,
+        'suppliers' => false,
+        'investments' => true,
+        'owner_finance' => true,
     ];
 
     public static function canSee(?User $user, string $feature): bool
@@ -75,6 +101,14 @@ class NavPermission
             }
 
             return $base;
+        }
+        if ($user->isPartner()) {
+            $overrides = $user->feature_overrides ?? [];
+            if (array_key_exists($feature, $overrides)) {
+                return (bool) $overrides[$feature];
+            }
+
+            return self::PARTNER_NAV[$feature] ?? false;
         }
 
         $overrides = $user->feature_overrides ?? [];
@@ -105,7 +139,8 @@ class NavPermission
             ['href' => '/mitra-reports', 'label' => 'Laporan Mitra', 'feature' => 'mitra_reports', 'icon' => 'chart', 'group' => 'mitra'],
             ['href' => '/settlements', 'label' => 'Setoran Mitra', 'feature' => 'settlements', 'icon' => 'document', 'group' => 'mitra'],
             ['href' => '/payroll', 'label' => 'Gaji Pegawai', 'feature' => 'payroll', 'icon' => 'users', 'group' => 'manajemen'],
-            ['href' => '/investments', 'label' => 'Investasi', 'feature' => 'investments', 'icon' => 'banknotes', 'group' => 'manajemen'],
+            ['href' => '/investments', 'label' => 'Modal Partner', 'feature' => 'investments', 'icon' => 'banknotes', 'group' => 'manajemen'],
+            ['href' => '/owner-finance', 'label' => 'Bagi Hasil', 'feature' => 'owner_finance', 'icon' => 'banknotes', 'group' => 'manajemen'],
             ['href' => '/owner', 'label' => 'Owner', 'feature' => 'owner', 'icon' => 'building', 'group' => 'manajemen'],
             ['href' => '/outlets', 'label' => 'Outlet', 'feature' => 'outlets', 'icon' => 'map', 'group' => 'pengaturan'],
             ['href' => '/users', 'label' => 'Pengguna', 'feature' => 'users', 'icon' => 'users', 'group' => 'pengaturan'],

@@ -22,6 +22,10 @@ class ProductCostService
     public const SOURCE_BOM_LATEST = 'BOM_LATEST';
     public const SOURCE_MANUAL_FALLBACK = 'MANUAL_FALLBACK';
     public const SOURCE_LEGACY_MANUAL = 'LEGACY_MANUAL';
+    public const SOURCE_FIXED_MANUAL = 'FIXED_MANUAL';
+
+    public const HPP_MODE_AUTO = 'AUTO';
+    public const HPP_MODE_FIXED = 'FIXED';
 
     public function __construct(private ConversionOutletResolver $conversionOutletResolver) {}
 
@@ -69,15 +73,23 @@ class ProductCostService
         $manualHpp = (float) $product->hpp;
         $materialHpp = (float) $components->sum('component_cost');
         $hasBom = $components->isNotEmpty();
-        $effectiveHpp = $hasBom ? $materialHpp : $manualHpp;
-        $source = $hasBom ? self::SOURCE_BOM_LATEST : self::SOURCE_MANUAL_FALLBACK;
+        $hppMode = strtoupper((string) ($product->hpp_mode ?: self::HPP_MODE_AUTO));
+        $usesFixedHpp = $hppMode === self::HPP_MODE_FIXED;
+        $effectiveHpp = $usesFixedHpp ? $manualHpp : ($hasBom ? $materialHpp : $manualHpp);
+        $source = match (true) {
+            $usesFixedHpp => self::SOURCE_FIXED_MANUAL,
+            $hasBom => self::SOURCE_BOM_LATEST,
+            default => self::SOURCE_MANUAL_FALLBACK,
+        };
         $price = (float) $product->price;
-        $warnings = $this->costWarnings($components);
+        $warnings = $usesFixedHpp ? [] : $this->costWarnings($components);
         $marginAmount = $price - $effectiveHpp;
 
         return [
             'product_id' => $product->id,
             'product_name' => $product->name,
+            'hpp_mode' => $usesFixedHpp ? self::HPP_MODE_FIXED : self::HPP_MODE_AUTO,
+            'uses_fixed_hpp' => $usesFixedHpp,
             'material_hpp' => round($materialHpp, 4),
             'manual_hpp' => round($manualHpp, 4),
             'effective_hpp' => round($effectiveHpp, 4),
@@ -102,12 +114,15 @@ class ProductCostService
             'hpp_source' => $cost['hpp_source'],
             'hpp_snapshot' => [
                 'source' => $cost['hpp_source'],
-                'pricing_method' => 'LATEST_STOCK_MASTER',
+                'pricing_method' => $cost['hpp_source'] === self::SOURCE_FIXED_MANUAL
+                    ? 'FIXED_PRODUCT_HPP'
+                    : 'LATEST_STOCK_MASTER',
                 'calculated_at' => now()->toIso8601String(),
                 'product_id' => $product->id,
                 'product_name' => $product->name,
                 'quantity' => $quantity,
                 'sale_price' => (float) $product->price,
+                'hpp_mode' => $cost['hpp_mode'],
                 'material_hpp' => $cost['material_hpp'],
                 'manual_hpp' => $cost['manual_hpp'],
                 'effective_hpp' => $cost['effective_hpp'],
@@ -186,7 +201,7 @@ class ProductCostService
         });
     }
 
-    public function dashboardData(string $outletId, Carbon $startDate, Carbon $endDate): array
+    public function dashboardData(string $outletId, Carbon $startDate, Carbon $endDate, ?float $customSalaryTotal = null): array
     {
         $products = Product::with([
             'displayGroup:id,name,sort_order',
@@ -246,7 +261,7 @@ class ProductCostService
             'products' => $productRows->all(),
             'packaging_stocks' => $packagingStocks->all(),
             'component_stocks' => $componentStocks->all(),
-            'payroll_evaluation' => $this->payrollEvaluation($outletId, $startDate, $endDate),
+            'payroll_evaluation' => $this->payrollEvaluation($outletId, $startDate, $endDate, $customSalaryTotal),
         ];
     }
 
@@ -287,7 +302,7 @@ class ProductCostService
         return $warnings;
     }
 
-    private function payrollEvaluation(string $outletId, Carbon $startDate, Carbon $endDate): array
+    private function payrollEvaluation(string $outletId, Carbon $startDate, Carbon $endDate, ?float $customSalaryTotal = null): array
     {
         $employeeIds = ShiftRecord::where('outlet_id', $outletId)
             ->whereNotNull('opened_by')
@@ -301,14 +316,17 @@ class ProductCostService
             ->unique()
             ->values();
 
-        $salaryTotal = 0.0;
+        $recordedSalaryTotal = 0.0;
         if ($employeeIds->isNotEmpty()) {
             $salaryPayments = EmployeeSalaryPayment::whereIn('employee_id', $employeeIds)
                 ->where('period_start', '<=', $endDate)
                 ->where('period_end', '>=', $startDate)
                 ->get();
-            $salaryTotal = $this->allocatedSalaryTotal($salaryPayments, $startDate, $endDate);
+            $recordedSalaryTotal = $this->allocatedSalaryTotal($salaryPayments, $startDate, $endDate);
         }
+
+        $customSalaryTotal = $customSalaryTotal !== null ? max(0, $customSalaryTotal) : null;
+        $salaryTotal = $customSalaryTotal ?? $recordedSalaryTotal;
 
         $transactions = Transaction::where('outlet_id', $outletId)
             ->where('payment_status', 'PAID')
@@ -340,6 +358,9 @@ class ProductCostService
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
             'salary_total' => round($salaryTotal),
+            'recorded_salary_total' => round($recordedSalaryTotal),
+            'custom_salary_total' => $customSalaryTotal !== null ? round($customSalaryTotal) : null,
+            'custom_salary_enabled' => $customSalaryTotal !== null,
             'sold_portions' => round($soldPortions, 2),
             'revenue' => round($revenue),
             'estimated_hpp' => round($hpp),

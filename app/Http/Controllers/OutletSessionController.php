@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Outlet;
+use App\Models\Investment;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
@@ -20,6 +21,12 @@ class OutletSessionController extends Controller
 
         if (! $user->isOwner()) {
             $allowed = $user->outlets()->where('outlets.id', $outletId)->exists();
+            if (! $allowed && $user->isPartner()) {
+                $allowed = Investment::where('user_id', $user->id)
+                    ->where('outlet_id', $outletId)
+                    ->where('status', 'APPROVED')
+                    ->exists();
+            }
             if (! $allowed) {
                 abort(403);
             }

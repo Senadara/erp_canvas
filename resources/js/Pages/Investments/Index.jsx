@@ -7,12 +7,13 @@ function formatRupiah(value) {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
 }
 
-export default function InvestmentsIndex({ investments, outlets }) {
+export default function InvestmentsIndex({ investments, outlets, partners = [] }) {
     const { auth } = usePage().props;
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const { data, setData, post, processing, errors, reset } = useForm({
         outlet_id: '',
+        user_id: '',
         lots: 1,
         lot_value: 1000000,
         note: '',
@@ -46,15 +47,15 @@ export default function InvestmentsIndex({ investments, outlets }) {
 
     return (
         <ErpLayout title="Manajemen Investasi">
-            <Head title="Investasi" />
+            <Head title="Modal Partner" />
 
             <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-slate-900">Portofolio Investasi</h1>
+                <h1 className="text-2xl font-semibold text-slate-900">Modal Partner</h1>
                 <button
                     onClick={() => setIsModalOpen(true)}
                     className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium shadow-sm transition-transform active:scale-95"
                 >
-                    + Catat Investasi Baru
+                    + Catat Modal Baru
                 </button>
             </div>
 
@@ -68,7 +69,7 @@ export default function InvestmentsIndex({ investments, outlets }) {
                 </div>
                 <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-6 text-white shadow-lg relative overflow-hidden">
                     <div className="relative z-10">
-                        <p className="text-emerald-100 mb-1 text-sm font-medium">Total Nilai Investasi Aktif</p>
+                        <p className="text-emerald-100 mb-1 text-sm font-medium">Total Nilai Modal Aktif</p>
                         <h2 className="text-3xl font-bold">{formatRupiah(totalValue)}</h2>
                     </div>
                     <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-white opacity-10 rounded-full blur-xl"></div>
@@ -81,7 +82,7 @@ export default function InvestmentsIndex({ investments, outlets }) {
                         <thead className="bg-slate-50 border-b border-slate-200 text-slate-700">
                             <tr>
                                 <th className="px-4 py-3 font-medium">Tanggal</th>
-                                {auth.user.role === 'OWNER' && <th className="px-4 py-3 font-medium">User</th>}
+                                        {auth.user.role === 'OWNER' && <th className="px-4 py-3 font-medium">Partner</th>}
                                 <th className="px-4 py-3 font-medium">Outlet</th>
                                 <th className="px-4 py-3 font-medium">Lot</th>
                                 <th className="px-4 py-3 font-medium">Nilai / Lot</th>
@@ -94,14 +95,14 @@ export default function InvestmentsIndex({ investments, outlets }) {
                             {investments.length === 0 ? (
                                 <tr>
                                     <td colSpan={auth.user.role === 'OWNER' ? 8 : 6} className="px-4 py-8 text-center text-slate-500">
-                                        Belum ada riwayat investasi.
+                                        Belum ada riwayat modal partner.
                                     </td>
                                 </tr>
                             ) : (
                                 investments.map((inv) => (
                                     <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
                                         <td className="px-4 py-3 whitespace-nowrap">{new Date(inv.created_at).toLocaleString('id-ID')}</td>
-                                        {auth.user.role === 'OWNER' && <td className="px-4 py-3 font-medium text-slate-800">{inv.user?.name}</td>}
+                                        {auth.user.role === 'OWNER' && <td className="px-4 py-3 font-medium text-slate-800">{inv.user?.display_name || inv.user?.name || '-'}</td>}
                                         <td className="px-4 py-3 font-medium text-indigo-600">{inv.outlet?.name}</td>
                                         <td className="px-4 py-3">{inv.lots}</td>
                                         <td className="px-4 py-3">{formatRupiah(inv.lot_value)}</td>
@@ -130,15 +131,34 @@ export default function InvestmentsIndex({ investments, outlets }) {
                 </div>
             </div>
 
-            {/* Modal Tambah Investasi */}
+            {/* Modal Tambah Modal Partner */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
                         <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                            <h2 className="text-lg font-semibold text-slate-900">Catat Investasi Baru</h2>
+                            <h2 className="text-lg font-semibold text-slate-900">Catat Modal Partner</h2>
                             <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">&times;</button>
                         </div>
                         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                            {auth.user.role === 'OWNER' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Pemilik Modal</label>
+                                    <select
+                                        value={data.user_id}
+                                        onChange={e => setData('user_id', e.target.value)}
+                                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                    >
+                                        <option value="">Akun owner saat ini</option>
+                                        {partners.map(partner => (
+                                            <option key={partner.id} value={partner.id}>
+                                                {partner.display_name} - {partner.role}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {errors.user_id && <p className="text-rose-500 text-xs mt-1">{errors.user_id}</p>}
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Pilih Outlet</label>
                                 <select
@@ -184,7 +204,7 @@ export default function InvestmentsIndex({ investments, outlets }) {
 
                             <div className="bg-indigo-50 p-3 rounded-md border border-indigo-100">
                                 <p className="text-sm text-indigo-800 flex justify-between">
-                                    <span>Total Estimasi Nilai:</span>
+                                    <span>Total Nilai Modal:</span>
                                     <span className="font-bold">{formatRupiah(data.lots * data.lot_value)}</span>
                                 </p>
                             </div>
@@ -205,7 +225,7 @@ export default function InvestmentsIndex({ investments, outlets }) {
                                     Batal
                                 </button>
                                 <button type="submit" disabled={processing} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm">
-                                    {processing ? 'Menyimpan...' : 'Simpan Investasi'}
+                                    {processing ? 'Menyimpan...' : 'Simpan Modal'}
                                 </button>
                             </div>
                         </form>

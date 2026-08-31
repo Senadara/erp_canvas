@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\HasUlidPrimary;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Investment extends Model
 {
@@ -31,5 +32,10 @@ class Investment extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function capitalLoans(): HasMany
+    {
+        return $this->hasMany(PartnerCapitalLoan::class);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\HasUlidPrimary;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -69,9 +70,34 @@ class User extends Authenticatable
         return $this->hasMany(UserActivityLog::class);
     }
 
+    public function partnerProfile(): HasOne
+    {
+        return $this->hasOne(PartnerProfile::class);
+    }
+
+    public function investments(): HasMany
+    {
+        return $this->hasMany(Investment::class);
+    }
+
+    public function borrowedCapitalLoans(): HasMany
+    {
+        return $this->hasMany(PartnerCapitalLoan::class, 'borrower_user_id');
+    }
+
+    public function lentCapitalLoans(): HasMany
+    {
+        return $this->hasMany(PartnerCapitalLoan::class, 'lender_user_id');
+    }
+
     public function isOwner(): bool
     {
         return $this->role === 'OWNER';
+    }
+
+    public function isPartner(): bool
+    {
+        return $this->role === 'PARTNER';
     }
 
     public function isMitra(): bool

@@ -39,6 +39,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
         category: '',
         price: '',
         hpp: '',
+        hpp_mode: 'AUTO',
         is_active: true,
         display_group_id: '',
         image: null,
@@ -63,6 +64,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                 category: product.category,
                 price: product.price,
                 hpp: product.hpp,
+                hpp_mode: product.hpp_mode || 'AUTO',
                 is_active: product.is_active,
                 display_group_id: product.display_group_id || '',
                 image: null,
@@ -115,6 +117,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                 category: product.category,
                 price: product.price,
                 hpp: product.hpp ?? 0,
+                hpp_mode: product.hpp_mode || 'AUTO',
                 is_active: true,
                 display_group_id: product.display_group_id || '',
                 image_url: product.image_url || '',
@@ -380,6 +383,11 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                             <p className="text-xs text-slate-500">
                                                 BOM {formatRupiah(p.material_hpp || 0)} · Manual {formatRupiah(p.manual_hpp ?? p.hpp)}
                                             </p>
+                                            {p.uses_fixed_hpp && (
+                                                <p className="inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                                                    HPP fix aktif
+                                                </p>
+                                            )}
                                             {p.cost_warnings?.length > 0 && (
                                                 <p className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
                                                     {p.cost_warnings.length} perlu dicek

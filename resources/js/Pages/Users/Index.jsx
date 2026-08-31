@@ -20,6 +20,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
         mitra_product_ids: [],
         mitra_stock_ids: [],
         mitra_can_view_sales: false,
+        feature_overrides: {},
     });
 
     const openModal = (user = null) => {
@@ -121,6 +122,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
         'OWNER': 'bg-violet-100 text-violet-800',
         'STAFF': 'bg-sky-100 text-sky-800',
         'MITRA': 'bg-amber-100 text-amber-800',
+        'PARTNER': 'bg-emerald-100 text-emerald-800',
     };
 
     return (
@@ -284,6 +286,7 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                     <select value={data.role} onChange={e => changeRole(e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
                                         <option value="STAFF">STAFF</option>
                                         <option value="MITRA">MITRA</option>
+                                        <option value="PARTNER">PARTNER</option>
                                         <option value="OWNER">OWNER</option>
                                     </select>
                                 </div>
@@ -417,6 +420,8 @@ export default function UsersIndex({ users, outlets, activityLogs, products, sto
                                             { id: 'reports', label: 'Laporan' },
                                             { id: 'receipts', label: 'Struk' },
                                             { id: 'suppliers', label: 'Supplier' },
+                                            { id: 'investments', label: 'Investasi' },
+                                            { id: 'owner_finance', label: 'Bagi Hasil' },
                                         ].map(feature => (
                                             <label key={feature.id} className="flex items-center gap-2 text-sm cursor-pointer">
                                                 <input

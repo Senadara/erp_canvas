@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import {
     ArrowPathIcon,
+    BookmarkSquareIcon,
+    CalculatorIcon,
     CheckCircleIcon,
     ExclamationTriangleIcon,
     FunnelIcon,
+    LockClosedIcon,
     Squares2X2Icon,
 } from '@heroicons/react/24/outline';
 
@@ -24,13 +27,33 @@ function categoryLabel(category) {
     return 'Bahan';
 }
 
+function hppSourceLabel(source) {
+    if (source === 'FIXED_MANUAL') return 'HPP Fix';
+    if (source === 'BOM_LATEST') return 'BOM otomatis';
+    if (source === 'LEGACY_MANUAL') return 'Manual lama';
+    return 'Manual fallback';
+}
+
+function monthEndDate(monthValue) {
+    if (!monthValue) return '';
+    const [year, month] = monthValue.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+
+    return `${monthValue}-${String(lastDay).padStart(2, '0')}`;
+}
+
 export default function ProductCostsIndex({ outlet, filters, report }) {
+    const { auth } = usePage().props;
+    const isOwner = auth.user.role === 'OWNER';
     const [startDate, setStartDate] = useState(filters.start_date);
     const [endDate, setEndDate] = useState(filters.end_date);
+    const [customSalaryTotal, setCustomSalaryTotal] = useState(filters.salary_total ?? '');
     const [statusFilter, setStatusFilter] = useState('ALL');
     const [query, setQuery] = useState('');
     const [selectedProductId, setSelectedProductId] = useState(report.products?.[0]?.id || '');
     const [simulatedPrice, setSimulatedPrice] = useState(report.products?.[0]?.price || 0);
+    const [fixedHppValue, setFixedHppValue] = useState(report.products?.[0]?.effective_hpp || 0);
+    const [savingFixedHpp, setSavingFixedHpp] = useState(false);
 
     const { data, setData, post, processing, errors, reset } = useForm({
         stock_item_id: '',
@@ -42,11 +65,24 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
     const products = report.products || [];
     const componentStocks = report.component_stocks || report.packaging_stocks || [];
     const selectedProduct = products.find((product) => product.id === selectedProductId) || products[0];
+    const payrollEvaluation = report.payroll_evaluation || {};
+    const periodMonth = startDate ? startDate.slice(0, 7) : '';
     const simulationCost = Number(selectedProduct?.effective_hpp || 0);
-    const simulationMargin = Number(simulatedPrice || 0) - simulationCost;
+    const laborCostPerPortion = Number(payrollEvaluation.labor_cost_per_portion || 0);
+    const simulationCostWithLabor = simulationCost + laborCostPerPortion;
+    const simulationMargin = Number(simulatedPrice || 0) - simulationCostWithLabor;
     const simulationMarginPercent = Number(simulatedPrice || 0) > 0
         ? (simulationMargin / Number(simulatedPrice)) * 100
         : 0;
+
+    useEffect(() => {
+        if (!selectedProduct) {
+            setFixedHppValue(0);
+            return;
+        }
+
+        setFixedHppValue(Math.round(Number(selectedProduct.effective_hpp || 0) + laborCostPerPortion));
+    }, [selectedProduct?.id, selectedProduct?.effective_hpp, laborCostPerPortion]);
 
     const filteredProducts = useMemo(() => {
         return products.filter((product) => {
@@ -64,10 +100,34 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
 
     const applyDateFilter = (event) => {
         event.preventDefault();
-        router.get(route('product-costs'), {
+        const params = {
             start_date: startDate,
             end_date: endDate,
-        }, { preserveScroll: true });
+        };
+
+        if (customSalaryTotal !== '' && customSalaryTotal !== null) {
+            params.salary_total = customSalaryTotal;
+        }
+
+        router.get(route('product-costs'), params, { preserveScroll: true });
+    };
+
+    const applyMonthFilter = (monthValue) => {
+        setStartDate(monthValue ? `${monthValue}-01` : '');
+        setEndDate(monthEndDate(monthValue));
+    };
+
+    const saveFixedHpp = (mode = 'FIXED') => {
+        if (!selectedProduct?.id) return;
+
+        router.put(route('product-costs.fixed-hpp', selectedProduct.id), {
+            hpp: mode === 'FIXED' ? Number(fixedHppValue || 0) : Number(selectedProduct.manual_hpp || selectedProduct.effective_hpp || 0),
+            hpp_mode: mode,
+        }, {
+            preserveScroll: true,
+            onStart: () => setSavingFixedHpp(true),
+            onFinish: () => setSavingFixedHpp(false),
+        });
     };
 
     const toggleProduct = (productId) => {
@@ -117,21 +177,30 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
         <ErpLayout title="Biaya Produk">
             <Head title="Biaya Produk" />
 
-            <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold text-slate-900">Biaya Produk</h1>
                     <p className="mt-1 text-sm text-slate-500">
                         {outlet?.name || 'Outlet'} · HPP otomatis dari BOM, kemasan, dan snapshot transaksi.
                     </p>
                 </div>
-                <form onSubmit={applyDateFilter} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <form onSubmit={applyDateFilter} className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[150px_150px_150px_180px_auto] lg:items-end">
+                    <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-slate-500">Bulan</span>
+                        <input
+                            type="month"
+                            value={periodMonth}
+                            onChange={(event) => applyMonthFilter(event.target.value)}
+                            className="h-10 w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        />
+                    </label>
                     <label className="block">
                         <span className="mb-1 block text-xs font-semibold text-slate-500">Dari</span>
                         <input
                             type="date"
                             value={startDate}
                             onChange={(event) => setStartDate(event.target.value)}
-                            className="h-10 rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            className="h-10 w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                         />
                     </label>
                     <label className="block">
@@ -140,7 +209,18 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                             type="date"
                             value={endDate}
                             onChange={(event) => setEndDate(event.target.value)}
-                            className="h-10 rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            className="h-10 w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        />
+                    </label>
+                    <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-slate-500">Gaji Custom</span>
+                        <input
+                            type="number"
+                            min="0"
+                            value={customSalaryTotal}
+                            onChange={(event) => setCustomSalaryTotal(event.target.value)}
+                            placeholder="Pakai data gaji"
+                            className="h-10 w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                         />
                     </label>
                     <button type="submit" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
@@ -166,17 +246,23 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
             </div>
 
             <section className="mb-5 rounded-lg border border-indigo-100 bg-indigo-50 p-4">
-                <div className="grid gap-4 md:grid-cols-5">
-                    <div className="md:col-span-2">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                    <div className="xl:col-span-2">
                         <p className="text-xs font-semibold uppercase text-indigo-700">Evaluasi Gaji Periode</p>
                         <p className="mt-2 text-sm text-indigo-900">
                             Gaji tidak masuk HPP utama, tetapi dipakai untuk membaca profit operasional setelah alokasi gaji.
                         </p>
+                        {payrollEvaluation.custom_salary_enabled && (
+                            <span className="mt-3 inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                                Memakai gaji custom
+                            </span>
+                        )}
                     </div>
                     {[
-                        ['Total Gaji', formatRupiah(report.payroll_evaluation.salary_total)],
-                        ['Porsi Terjual', Number(report.payroll_evaluation.sold_portions || 0).toLocaleString('id-ID')],
-                        ['Gaji per Porsi', formatRupiah(report.payroll_evaluation.labor_cost_per_portion)],
+                        ['Gaji Tercatat', formatRupiah(payrollEvaluation.recorded_salary_total ?? payrollEvaluation.salary_total)],
+                        [payrollEvaluation.custom_salary_enabled ? 'Gaji Dipakai' : 'Total Gaji', formatRupiah(payrollEvaluation.salary_total)],
+                        ['Porsi Terjual', Number(payrollEvaluation.sold_portions || 0).toLocaleString('id-ID')],
+                        ['Gaji per Porsi', formatRupiah(payrollEvaluation.labor_cost_per_portion)],
                     ].map(([label, value]) => (
                         <div key={label}>
                             <p className="text-xs font-semibold uppercase text-indigo-600">{label}</p>
@@ -228,6 +314,11 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                                                     <ExclamationTriangleIcon className="h-3.5 w-3.5" />
                                                     Perlu dicek
                                                 </span>
+                                            ) : product.uses_fixed_hpp ? (
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">
+                                                    <LockClosedIcon className="h-3.5 w-3.5" />
+                                                    HPP Fix
+                                                </span>
                                             ) : (
                                                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
                                                     <CheckCircleIcon className="h-3.5 w-3.5" />
@@ -249,6 +340,7 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                                         <div>
                                             <p className="text-xs font-semibold uppercase text-slate-400">HPP Aktif</p>
                                             <p className="mt-1 font-bold text-slate-900">{formatRupiah(product.effective_hpp)}</p>
+                                            <p className="mt-1 text-xs font-medium text-slate-500">{hppSourceLabel(product.hpp_source)}</p>
                                         </div>
                                         <div>
                                             <p className="text-xs font-semibold uppercase text-slate-400">Margin</p>
@@ -304,7 +396,10 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
 
                 <aside className="space-y-4">
                     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                        <h2 className="font-semibold text-slate-900">Simulasi Harga</h2>
+                        <div className="flex items-center gap-2">
+                            <CalculatorIcon className="h-5 w-5 text-amber-500" />
+                            <h2 className="font-semibold text-slate-900">Simulasi HPP + Gaji</h2>
+                        </div>
                         <div className="mt-4 space-y-3">
                             <label className="block">
                                 <span className="mb-1 block text-sm font-medium text-slate-700">Produk</span>
@@ -334,8 +429,16 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                             </label>
                             <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200">
                                 <div className="bg-slate-50 p-3">
-                                    <p className="text-xs text-slate-500">HPP Aktif</p>
+                                    <p className="text-xs text-slate-500">HPP Produk</p>
                                     <p className="mt-1 font-bold text-slate-900">{formatRupiah(simulationCost)}</p>
+                                </div>
+                                <div className="bg-amber-50 p-3">
+                                    <p className="text-xs text-amber-700">Gaji/Porsi</p>
+                                    <p className="mt-1 font-bold text-amber-800">{formatRupiah(laborCostPerPortion)}</p>
+                                </div>
+                                <div className="bg-slate-50 p-3">
+                                    <p className="text-xs text-slate-500">HPP + Gaji</p>
+                                    <p className="mt-1 font-bold text-slate-900">{formatRupiah(simulationCostWithLabor)}</p>
                                 </div>
                                 <div className="bg-slate-50 p-3">
                                     <p className="text-xs text-slate-500">Margin Simulasi</p>
@@ -344,10 +447,55 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                                     </p>
                                 </div>
                             </div>
-                            <p className="text-sm font-semibold text-slate-700">Margin {formatPercent(simulationMarginPercent)}</p>
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-semibold text-slate-700">
+                                <span>Margin {formatPercent(simulationMarginPercent)}</span>
+                                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                                    {hppSourceLabel(selectedProduct?.hpp_source)}
+                                </span>
+                            </div>
+
+                            {isOwner && (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                                <div className="mb-3 flex items-center gap-2">
+                                    <LockClosedIcon className="h-4 w-4 text-amber-700" />
+                                    <p className="text-sm font-semibold text-amber-900">HPP Fix</p>
+                                </div>
+                                <label className="block">
+                                    <span className="mb-1 block text-xs font-semibold text-amber-800">Nilai HPP Fix</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={fixedHppValue}
+                                        onChange={(event) => setFixedHppValue(event.target.value)}
+                                        className="h-10 w-full rounded-lg border-amber-200 text-sm focus:border-amber-500 focus:ring-amber-500"
+                                    />
+                                </label>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => saveFixedHpp('FIXED')}
+                                        disabled={savingFixedHpp || !selectedProduct || Number(fixedHppValue) < 0}
+                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-amber-600 px-3 text-sm font-semibold text-white hover:bg-amber-700 disabled:bg-slate-300"
+                                    >
+                                        <BookmarkSquareIcon className="h-4 w-4" />
+                                        {selectedProduct?.uses_fixed_hpp ? 'Update Fix' : 'Simpan Fix'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => saveFixedHpp('AUTO')}
+                                        disabled={savingFixedHpp || !selectedProduct || !selectedProduct?.uses_fixed_hpp}
+                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:border-slate-200 disabled:text-slate-300 disabled:hover:bg-white"
+                                    >
+                                        <ArrowPathIcon className="h-4 w-4" />
+                                        Otomatis
+                                    </button>
+                                </div>
+                            </div>
+                            )}
                         </div>
                     </section>
 
+                    {isOwner && (
                     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                         <h2 className="font-semibold text-slate-900">Bulk Tambah Komponen HPP</h2>
                         <form onSubmit={submitBulk} className="mt-4 space-y-4">
@@ -456,6 +604,7 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                             </button>
                         </form>
                     </section>
+                    )}
                 </aside>
             </div>
         </ErpLayout>

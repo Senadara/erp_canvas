@@ -762,6 +762,8 @@ class FinanceController extends Controller
         $cashAdditions = 0;
         $withdrawCash = 0;
         $withdrawQris = 0;
+        $ownerDistributionCash = 0;
+        $ownerDistributionQris = 0;
         $cashierTopups = 0;
         $drawerCashierTopups = 0;
         $outsideCashierTopups = 0;
@@ -791,6 +793,15 @@ class FinanceController extends Controller
                     $withdrawQris += $amount;
                 } elseif ($method === 'CASH') {
                     $withdrawCash += $amount;
+                }
+                continue;
+            }
+
+            if ($movement->category === PettyCashService::OWNER_DISTRIBUTION_CATEGORY) {
+                if ($method === 'QRIS') {
+                    $ownerDistributionQris += $amount;
+                } elseif ($method === 'CASH') {
+                    $ownerDistributionCash += $amount;
                 }
                 continue;
             }
@@ -845,6 +856,9 @@ class FinanceController extends Controller
             'withdrawCash' => $withdrawCash,
             'withdrawQris' => $withdrawQris,
             'withdrawTotal' => $withdrawCash + $withdrawQris,
+            'ownerDistributionCash' => $ownerDistributionCash,
+            'ownerDistributionQris' => $ownerDistributionQris,
+            'ownerDistributionTotal' => $ownerDistributionCash + $ownerDistributionQris,
             'transactionCount' => $paidTransactions->count(),
             'unpaidCount' => $unpaidTransactions->count(),
             'unpaidTotal' => $unpaidTransactions->sum('total_amount'),
@@ -884,13 +898,15 @@ class FinanceController extends Controller
             - $cashRestockExpense
             - $cashDrawerSavingsExpense
             - (float) $summary['withdrawCash']
+            - (float) ($summary['ownerDistributionCash'] ?? 0)
             - (float) $summary['drawerCashierTopups']
             + $closedShiftDiscrepancy;
         $cashDrawerActual = $openingCash + $cashDrawerNet + $activeCashierTopups;
         $qrisBalanceActual = $carryQrisBalance
             + (float) $summary['qrisSales']
             - (float) $summary['qrisExpense']
-            - (float) $summary['withdrawQris'];
+            - (float) $summary['withdrawQris']
+            - (float) ($summary['ownerDistributionQris'] ?? 0);
         $cleanFinance = $cashDrawerNet + $qrisBalanceActual;
         $periodDays = max(1, $periodStart->copy()->startOfDay()->diffInDays($periodEnd->copy()->startOfDay()) + 1);
 
@@ -993,7 +1009,7 @@ class FinanceController extends Controller
         }
 
         foreach ($cashMovements as $movement) {
-            if ($movement->category === 'Penarikan') {
+            if (in_array($movement->category, ['Penarikan', PettyCashService::OWNER_DISTRIBUTION_CATEGORY], true)) {
                 continue;
             }
 
@@ -1066,7 +1082,7 @@ class FinanceController extends Controller
     {
         $categories = [];
         foreach ($cashMovements as $movement) {
-            if ($movement->cash_flow !== 'OUT' || $movement->category === 'Penarikan') {
+            if ($movement->cash_flow !== 'OUT' || in_array($movement->category, ['Penarikan', PettyCashService::OWNER_DISTRIBUTION_CATEGORY], true)) {
                 continue;
             }
             if (in_array($movement->category, ['Tambah Modal', 'Tambah Kas'], true)) {

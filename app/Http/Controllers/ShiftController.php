@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\PettyCash;
 use App\Models\ShiftRecord;
 use App\Models\Transaction;
+use App\Services\PettyCashService;
 use App\Services\ShiftService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -25,7 +26,7 @@ class ShiftController extends Controller
         if ($openShift) {
             $expenses = PettyCash::where('outlet_id', $outletId)
                 ->where('created_at', '>=', $openShift->opened_at)
-                ->where('category', '!=', 'Penarikan')
+                ->whereNotIn('category', ['Penarikan', PettyCashService::OWNER_DISTRIBUTION_CATEGORY])
                 ->orderByDesc('created_at')
                 ->get();
         }
@@ -83,7 +84,7 @@ class ShiftController extends Controller
         // Expenses during shift
         $expQuery = PettyCash::where('outlet_id', $outletId)
             ->where('created_at', '>=', $shift->opened_at)
-            ->where('category', '!=', 'Penarikan');
+            ->whereNotIn('category', ['Penarikan', PettyCashService::OWNER_DISTRIBUTION_CATEGORY]);
         if ($shift->closed_at) {
             $expQuery->where('created_at', '<=', $shift->closed_at);
         }

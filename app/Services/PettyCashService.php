@@ -8,6 +8,7 @@ use Carbon\Carbon;
 class PettyCashService
 {
     private const BUSINESS_TIMEZONE = 'Asia/Jakarta';
+    public const OWNER_DISTRIBUTION_CATEGORY = 'Distribusi Owner';
 
     public const DEFAULT_CATEGORIES = [
         'Operasional',
@@ -26,6 +27,7 @@ class PettyCashService
         'Kasbon',
         'Tambah Kas',
         'Penarikan',
+        self::OWNER_DISTRIBUTION_CATEGORY,
         'Lainnya',
     ];
 
@@ -197,7 +199,7 @@ class PettyCashService
             $paymentMethod = $paymentMethod === 'PRIVATE' ? 'PRIVATE' : 'CASH';
         }
 
-        if ($category === self::WITHDRAWAL_CATEGORY) {
+        if (in_array($category, [self::WITHDRAWAL_CATEGORY, self::OWNER_DISTRIBUTION_CATEGORY], true)) {
             $cashFlow = 'OUT';
         }
 
@@ -299,6 +301,7 @@ class PettyCashService
     private function isOperatingExpenseCategory(string $category): bool
     {
         return ! $this->isCashierFundCategory($category)
-            && $category !== self::WITHDRAWAL_CATEGORY;
+            && $category !== self::WITHDRAWAL_CATEGORY
+            && $category !== self::OWNER_DISTRIBUTION_CATEGORY;
     }
 }
