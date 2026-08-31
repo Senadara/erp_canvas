@@ -84,13 +84,18 @@ class CashierController extends Controller
     public function payDebt(Request $request, string $id)
     {
         $outletId = $request->session()->get('outlet_id');
+        $openShift = $this->shiftService->getOpenShift($outletId);
+        if (! $openShift) {
+            return redirect()->back()->withErrors(['error' => 'Shift belum dibuka. Buka shift terlebih dahulu sebelum menerima pelunasan hutang.']);
+        }
+
         $data = $request->validate([
             'payment_method' => 'required|in:CASH,QRIS',
             'cash_received' => 'nullable|numeric|min:0',
         ]);
 
         try {
-            $transaction = $this->transactionService->payDebt($id, $outletId, $data['payment_method'], $data['cash_received'] ?? null);
+            $transaction = $this->transactionService->payDebt($id, $outletId, $data['payment_method'], $data['cash_received'] ?? null, $openShift->id);
             return redirect()->back()
                 ->with('success', 'Pembayaran berhasil. No: ' . $transaction->invoice_number)
                 ->with('new_transaction', $transaction->toArray());

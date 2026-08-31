@@ -14,7 +14,7 @@ class Transaction extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'outlet_id', 'shift_id', 'invoice_number', 'total_amount', 'payment_method',
+        'outlet_id', 'shift_id', 'payment_shift_id', 'invoice_number', 'total_amount', 'payment_method',
         'cash_received', 'change_amount', 'note', 'payment_status', 'paid_at', 'created_at',
         'canceled_at', 'canceled_by', 'cancel_reason', 'edited_by_owner_at', 'edited_by_owner_id',
     ];
@@ -45,6 +45,11 @@ class Transaction extends Model
     public function shift(): BelongsTo
     {
         return $this->belongsTo(ShiftRecord::class, 'shift_id');
+    }
+
+    public function paymentShift(): BelongsTo
+    {
+        return $this->belongsTo(ShiftRecord::class, 'payment_shift_id');
     }
 
     public function stockMovements(): HasMany

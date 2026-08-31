@@ -58,17 +58,16 @@ class ShiftController extends Controller
         // Transactions during shift
         $txQuery = Transaction::where('shift_id', $shift->id);
         $transactions = $txQuery->with('items')->get();
+        $salesTransactions = $transactions->where('payment_status', '!=', 'CANCELED');
 
         $totalTransactions = $transactions->count();
-        $paidTransactions = $transactions->where('payment_status', 'PAID');
-        $unpaidTransactions = $transactions->where('payment_status', 'UNPAID');
 
-        $totalRevenue = $paidTransactions->sum('total_amount');
-        $avgTransaction = $paidTransactions->count() > 0 ? $totalRevenue / $paidTransactions->count() : 0;
+        $totalRevenue = $salesTransactions->sum('total_amount');
+        $avgTransaction = $salesTransactions->count() > 0 ? $totalRevenue / $salesTransactions->count() : 0;
 
         // Category breakdown from items
         $categoryBreakdown = [];
-        foreach ($paidTransactions as $tx) {
+        foreach ($salesTransactions as $tx) {
             foreach ($tx->items as $item) {
                 $name = $item->product_name;
                 if (!isset($categoryBreakdown[$name])) {
@@ -90,6 +89,7 @@ class ShiftController extends Controller
         }
         $shiftExpenses = $expQuery->get();
         $cashSummary = $this->shiftService->moneySummary($shift);
+        $receivableSummary = $this->shiftService->receivableActivity($shift);
 
         $expenseByCategory = [];
         foreach ($shiftExpenses as $exp) {
@@ -114,15 +114,17 @@ class ShiftController extends Controller
             'duration' => "{$durationHours}j {$durationMins}m",
             'duration_minutes' => $durationMinutes,
             'total_transactions' => $totalTransactions,
-            'paid_count' => $paidTransactions->count(),
-            'unpaid_count' => $unpaidTransactions->count(),
-            'unpaid_total' => $unpaidTransactions->sum('total_amount'),
+            'paid_count' => $salesTransactions->where('payment_status', 'PAID')->count(),
+            'unpaid_count' => $receivableSummary['remaining_count'],
+            'unpaid_total' => $receivableSummary['remaining_total'],
             'total_revenue' => $totalRevenue,
+            'cash_received_total' => (float) $cashSummary['cash']['sales'] + (float) $cashSummary['qris']['sales'],
             'avg_transaction' => round($avgTransaction),
             'product_breakdown' => array_slice($categoryBreakdown, 0, 15),
             'expense_by_category' => $expenseByCategory,
             'total_expenses' => $totalOperatingExpenses,
             'cash_summary' => $cashSummary,
+            'receivable_summary' => $receivableSummary,
         ]);
     }
 

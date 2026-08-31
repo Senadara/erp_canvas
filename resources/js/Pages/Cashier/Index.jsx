@@ -410,6 +410,10 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
     const handlePayDebt = (e) => {
         e.preventDefault();
         if (debtProcessing || !selectedUnpaidTx) return;
+        if (!openShift) {
+            alert('Buka shift terlebih dahulu sebelum menerima pelunasan hutang.');
+            return;
+        }
         setDebtProcessing(true);
 
         router.post(route('cashier.pay-debt', selectedUnpaidTx.id), {
@@ -1482,9 +1486,11 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                                                         <div className="text-right">
                                                             <div className="font-bold text-lg text-slate-900 mb-2">{formatRupiah(tx.total_amount)}</div>
                                                             <div className="flex flex-col items-end gap-2">
-                                                                <button 
+                                                                <button
                                                                     onClick={() => setSelectedUnpaidTx(tx)}
-                                                                    className="bg-rose-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-rose-700 transition-colors shadow-sm"
+                                                                    disabled={!openShift}
+                                                                    title={!openShift ? 'Buka shift terlebih dahulu untuk menerima pelunasan.' : undefined}
+                                                                    className="bg-rose-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-rose-700 transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                                                                 >
                                                                     Bayar Sekarang
                                                                 </button>
@@ -1648,7 +1654,7 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
 
                                         <button
                                             type="submit"
-                                            disabled={debtProcessing || (payDebtMethod === 'CASH' && (!payDebtCash || Number(payDebtCash) < selectedUnpaidTx.total_amount))}
+                                            disabled={!openShift || debtProcessing || (payDebtMethod === 'CASH' && (!payDebtCash || Number(payDebtCash) < selectedUnpaidTx.total_amount))}
                                             className="w-full bg-emerald-600 text-white font-bold py-3 rounded-md hover:bg-emerald-700 disabled:opacity-50 mt-4"
                                         >
                                             {debtProcessing ? 'Memproses...' : 'LUNASI SEKARANG'}

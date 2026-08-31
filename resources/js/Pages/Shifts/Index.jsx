@@ -8,6 +8,11 @@ function formatRupiah(value) {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
 }
 
+function formatDateTime(value) {
+    if (!value) return '-';
+    return new Date(value).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+}
+
 function defaultShiftName() {
     const now = new Date();
     return `Shift ${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
@@ -46,6 +51,62 @@ function amountSign(item, incoming) {
     if (isCashierFundMovement(item)) return '+';
     if (item.payment_method === 'PRIVATE') return '';
     return incoming ? '+' : '-';
+}
+
+function receivableItemsLabel(items = []) {
+    if (!items.length) return 'Tanpa item';
+    const firstItems = items.slice(0, 2).map(item => `${item.qty_porsi}x ${item.product_name}`).join(', ');
+    return items.length > 2 ? `${firstItems} ...` : firstItems;
+}
+
+function receivableStatusLabel(item) {
+    if (item.payment_status === 'PAID') return `Lunas ${formatDateTime(item.paid_at)}`;
+    return 'Belum lunas';
+}
+
+function ReceivableActivityList({ title, items = [], type = 'created' }) {
+    const isCreated = type === 'created';
+    const tone = isCreated ? 'amber' : 'emerald';
+    const toneClass = isCreated
+        ? 'border-amber-100 bg-amber-50 text-amber-800'
+        : 'border-emerald-100 bg-emerald-50 text-emerald-800';
+
+    return (
+        <div>
+            <h3 className="mb-2 text-sm font-semibold text-slate-800">{title}</h3>
+            {items.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                    {isCreated ? 'Tidak ada piutang yang dibuat di shift ini.' : 'Tidak ada pelunasan piutang di shift ini.'}
+                </div>
+            ) : (
+                <div className="space-y-2">
+                    {items.map(item => (
+                        <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <p className="font-semibold text-slate-900">{item.invoice_number}</p>
+                                        <span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${toneClass}`}>
+                                            {isCreated ? receivableStatusLabel(item) : `Masuk ${item.payment_method || '-'}`}
+                                        </span>
+                                    </div>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        {isCreated
+                                            ? `Dibuat ${formatDateTime(item.created_at)}`
+                                            : `Dari ${item.sale_shift?.name || 'shift sebelumnya'} - dibayar ${formatDateTime(item.paid_at)}`}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-500">{receivableItemsLabel(item.items)}</p>
+                                </div>
+                                <p className={`shrink-0 font-bold ${tone === 'amber' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                    {formatRupiah(item.total_amount)}
+                                </p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 }
 
 export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, standardOpeningCash = 50000 }) {
@@ -99,6 +160,21 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
     ];
     const cashierTopups = Number(cashSummary?.cash?.cashier_topups || 0);
     const drawerExpenses = Number(cashSummary?.cash?.drawer_expenses || 0) + Number(cashSummary?.qris?.drawer_expenses || 0);
+    const cashCurrentSales = Number(cashSummary?.cash?.current_sales ?? cashSummary?.cash?.sales ?? 0);
+    const qrisCurrentSales = Number(cashSummary?.qris?.current_sales ?? cashSummary?.qris?.sales ?? 0);
+    const cashDebtCollections = Number(cashSummary?.cash?.debt_collections || 0);
+    const qrisDebtCollections = Number(cashSummary?.qris?.debt_collections || 0);
+    const totalDebtCollections = cashDebtCollections + qrisDebtCollections;
+    const openReceivables = cashSummary?.receivables || {};
+    const openReceivableCreated = Number(openReceivables.created_total || 0);
+    const openReceivableRemaining = Number(openReceivables.remaining_total || 0);
+    const detailReceivables = shiftDetail?.receivable_summary || {};
+    const detailCurrentCashSales = Number(shiftDetail?.cash_summary?.cash?.current_sales ?? shiftDetail?.cash_summary?.cash?.sales ?? 0);
+    const detailCurrentQrisSales = Number(shiftDetail?.cash_summary?.qris?.current_sales ?? shiftDetail?.cash_summary?.qris?.sales ?? 0);
+    const detailDebtCash = Number(shiftDetail?.cash_summary?.cash?.debt_collections || 0);
+    const detailDebtQris = Number(shiftDetail?.cash_summary?.qris?.debt_collections || 0);
+    const detailCurrentSales = detailCurrentCashSales + detailCurrentQrisSales;
+    const detailDebtCollections = detailDebtCash + detailDebtQris;
 
     // Monitor connectivity changes
     useEffect(() => {
@@ -313,16 +389,21 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
             </div>
 
             {openShift && cashSummary && (
-                <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="mb-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     <div className="bg-white rounded-lg border border-emerald-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-emerald-600">Saldo Cash Kasir</p>
                         <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.cash?.expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Kas awal + penjualan {formatRupiah(cashSummary.cash?.sales)} + top up {formatRupiah(cashierTopups)}. Restok laci tidak mengurangi kas shift.</p>
+                        <p className="mt-1 text-xs text-slate-500">Kas awal + penjualan tunai {formatRupiah(cashCurrentSales)} + pelunasan {formatRupiah(cashDebtCollections)} + top up {formatRupiah(cashierTopups)}.</p>
                     </div>
                     <div className="bg-white rounded-lg border border-blue-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-blue-600">Saldo QRIS</p>
                         <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.qris?.expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Penjualan {formatRupiah(cashSummary.qris?.sales)}. Pengeluaran QRIS/laci dicatat terpisah di finance.</p>
+                        <p className="mt-1 text-xs text-slate-500">Penjualan QRIS {formatRupiah(qrisCurrentSales)} + pelunasan {formatRupiah(qrisDebtCollections)}.</p>
+                    </div>
+                    <div className="bg-white rounded-lg border border-amber-200 shadow-sm p-4">
+                        <p className="text-xs font-semibold uppercase text-amber-600">Piutang Shift</p>
+                        <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(openReceivableRemaining)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Piutang baru {formatRupiah(openReceivableCreated)}. Pelunasan masuk {formatRupiah(totalDebtCollections)}.</p>
                     </div>
                     <div className="bg-white rounded-lg border border-indigo-200 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase text-indigo-600">Total Cash + QRIS</p>
@@ -533,20 +614,21 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                             <th className="px-4 py-3 font-medium">Shift</th>
                             <th className="px-4 py-3 font-medium">Buka</th>
                             <th className="px-4 py-3 font-medium">Tutup</th>
-                            <th className="px-4 py-3 font-medium">Status</th>
-                            <th className="px-4 py-3 font-medium text-right">Kas Awal</th>
-                            <th className="px-4 py-3 font-medium text-right">Ekspektasi Kas</th>
-                            <th className="px-4 py-3 font-medium text-right">Selisih</th>
-                            {isOwner && <th className="px-4 py-3 font-medium text-center">Aksi</th>}
-                        </tr>
+                             <th className="px-4 py-3 font-medium">Status</th>
+                             <th className="px-4 py-3 font-medium text-right">Kas Awal</th>
+                             <th className="px-4 py-3 font-medium text-right">Ekspektasi Kas</th>
+                             <th className="px-4 py-3 font-medium text-right">Piutang</th>
+                             <th className="px-4 py-3 font-medium text-right">Selisih</th>
+                             {isOwner && <th className="px-4 py-3 font-medium text-center">Aksi</th>}
+                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                        {shifts.length === 0 ? (
-                            <tr>
-                                <td colSpan={isOwner ? 8 : 7} className="px-4 py-8 text-center text-slate-500">
-                                    Belum ada riwayat shift.
-                                </td>
-                            </tr>
+                         {shifts.length === 0 ? (
+                             <tr>
+                                 <td colSpan={isOwner ? 9 : 8} className="px-4 py-8 text-center text-slate-500">
+                                     Belum ada riwayat shift.
+                                 </td>
+                             </tr>
                         ) : (
                             shifts.map((s) => (
                                 <tr key={s.id} onClick={() => openShiftDetail(s.id)} className="hover:bg-indigo-50 cursor-pointer transition-colors">
@@ -560,14 +642,23 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${s.status === 'OPEN' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800'}`}>
                                             {s.status === 'OPEN' ? 'Terbuka' : 'Tutup'}
                                         </span>
-                                    </td>
-                                    <td className="px-4 py-3 text-right">{formatRupiah(s.opening_cash)}</td>
-                                    <td className="px-4 py-3 text-right">{s.expected_cash ? formatRupiah(s.expected_cash) : '-'}</td>
-                                    <td className="px-4 py-3 text-right">
-                                        {s.discrepancy ? (
-                                            <span className={Number(s.discrepancy) < 0 ? 'text-rose-600 font-bold' : (Number(s.discrepancy) > 0 ? 'text-emerald-600 font-bold' : '')}>
-                                                {formatRupiah(s.discrepancy)}
-                                            </span>
+                                     </td>
+                                     <td className="px-4 py-3 text-right">{formatRupiah(s.opening_cash)}</td>
+                                     <td className="px-4 py-3 text-right">{s.expected_cash !== null && s.expected_cash !== undefined ? formatRupiah(s.expected_cash) : '-'}</td>
+                                     <td className="px-4 py-3 text-right">
+                                         {(Number(s.receivable_created_total || 0) > 0 || Number(s.receivable_collected_total || 0) > 0 || Number(s.receivable_remaining_total || 0) > 0) ? (
+                                             <div className="space-y-0.5 text-xs">
+                                                 {Number(s.receivable_created_total || 0) > 0 && <div><span className="text-slate-500">Baru</span> <span className="font-semibold text-amber-700">{formatRupiah(s.receivable_created_total)}</span></div>}
+                                                 {Number(s.receivable_collected_total || 0) > 0 && <div><span className="text-slate-500">Dibayar</span> <span className="font-semibold text-emerald-700">{formatRupiah(s.receivable_collected_total)}</span></div>}
+                                                 {Number(s.receivable_remaining_total || 0) > 0 && <div><span className="text-slate-500">Sisa</span> <span className="font-semibold text-rose-700">{formatRupiah(s.receivable_remaining_total)}</span></div>}
+                                             </div>
+                                         ) : '-'}
+                                     </td>
+                                     <td className="px-4 py-3 text-right">
+                                         {s.discrepancy !== null && s.discrepancy !== undefined ? (
+                                             <span className={Number(s.discrepancy) < 0 ? 'text-rose-600 font-bold' : (Number(s.discrepancy) > 0 ? 'text-emerald-600 font-bold' : '')}>
+                                                 {formatRupiah(s.discrepancy)}
+                                             </span>
                                         ) : '-'}
                                     </td>
                                     {isOwner && (
@@ -593,8 +684,8 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
             {/* Shift Detail Modal */}
             {(shiftDetail || loadingDetail) && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-900 text-white">
                             <h2 className="text-lg font-semibold">Detail Laporan Shift</h2>
                             <button onClick={() => setShiftDetail(null)} className="text-white/70 hover:text-white text-xl">&times;</button>
                         </div>
@@ -606,36 +697,48 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                         ) : shiftDetail && (
                             <div className="p-6 overflow-y-auto space-y-5">
                                 {/* Summary Cards */}
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                     <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
                                         <p className="text-xs text-indigo-600 font-medium">Durasi Shift</p>
                                         <p className="text-lg font-bold text-indigo-900">{shiftDetail.duration}</p>
                                     </div>
                                     <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-100">
-                                        <p className="text-xs text-emerald-600 font-medium">Total Pendapatan</p>
+                                        <p className="text-xs text-emerald-600 font-medium">Omzet Shift</p>
                                         <p className="text-lg font-bold text-emerald-900">{formatRupiah(shiftDetail.total_revenue)}</p>
                                     </div>
                                     <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
-                                        <p className="text-xs text-blue-600 font-medium">Jumlah Transaksi</p>
-                                        <p className="text-lg font-bold text-blue-900">{shiftDetail.total_transactions}</p>
-                                        <p className="text-[10px] text-blue-500">{shiftDetail.paid_count} lunas, {shiftDetail.unpaid_count} utang</p>
+                                        <p className="text-xs text-blue-600 font-medium">Uang Masuk Shift</p>
+                                        <p className="text-lg font-bold text-blue-900">{formatRupiah(shiftDetail.cash_received_total)}</p>
+                                        <p className="text-[10px] text-blue-500">Penjualan {formatRupiah(detailCurrentSales)} + pelunasan {formatRupiah(detailDebtCollections)}</p>
                                     </div>
                                     <div className="bg-amber-50 rounded-lg p-3 border border-amber-100">
-                                        <p className="text-xs text-amber-600 font-medium">Rata-rata Transaksi</p>
-                                        <p className="text-lg font-bold text-amber-900">{formatRupiah(shiftDetail.avg_transaction)}</p>
+                                        <p className="text-xs text-amber-600 font-medium">Piutang Baru</p>
+                                        <p className="text-lg font-bold text-amber-900">{formatRupiah(detailReceivables.created_total)}</p>
+                                        <p className="text-[10px] text-amber-700">Sisa {formatRupiah(detailReceivables.remaining_total)}</p>
                                     </div>
                                 </div>
 
-                                {/* Unpaid Warning */}
-                                {shiftDetail.unpaid_count > 0 && (
-                                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-3">
-                                        <span className="text-rose-500 text-xl">⚠️</span>
+                                {detailDebtCollections > 0 && (
+                                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                                        <p className="text-sm font-semibold text-emerald-800">Ada pelunasan piutang di shift ini</p>
+                                        <p className="text-xs text-emerald-700">Total masuk {formatRupiah(detailDebtCollections)}. Ini menambah kas shift ini, bukan mengubah selisih shift asal.</p>
+                                    </div>
+                                )}
+
+                                {Number(detailReceivables.remaining_total || 0) > 0 && (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-3">
+                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-bold text-amber-700">!</span>
                                         <div>
-                                            <p className="text-sm font-semibold text-rose-800">{shiftDetail.unpaid_count} Order Belum Bayar</p>
-                                            <p className="text-xs text-rose-600">Total utang: {formatRupiah(shiftDetail.unpaid_total)}</p>
+                                            <p className="text-sm font-semibold text-amber-800">{detailReceivables.remaining_count} order masih piutang</p>
+                                            <p className="text-xs text-amber-700">Sisa piutang: {formatRupiah(detailReceivables.remaining_total)}</p>
                                         </div>
                                     </div>
                                 )}
+
+                                <div className="grid gap-4 lg:grid-cols-2">
+                                    <ReceivableActivityList title="Piutang Dibuat di Shift Ini" items={detailReceivables.created || []} type="created" />
+                                    <ReceivableActivityList title="Piutang Dibayar di Shift Ini" items={detailReceivables.collected || []} type="collected" />
+                                </div>
 
                                 {/* Product Breakdown */}
                                 {shiftDetail.product_breakdown?.length > 0 && (
@@ -692,9 +795,25 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                             <span>{formatRupiah(shiftDetail.shift?.opening_cash)}</span>
                                         </div>
                                         <div className="flex justify-between">
-                                            <span className="text-slate-400">+ Penjualan (Cash)</span>
-                                            <span className="text-emerald-400">{formatRupiah(shiftDetail.shift?.total_sales_cash)}</span>
+                                            <span className="text-slate-400">+ Penjualan shift (Cash)</span>
+                                            <span className="text-emerald-400">{formatRupiah(detailCurrentCashSales)}</span>
                                         </div>
+                                        {detailDebtCash > 0 && (
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-400">+ Pelunasan piutang (Cash)</span>
+                                                <span className="text-emerald-300">{formatRupiah(detailDebtCash)}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-400">+ Penjualan shift (QRIS)</span>
+                                            <span className="text-blue-400">{formatRupiah(detailCurrentQrisSales)}</span>
+                                        </div>
+                                        {detailDebtQris > 0 && (
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-400">+ Pelunasan piutang (QRIS)</span>
+                                                <span className="text-blue-300">{formatRupiah(detailDebtQris)}</span>
+                                            </div>
+                                        )}
                                         {Number(shiftDetail.cash_summary?.cash?.drawer_cashier_topups || 0) > 0 && (
                                             <div className="flex justify-between">
                                                 <span className="text-slate-400">+ Top up dari laci</span>
@@ -707,10 +826,6 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                                 <span className="text-amber-300">{formatRupiah(shiftDetail.cash_summary?.cash?.outside_cashier_topups)}</span>
                                             </div>
                                         )}
-                                        <div className="flex justify-between">
-                                            <span className="text-slate-400">+ Penjualan (QRIS)</span>
-                                            <span className="text-blue-400">{formatRupiah(shiftDetail.shift?.total_sales_qris)}</span>
-                                        </div>
                                         <div className="flex justify-between">
                                             <span className="text-slate-400">- Pengeluaran aktif shift</span>
                                             <span className="text-rose-400">
@@ -739,7 +854,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                             <span>Ekspektasi QRIS</span>
                                             <span>{formatRupiah(shiftDetail.cash_summary?.qris?.expected)}</span>
                                         </div>
-                                        {shiftDetail.shift?.actual_cash && (
+                                        {shiftDetail.shift?.actual_cash !== null && shiftDetail.shift?.actual_cash !== undefined && (
                                             <>
                                                 <div className="flex justify-between">
                                                     <span className="text-slate-400">Kas Aktual</span>

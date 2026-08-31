@@ -100,11 +100,19 @@ class ShiftService
 
     public function applyComputedMoneySummary(ShiftRecord $shift): ShiftRecord
     {
+        $summary = $this->calculateMoneySummary($shift);
+        $receivables = $summary['receivables'] ?? $this->emptyReceivableSummary();
+        $shift->setAttribute('receivable_created_total', $receivables['created_total']);
+        $shift->setAttribute('receivable_created_count', $receivables['created_count']);
+        $shift->setAttribute('receivable_collected_total', $receivables['collected_total']);
+        $shift->setAttribute('receivable_collected_count', $receivables['collected_count']);
+        $shift->setAttribute('receivable_remaining_total', $receivables['remaining_total']);
+        $shift->setAttribute('receivable_remaining_count', $receivables['remaining_count']);
+
         if ($shift->status !== 'CLOSED') {
             return $shift;
         }
 
-        $summary = $this->calculateMoneySummary($shift);
         $shift->setAttribute('expected_cash', $summary['cash']['expected']);
         $shift->setAttribute('expected_qris', $summary['qris']['expected']);
         $shift->setAttribute('discrepancy', (float) ($shift->actual_cash ?? 0) - (float) $summary['cash']['expected']);
@@ -113,6 +121,11 @@ class ShiftService
         $shift->setAttribute('total_expenses', $this->operatingExpenseTotal($summary));
 
         return $shift;
+    }
+
+    public function receivableActivity(ShiftRecord $shift): array
+    {
+        return $this->receivableSummary($shift, true);
     }
 
     public function ownerUpdateShift(string $shiftId, string $outletId, array $data, string $ownerId): ShiftRecord
@@ -205,15 +218,33 @@ class ShiftService
 
     private function calculateMoneySummary(ShiftRecord $shift): array
     {
-        $start = $this->storedTime($shift->opened_at);
-        $end = $shift->closed_at ? $this->storedTime($shift->closed_at) : $this->storageNow();
+        [$start, $end] = $this->shiftBounds($shift);
 
         $transactions = Transaction::where('outlet_id', $shift->outlet_id)
             ->where('payment_status', 'PAID')
-            ->whereNotNull('paid_at')
             ->where(function ($query) use ($shift, $start, $end) {
-                $query->whereBetween('paid_at', [$start, $end])
-                    ->orWhere('shift_id', $shift->id);
+                $query->where('payment_shift_id', $shift->id)
+                    ->orWhere(function ($legacyQuery) use ($shift, $start, $end) {
+                        $legacyQuery->whereNull('payment_shift_id')
+                            ->where(function ($legacyPaymentQuery) use ($shift, $start, $end) {
+                                $legacyPaymentQuery->whereBetween('paid_at', [$start, $end])
+                                    ->orWhere(function ($untrackedPaymentQuery) use ($shift) {
+                                        $untrackedPaymentQuery->whereNull('paid_at')
+                                            ->where('shift_id', $shift->id);
+                                    });
+                            });
+                    })
+                    ->orWhere(function ($sameShiftLegacyQuery) use ($shift, $end) {
+                        $sameShiftLegacyQuery->whereNull('payment_shift_id')
+                            ->where('shift_id', $shift->id);
+
+                        if ($shift->closed_at) {
+                            $sameShiftLegacyQuery->where(function ($paymentTimeQuery) use ($end) {
+                                $paymentTimeQuery->whereNull('paid_at')
+                                    ->orWhere('paid_at', '<=', $end);
+                            });
+                        }
+                    });
             })
             ->get();
 
@@ -222,7 +253,14 @@ class ShiftService
 
         foreach ($transactions as $transaction) {
             $method = $transaction->payment_method === 'QRIS' ? 'qris' : 'cash';
-            $summary[$method]['sales'] += (float) $transaction->total_amount;
+            $amount = (float) $transaction->total_amount;
+            $summary[$method]['sales'] += $amount;
+
+            if ($this->isDebtCollectionForShift($transaction, $shift, $start)) {
+                $summary[$method]['debt_collections'] += $amount;
+            } else {
+                $summary[$method]['current_sales'] += $amount;
+            }
         }
 
         $movements = PettyCash::where('outlet_id', $shift->outlet_id)
@@ -280,8 +318,125 @@ class ShiftService
         }
 
         $summary['total_expected'] = $summary['cash']['expected'] + $summary['qris']['expected'];
+        $summary['receivables'] = $this->receivableSummary($shift);
 
         return $summary;
+    }
+
+    private function shiftBounds(ShiftRecord $shift): array
+    {
+        return [
+            $this->storedTime($shift->opened_at),
+            $shift->closed_at ? $this->storedTime($shift->closed_at) : $this->storageNow(),
+        ];
+    }
+
+    private function isDebtCollectionForShift(Transaction $transaction, ShiftRecord $shift, Carbon $start): bool
+    {
+        if ($transaction->shift_id && $transaction->shift_id !== $shift->id) {
+            return true;
+        }
+
+        return $transaction->created_at && $this->storedTime($transaction->created_at)->lt($start);
+    }
+
+    private function receivableSummary(ShiftRecord $shift, bool $withRows = false): array
+    {
+        [$start, $end] = $this->shiftBounds($shift);
+
+        $createdQuery = Transaction::where('outlet_id', $shift->outlet_id)
+            ->where('shift_id', $shift->id)
+            ->where('payment_status', '!=', 'CANCELED')
+            ->where(function ($query) use ($shift, $end) {
+                $query->where('payment_status', 'UNPAID')
+                    ->orWhereNull('paid_at');
+
+                if ($shift->closed_at) {
+                    $query->orWhere('paid_at', '>', $end);
+                }
+            });
+
+        $collectedQuery = Transaction::where('outlet_id', $shift->outlet_id)
+            ->where('payment_status', 'PAID')
+            ->where(function ($query) use ($shift, $start, $end) {
+                $query->where('payment_shift_id', $shift->id)
+                    ->orWhere(function ($legacyQuery) use ($start, $end) {
+                        $legacyQuery->whereNull('payment_shift_id')
+                            ->whereBetween('paid_at', [$start, $end]);
+                    });
+            })
+            ->where(function ($query) use ($shift, $start) {
+                $query->where(function ($shiftQuery) use ($shift) {
+                    $shiftQuery->whereNotNull('shift_id')
+                        ->where('shift_id', '!=', $shift->id);
+                })->orWhere('created_at', '<', $start);
+            });
+
+        if ($withRows) {
+            $created = $createdQuery
+                ->with(['items', 'paymentShift:id,name,opened_at,closed_at'])
+                ->orderBy('created_at')
+                ->get();
+            $collected = $collectedQuery
+                ->with(['items', 'shift:id,name,opened_at,closed_at'])
+                ->orderBy('paid_at')
+                ->get();
+        } else {
+            $created = $createdQuery->get();
+            $collected = $collectedQuery->get();
+        }
+
+        $remaining = $created->filter(fn (Transaction $transaction) => $transaction->payment_status === 'UNPAID');
+        $settledLater = $created->filter(fn (Transaction $transaction) => $transaction->payment_status === 'PAID');
+
+        return [
+            ...$this->emptyReceivableSummary(),
+            'created_count' => $created->count(),
+            'created_total' => round((float) $created->sum('total_amount')),
+            'remaining_count' => $remaining->count(),
+            'remaining_total' => round((float) $remaining->sum('total_amount')),
+            'settled_later_count' => $settledLater->count(),
+            'settled_later_total' => round((float) $settledLater->sum('total_amount')),
+            'collected_count' => $collected->count(),
+            'collected_total' => round((float) $collected->sum('total_amount')),
+            'collected_cash' => round((float) $collected->where('payment_method', 'CASH')->sum('total_amount')),
+            'collected_qris' => round((float) $collected->where('payment_method', 'QRIS')->sum('total_amount')),
+            'created' => $withRows ? $created->map(fn (Transaction $transaction) => $this->formatReceivableTransaction($transaction))->values()->all() : [],
+            'collected' => $withRows ? $collected->map(fn (Transaction $transaction) => $this->formatReceivableTransaction($transaction))->values()->all() : [],
+        ];
+    }
+
+    private function formatReceivableTransaction(Transaction $transaction): array
+    {
+        return [
+            'id' => $transaction->id,
+            'invoice_number' => $transaction->invoice_number,
+            'total_amount' => (float) $transaction->total_amount,
+            'payment_method' => $transaction->payment_method,
+            'payment_status' => $transaction->payment_status,
+            'note' => $transaction->note,
+            'created_at' => $transaction->created_at?->toIso8601String(),
+            'paid_at' => $transaction->paid_at?->toIso8601String(),
+            'sale_shift' => $transaction->relationLoaded('shift') && $transaction->shift ? [
+                'id' => $transaction->shift->id,
+                'name' => $transaction->shift->name,
+                'opened_at' => $transaction->shift->opened_at?->toIso8601String(),
+                'closed_at' => $transaction->shift->closed_at?->toIso8601String(),
+            ] : null,
+            'payment_shift' => $transaction->relationLoaded('paymentShift') && $transaction->paymentShift ? [
+                'id' => $transaction->paymentShift->id,
+                'name' => $transaction->paymentShift->name,
+                'opened_at' => $transaction->paymentShift->opened_at?->toIso8601String(),
+                'closed_at' => $transaction->paymentShift->closed_at?->toIso8601String(),
+            ] : null,
+            'items' => $transaction->relationLoaded('items')
+                ? $transaction->items->map(fn ($item) => [
+                    'product_name' => $item->product_name,
+                    'qty_porsi' => $item->qty_porsi,
+                    'subtotal' => (float) $item->subtotal,
+                ])->values()->all()
+                : [],
+        ];
     }
 
     private function resolveCashFlow(PettyCash $movement): string
@@ -335,6 +490,8 @@ class ShiftService
         $empty = [
             'opening' => 0,
             'sales' => 0,
+            'current_sales' => 0,
+            'debt_collections' => 0,
             'additions' => 0,
             'expenses' => 0,
             'drawer_expenses' => 0,
@@ -350,6 +507,25 @@ class ShiftService
             'qris' => $empty,
             'outside' => $empty,
             'total_expected' => 0,
+            'receivables' => $this->emptyReceivableSummary(),
+        ];
+    }
+
+    private function emptyReceivableSummary(): array
+    {
+        return [
+            'created_count' => 0,
+            'created_total' => 0,
+            'remaining_count' => 0,
+            'remaining_total' => 0,
+            'settled_later_count' => 0,
+            'settled_later_total' => 0,
+            'collected_count' => 0,
+            'collected_total' => 0,
+            'collected_cash' => 0,
+            'collected_qris' => 0,
+            'created' => [],
+            'collected' => [],
         ];
     }
 }

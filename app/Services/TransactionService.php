@@ -160,6 +160,7 @@ class TransactionService
             $transaction = Transaction::create([
                 'outlet_id' => $outletId,
                 'shift_id' => $shiftId,
+                'payment_shift_id' => $paymentStatus === 'PAID' ? $shiftId : null,
                 'invoice_number' => $invoiceNumber,
                 'total_amount' => $total,
                 'payment_method' => $paymentStatus === 'PAID' ? $paymentMethod : null,
@@ -222,11 +223,11 @@ class TransactionService
             ->get();
     }
 
-    public function payDebt(string $transactionId, string $outletId, string $paymentMethod, ?float $cashReceived)
+    public function payDebt(string $transactionId, string $outletId, string $paymentMethod, ?float $cashReceived, ?string $paymentShiftId = null)
     {
         $paymentMethod = strtoupper($paymentMethod);
 
-        return DB::transaction(function () use ($transactionId, $outletId, $paymentMethod, $cashReceived) {
+        return DB::transaction(function () use ($transactionId, $outletId, $paymentMethod, $cashReceived, $paymentShiftId) {
             $transaction = Transaction::where('id', $transactionId)
                 ->where('outlet_id', $outletId)
                 ->lockForUpdate()
@@ -254,6 +255,7 @@ class TransactionService
             $transaction->update([
                 'payment_status' => 'PAID',
                 'payment_method' => $paymentMethod,
+                'payment_shift_id' => $paymentShiftId,
                 'cash_received' => $cashReceived,
                 'change_amount' => $changeAmount,
                 'paid_at' => Carbon::now(),
