@@ -41,15 +41,17 @@ class PayrollController extends Controller
             : $employees;
 
         $payments = EmployeeSalaryPayment::with(['employee:id,display_name', 'payer:id,display_name'])
-            ->where('period_start', '<=', $endDate)
-            ->where('period_end', '>=', $startDate)
             ->when($employeeId, fn ($query) => $query->where('employee_id', $employeeId))
             ->orderByDesc('paid_at')
             ->orderByDesc('created_at')
             ->get();
 
+        $periodPayments = $payments->filter(
+            fn (EmployeeSalaryPayment $payment) => $payment->period_start <= $endDate && $payment->period_end >= $startDate
+        );
+
         $shiftStats = $this->shiftStatsForEmployees($filteredEmployees->pluck('id')->all(), $startDate, $endDate);
-        $paymentTotals = $payments
+        $paymentTotals = $periodPayments
             ->groupBy('employee_id')
             ->map(fn ($rows) => [
                 'payment_count' => $rows->count(),
@@ -226,8 +228,18 @@ class PayrollController extends Controller
             ->orderBy('opened_at')
             ->get();
 
+        $periodDates = [];
+        $cursor = $startDate->copy()->startOfDay();
+        $endCursor = $endDate->copy()->startOfDay();
+        while ($cursor->lte($endCursor)) {
+            $periodDates[] = $cursor->toDateString();
+            $cursor->addDay();
+        }
+
+        $groupedShifts = $shifts->groupBy('opened_by');
         $stats = [];
-        foreach ($shifts->groupBy('opened_by') as $employeeId => $employeeShifts) {
+        foreach ($employeeIds as $employeeId) {
+            $employeeShifts = $groupedShifts->get($employeeId, collect());
             $details = $employeeShifts->map(function (ShiftRecord $shift) {
                 $minutes = max(0, (int) $shift->opened_at->diffInMinutes($shift->closed_at));
 
@@ -243,6 +255,9 @@ class PayrollController extends Controller
                 ];
             })->values();
 
+            $workedDates = $details->pluck('work_date')->filter()->unique()->sort()->values();
+            $offDates = array_values(array_diff($periodDates, $workedDates->all()));
+
             $shiftCount = $details->count();
             $totalMinutes = (int) $details->sum('duration_minutes');
             $averageMinutes = $shiftCount > 0 ? (int) round($totalMinutes / $shiftCount) : 0;
@@ -250,7 +265,7 @@ class PayrollController extends Controller
             $shortest = $details->sortBy('duration_minutes')->first();
 
             $stats[$employeeId] = [
-                'work_days' => $details->pluck('work_date')->unique()->count(),
+                'work_days' => $workedDates->count(),
                 'shift_count' => $shiftCount,
                 'total_minutes' => $totalMinutes,
                 'total_label' => $this->durationLabel($totalMinutes),
@@ -259,6 +274,9 @@ class PayrollController extends Controller
                 'longest_shift' => $longest,
                 'shortest_shift' => $shortest,
                 'shift_details' => $details,
+                'worked_dates' => $workedDates->all(),
+                'off_dates' => $offDates,
+                'off_days_count' => count($offDates),
             ];
         }
 
@@ -277,6 +295,9 @@ class PayrollController extends Controller
             'longest_shift' => null,
             'shortest_shift' => null,
             'shift_details' => [],
+            'worked_dates' => [],
+            'off_dates' => [],
+            'off_days_count' => 0,
         ];
     }
 

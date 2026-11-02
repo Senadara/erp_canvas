@@ -57,14 +57,15 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
     const [filterStart, setFilterStart] = useState(filters.start_date || '');
     const [filterEnd, setFilterEnd] = useState(filters.end_date || '');
     const [filterEmployee, setFilterEmployee] = useState(filters.employee_id || '');
-    const [historyMonth, setHistoryMonth] = useState((filters.start_date || '').slice(0, 7));
+    const [historySearch, setHistorySearch] = useState('');
+    const [historyMonth, setHistoryMonth] = useState('');
     const [paymentEmployee, setPaymentEmployee] = useState(null);
     const [detailPayment, setDetailPayment] = useState(null);
     const [editingPayment, setEditingPayment] = useState(null);
     const [deletingPaymentId, setDeletingPaymentId] = useState(null);
 
     const totals = useMemo(() => {
-        const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.total_amount || 0), 0);
+        const paidTotal = summaries.reduce((sum, summary) => sum + Number(summary.paid_total || 0), 0);
         const workDays = summaries.reduce((sum, summary) => sum + Number(summary.work_days || 0), 0);
         const shiftCount = summaries.reduce((sum, summary) => sum + Number(summary.shift_count || 0), 0);
         const totalMinutes = summaries.reduce((sum, summary) => sum + Number(summary.total_minutes || 0), 0);
@@ -76,7 +77,23 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
             shiftCount,
             averageLabel: `${Math.floor(averageMinutes / 60)}j ${averageMinutes % 60}m`,
         };
-    }, [payments, summaries]);
+    }, [summaries]);
+
+    const filteredPayments = useMemo(() => {
+        return payments.filter((payment) => {
+            if (historyMonth) {
+                const pMonth = (payment.period_start || '').slice(0, 7) || (payment.paid_at || '').slice(0, 7);
+                if (pMonth !== historyMonth) return false;
+            }
+            if (historySearch) {
+                const q = historySearch.toLowerCase();
+                const matchName = (payment.employee_name || '').toLowerCase().includes(q);
+                const matchNote = (payment.note || '').toLowerCase().includes(q);
+                if (!matchName && !matchNote) return false;
+            }
+            return true;
+        });
+    }, [payments, historyMonth, historySearch]);
 
     const invalidRange = Boolean(filterStart && filterEnd && filterEnd < filterStart);
 
@@ -87,23 +104,6 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
         router.get(route('payroll'), {
             start_date: filterStart,
             end_date: filterEnd,
-            employee_id: filterEmployee || undefined,
-        }, {
-            preserveState: true,
-            preserveScroll: true,
-            replace: true,
-        });
-    };
-
-    const applyMonthFilter = (event) => {
-        event.preventDefault();
-        const bounds = monthBounds(historyMonth);
-        if (!bounds) return;
-
-        setFilterStart(bounds.start_date);
-        setFilterEnd(bounds.end_date);
-        router.get(route('payroll'), {
-            ...bounds,
             employee_id: filterEmployee || undefined,
         }, {
             preserveState: true,
@@ -224,12 +224,27 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
                 <section>
                     <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                         <div>
-                            <h2 className="text-lg font-semibold text-slate-900">Histori Pemberian Gaji</h2>
-                            <p className="mt-1 text-sm text-slate-500">Klik baris untuk detail, atau gunakan tombol edit/hapus untuk koreksi input.</p>
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-lg font-semibold text-slate-900">Histori Pemberian Gaji</h2>
+                                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
+                                    {payments.length} data tercatat
+                                </span>
+                            </div>
+                            <p className="mt-1 text-sm text-slate-500">Histori selalu tampil penuh tanpa dibatasi filter tanggal. Klik baris untuk detail atau edit/hapus.</p>
                         </div>
-                        <form onSubmit={applyMonthFilter} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                        <div className="flex flex-wrap items-end gap-2">
                             <label className="block">
-                                <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Filter Bulan</span>
+                                <span className="mb-1 block text-[11px] font-semibold uppercase text-slate-500">Cari Pegawai / Catatan</span>
+                                <input
+                                    type="text"
+                                    value={historySearch}
+                                    onChange={(event) => setHistorySearch(event.target.value)}
+                                    placeholder="Ketik nama atau catatan..."
+                                    className="h-10 w-44 rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 sm:w-52"
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="mb-1 block text-[11px] font-semibold uppercase text-slate-500">Bulan Histori</span>
                                 <input
                                     type="month"
                                     value={historyMonth}
@@ -237,17 +252,22 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
                                     className="h-10 rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                                 />
                             </label>
-                            <button type="submit" className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                                <CalendarDaysIcon className="h-4 w-4" />
-                                Lihat Bulan
-                            </button>
-                        </form>
+                            {(historyMonth || historySearch) && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setHistoryMonth(''); setHistorySearch(''); }}
+                                    className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                    Tampilkan Semua
+                                </button>
+                            )}
+                        </div>
                     </div>
 
-                    {payments.length > 0 ? (
+                    {filteredPayments.length > 0 ? (
                         <>
                         <div className="grid gap-3 lg:hidden">
-                            {payments.map((payment) => (
+                            {filteredPayments.map((payment) => (
                                 <article
                                     key={payment.id}
                                     role="button"
@@ -337,7 +357,7 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {payments.map((payment) => (
+                                        {filteredPayments.map((payment) => (
                                             <tr
                                                 key={payment.id}
                                                 tabIndex={0}
@@ -413,7 +433,7 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
                         </div>
                         </>
                     ) : (
-                        <EmptyState text="Belum ada pembayaran gaji pada periode ini." />
+                        <EmptyState text={payments.length === 0 ? "Belum ada histori pembayaran gaji tercatat." : "Tidak ada histori pembayaran gaji yang sesuai dengan filter pencarian."} />
                     )}
                 </section>
             </div>
@@ -462,6 +482,7 @@ function SalaryPaymentModal({ employeeSummary, filters, onClose, payment = null,
     const [paidAt, setPaidAt] = useState(dateInputValue(payment?.paid_at) || todayInputValue());
     const [note, setNote] = useState(payment?.note || '');
     const [submitting, setSubmitting] = useState(false);
+    const [showWorkedDates, setShowWorkedDates] = useState(false);
 
     const selectedEmployee = employees.find((employee) => employee.id === employeeId);
     const employeeName = selectedEmployee?.display_name || payment?.employee_name || employeeSummary?.employee_name || 'Pegawai';
@@ -469,6 +490,43 @@ function SalaryPaymentModal({ employeeSummary, filters, onClose, payment = null,
         ? [{ id: employeeId, display_name: employeeName }, ...employees]
         : employees;
     const statSource = isEditing ? payment : employeeSummary;
+
+    const attendanceAnalysis = useMemo(() => {
+        if (!periodStart || !periodEnd || periodEnd < periodStart) {
+            return { totalDays: 0, workedDays: [], offDays: [] };
+        }
+
+        const shifts = (statSource?.shift_details || statSource?.shift_snapshot || []);
+        const workedSet = new Set(
+            shifts.map(s => s.work_date || (s.opened_at ? String(s.opened_at).slice(0, 10) : null)).filter(Boolean)
+        );
+
+        const worked = [];
+        const off = [];
+        const start = new Date(periodStart + 'T00:00:00');
+        const end = new Date(periodEnd + 'T00:00:00');
+        const current = new Date(start);
+
+        while (current <= end) {
+            const y = current.getFullYear();
+            const m = String(current.getMonth() + 1).padStart(2, '0');
+            const d = String(current.getDate()).padStart(2, '0');
+            const dateStr = `${y}-${m}-${d}`;
+
+            if (workedSet.has(dateStr)) {
+                worked.push(dateStr);
+            } else {
+                off.push(dateStr);
+            }
+            current.setDate(current.getDate() + 1);
+        }
+
+        return {
+            totalDays: worked.length + off.length,
+            workedDays: worked,
+            offDays: off,
+        };
+    }, [periodStart, periodEnd, statSource]);
     const dailyWorkDays = Number((isEditing ? payment?.payable_days : employeeSummary?.work_days) || 0);
     const baseSalary = salaryType === 'DAILY'
         ? Number(dailyRate || 0) * dailyWorkDays
@@ -584,6 +642,78 @@ function SalaryPaymentModal({ employeeSummary, filters, onClose, payment = null,
                     <MiniMetric label="Total jam" value={statSource?.total_label || '0j 0m'} />
                 </div>
 
+                {/* Rekap Kehadiran & List Tanggal Tidak Ada Shift */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+                                Rekap Kehadiran Shift Pegawai
+                            </p>
+                            <p className="text-xs text-slate-500">
+                                Rentang tanggal: {formatDate(periodStart)} &ndash; {formatDate(periodEnd)} ({attendanceAnalysis.totalDays} hari)
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-800">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                                {attendanceAnalysis.workedDays.length} Hari Masuk ({formatNumber(statSource?.shift_count)} Shift)
+                            </span>
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ${attendanceAnalysis.offDays.length > 0 ? 'bg-rose-100 text-rose-800' : 'bg-slate-200 text-slate-700'}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${attendanceAnalysis.offDays.length > 0 ? 'bg-rose-600' : 'bg-slate-500'}`} />
+                                {attendanceAnalysis.offDays.length} Hari Tidak Ada Shift
+                            </span>
+                        </div>
+                    </div>
+
+                    {attendanceAnalysis.offDays.length > 0 ? (
+                        <div className="mt-3 rounded-lg border border-rose-200/90 bg-white p-3">
+                            <div className="mb-2 flex items-center justify-between">
+                                <span className="text-xs font-semibold text-rose-800">
+                                    Daftar Tanggal Tidak Ada Shift / Libur ({attendanceAnalysis.offDays.length} Hari):
+                                </span>
+                                <span className="text-[11px] text-slate-400">Pegawai tidak tercatat shift</span>
+                            </div>
+                            <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                                {attendanceAnalysis.offDays.map((dateStr) => (
+                                    <span
+                                        key={dateStr}
+                                        className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50/70 px-2 py-1 text-xs font-medium text-rose-800 shadow-sm"
+                                    >
+                                        <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                                        {formatDate(dateStr, false)}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/80 p-3 text-xs font-medium text-emerald-800">
+                            ✓ Pegawai memiliki jadwal shift aktif di setiap hari pada periode ini (tidak ada tanggal libur/absen).
+                        </div>
+                    )}
+
+                    {attendanceAnalysis.workedDays.length > 0 && (
+                        <div className="mt-2.5">
+                            <button
+                                type="button"
+                                onClick={() => setShowWorkedDates(!showWorkedDates)}
+                                className="text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+                            >
+                                {showWorkedDates ? '▲ Sembunyikan daftar tanggal masuk' : '▼ Lihat rincian tanggal masuk'}
+                            </button>
+                            {showWorkedDates && (
+                                <div className="mt-2 flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2.5">
+                                    {attendanceAnalysis.workedDays.map((dateStr) => (
+                                        <span key={dateStr} className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                                            {formatDate(dateStr, false)}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
                 <div className="space-y-2">
                     <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Metode Gaji</span>
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -673,6 +803,29 @@ function SalaryPaymentModal({ employeeSummary, filters, onClose, payment = null,
 }
 
 function PaymentDetailModal({ payment, onClose, onEdit, onDelete, isDeleting = false }) {
+    const offDays = useMemo(() => {
+        if (!payment?.period_start || !payment?.period_end) return [];
+        const shifts = payment.shift_snapshot || [];
+        const workedSet = new Set(
+            shifts.map(s => s.work_date || (s.opened_at ? String(s.opened_at).slice(0, 10) : null)).filter(Boolean)
+        );
+        const off = [];
+        const start = new Date(payment.period_start + 'T00:00:00');
+        const end = new Date(payment.period_end + 'T00:00:00');
+        const current = new Date(start);
+        while (current <= end) {
+            const y = current.getFullYear();
+            const m = String(current.getMonth() + 1).padStart(2, '0');
+            const d = String(current.getDate()).padStart(2, '0');
+            const dateStr = `${y}-${m}-${d}`;
+            if (!workedSet.has(dateStr)) {
+                off.push(dateStr);
+            }
+            current.setDate(current.getDate() + 1);
+        }
+        return off;
+    }, [payment]);
+
     return (
         <Modal title="Detail Pembayaran Gaji" subtitle={payment.employee_name} onClose={onClose} width="max-w-xl" compact>
             <div className="space-y-4">
@@ -728,6 +881,25 @@ function PaymentDetailModal({ payment, onClose, onEdit, onDelete, isDeleting = f
 
                 {payment.note && (
                     <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{payment.note}</div>
+                )}
+
+                {offDays.length > 0 && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50/70 p-3">
+                        <div className="mb-1.5 flex items-center justify-between">
+                            <span className="text-xs font-semibold text-rose-800">
+                                Tanggal Tidak Ada Shift / Libur ({offDays.length} Hari):
+                            </span>
+                            <span className="text-[11px] text-slate-400">Periode ini</span>
+                        </div>
+                        <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                            {offDays.map((d) => (
+                                <span key={d} className="inline-flex items-center gap-1 rounded border border-rose-200 bg-white px-2 py-0.5 text-xs font-medium text-rose-700 shadow-sm">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                                    {formatDate(d, false)}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
                 )}
 
                 <div>

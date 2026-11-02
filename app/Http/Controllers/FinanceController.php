@@ -113,7 +113,13 @@ class FinanceController extends Controller
         $daily = $this->buildDailySeries($start, $end, $paidTransactions, $cashMovements);
         $topProducts = $this->buildTopProducts($paidTransactions);
         $expenseByCategory = $this->buildExpenseByCategory($cashMovements);
-        $withdrawalHistory = $this->buildWithdrawalHistory($outletId, $start, $end);
+        $withdrawalHistory = $this->buildWithdrawalHistory($outletId);
+        $allWithdrawals = PettyCash::query()
+            ->where('outlet_id', $outletId)
+            ->where('category', 'Penarikan')
+            ->orderByDesc('created_at')
+            ->take(50)
+            ->get();
 
         return Inertia::render('Finance/Index', [
             'outlet' => $outlet,
@@ -127,7 +133,7 @@ class FinanceController extends Controller
             'topProducts' => $topProducts,
             'expenseByCategory' => $expenseByCategory,
             'cashMovements' => $cashMovements->take(80)->values(),
-            'withdrawals' => $cashMovements->where('category', 'Penarikan')->take(50)->values(),
+            'withdrawals' => $allWithdrawals->values(),
             'withdrawalHistory' => $withdrawalHistory,
         ]);
     }
@@ -626,15 +632,13 @@ class FinanceController extends Controller
         );
     }
 
-    private function buildWithdrawalHistory(?string $outletId, Carbon $start, Carbon $end): array
+    private function buildWithdrawalHistory(?string $outletId): array
     {
-        [$startForQuery, $endForQuery] = $this->storageWindow($start, $end);
         $withdrawals = PettyCash::query()
             ->where('outlet_id', $outletId)
             ->where('category', 'Penarikan')
-            ->whereBetween('created_at', [$startForQuery, $endForQuery])
             ->orderByDesc('created_at')
-            ->take(80)
+            ->take(100)
             ->get();
 
         $snapshots = FinanceWithdrawalSnapshot::query()

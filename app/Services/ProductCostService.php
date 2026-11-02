@@ -9,6 +9,7 @@ use App\Models\ShiftRecord;
 use App\Models\StockItem;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -325,6 +326,48 @@ class ProductCostService
             $recordedSalaryTotal = $this->allocatedSalaryTotal($salaryPayments, $startDate, $endDate);
         }
 
+        $staffUsers = User::where('role', 'STAFF')
+            ->where(function ($q) use ($outletId, $employeeIds) {
+                $q->whereHas('outlets', fn ($sub) => $sub->where('outlets.id', $outletId))
+                    ->orWhereIn('id', $employeeIds);
+            })
+            ->where('is_active', true)
+            ->get(['id', 'display_name']);
+
+        if ($staffUsers->isEmpty()) {
+            $staffUsers = User::where('role', 'STAFF')
+                ->where('is_active', true)
+                ->get(['id', 'display_name']);
+        }
+
+        $shiftsInPeriod = ShiftRecord::where('outlet_id', $outletId)
+            ->whereNotNull('closed_at')
+            ->whereBetween('opened_at', [$startDate, $endDate])
+            ->whereIn('opened_by', $staffUsers->pluck('id'))
+            ->get(['id', 'opened_by', 'opened_at', 'closed_at']);
+
+        $latestPayments = EmployeeSalaryPayment::whereIn('employee_id', $staffUsers->pluck('id'))
+            ->whereNotNull('daily_rate')
+            ->where('daily_rate', '>', 0)
+            ->orderByDesc('paid_at')
+            ->orderByDesc('created_at')
+            ->get()
+            ->groupBy('employee_id')
+            ->map(fn ($rows) => (float) $rows->first()->daily_rate);
+
+        $staffShifts = $staffUsers->map(function ($staff) use ($shiftsInPeriod, $latestPayments) {
+            $userShifts = $shiftsInPeriod->where('opened_by', $staff->id);
+            $workDates = $userShifts->map(fn ($s) => $s->opened_at?->toDateString())->filter()->unique();
+
+            return [
+                'id' => $staff->id,
+                'name' => $staff->display_name,
+                'shift_count' => $userShifts->count(),
+                'work_days' => $workDates->count(),
+                'default_daily_rate' => (float) ($latestPayments->get($staff->id) ?? 0),
+            ];
+        })->values();
+
         $customSalaryTotal = $customSalaryTotal !== null ? max(0, $customSalaryTotal) : null;
         $salaryTotal = $customSalaryTotal ?? $recordedSalaryTotal;
 
@@ -367,6 +410,7 @@ class ProductCostService
             'gross_profit' => round($grossProfit),
             'labor_cost_per_portion' => round($laborCostPerPortion, 2),
             'profit_after_labor' => round($grossProfit - $salaryTotal),
+            'staff_shifts' => $staffShifts->all(),
         ];
     }
 

@@ -544,7 +544,7 @@ export default function FinanceIndex({
                                     <tbody className="divide-y divide-slate-100">
                                         {withdrawalHistory.length === 0 ? (
                                             <tr>
-                                                <td colSpan="6" className="py-8 text-center text-slate-500">Belum ada histori penarikan pada periode filter ini.</td>
+                                                <td colSpan="6" className="py-8 text-center text-slate-500">Belum ada histori penarikan tercatat.</td>
                                             </tr>
                                         ) : withdrawalHistory.map((item) => (
                                             <tr key={item.id} className="align-top">
