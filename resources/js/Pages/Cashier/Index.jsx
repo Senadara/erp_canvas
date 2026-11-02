@@ -1344,7 +1344,12 @@ export default function CashierIndex({ openShift, products, shiftTransactions = 
                                 {/* Receipt content */}
                                 <div className="text-center mb-4">
                                     {openShift?.outlet?.logo && (
-                                        <img src={`/storage/${openShift.outlet.logo}`} alt={openShift.outlet.name} className="h-20 w-auto mx-auto mb-2 object-contain" />
+                                        <img
+                                            src={`/storage/${openShift.outlet.logo}`}
+                                            alt={openShift.outlet.name}
+                                            className="h-20 w-auto mx-auto mb-2 object-contain"
+                                            onError={(e) => { e.target.style.display = 'none'; }}
+                                        />
                                     )}
                                     <h3 className="font-bold text-lg">{openShift?.outlet?.name || 'Toko'}</h3>
                                     {openShift?.outlet?.address && <p className="text-xs text-slate-600">{openShift.outlet.address}</p>}

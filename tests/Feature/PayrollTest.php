@@ -149,6 +149,147 @@ class PayrollTest extends TestCase
         $this->assertSame(220000.0, (float) $payment->total_amount);
     }
 
+    public function test_owner_can_edit_salary_payment_history_and_recalculate_shift_snapshot(): void
+    {
+        $outlet = Outlet::create(['name' => 'Outlet Edit Gaji']);
+        $owner = $this->createUser('owner-edit-payroll@karsa.local', 'OWNER', 'Owner Edit');
+        $firstStaff = $this->createUser('staff-old-payroll@karsa.local', 'STAFF', 'Staff Lama');
+        $secondStaff = $this->createUser('staff-new-payroll@karsa.local', 'STAFF', 'Staff Baru');
+        $firstStaff->outlets()->attach($outlet->id);
+        $secondStaff->outlets()->attach($outlet->id);
+
+        foreach (['2026-08-01', '2026-08-02'] as $date) {
+            ShiftRecord::create([
+                'outlet_id' => $outlet->id,
+                'name' => "Shift {$date}",
+                'opened_by' => $secondStaff->id,
+                'closed_by' => $secondStaff->id,
+                'opened_at' => Carbon::parse("{$date} 08:00:00"),
+                'closed_at' => Carbon::parse("{$date} 16:00:00"),
+                'opening_cash' => 50000,
+                'expected_cash' => 100000,
+                'actual_cash' => 100000,
+                'status' => 'CLOSED',
+            ]);
+        }
+
+        $payment = EmployeeSalaryPayment::create([
+            'employee_id' => $firstStaff->id,
+            'employee_name' => $firstStaff->display_name,
+            'period_start' => Carbon::parse('2026-07-01'),
+            'period_end' => Carbon::parse('2026-07-31'),
+            'salary_type' => 'MONTHLY',
+            'monthly_amount' => 100000,
+            'work_days' => 0,
+            'shift_count' => 0,
+            'total_minutes' => 0,
+            'average_minutes' => 0,
+            'longest_shift_minutes' => 0,
+            'shortest_shift_minutes' => 0,
+            'base_amount' => 100000,
+            'bonus_amount' => 0,
+            'deduction_amount' => 0,
+            'total_amount' => 100000,
+            'paid_at' => Carbon::parse('2026-07-31'),
+            'paid_by' => $owner->id,
+        ]);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->put(route('payroll.update', $payment), [
+                'employee_id' => $secondStaff->id,
+                'period_start' => '2026-08-01',
+                'period_end' => '2026-08-31',
+                'salary_type' => 'DAILY',
+                'daily_rate' => 60000,
+                'bonus_amount' => 5000,
+                'deduction_amount' => 10000,
+                'paid_at' => '2026-08-05',
+                'note' => 'Koreksi histori gaji',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $payment = $payment->fresh();
+        $this->assertSame($secondStaff->id, $payment->employee_id);
+        $this->assertSame('Staff Baru', $payment->employee_name);
+        $this->assertSame('DAILY', $payment->salary_type);
+        $this->assertSame(60000.0, (float) $payment->daily_rate);
+        $this->assertSame(2, $payment->payable_days);
+        $this->assertSame(2, $payment->work_days);
+        $this->assertSame(2, $payment->shift_count);
+        $this->assertSame(960, $payment->total_minutes);
+        $this->assertSame(120000.0, (float) $payment->base_amount);
+        $this->assertSame(115000.0, (float) $payment->total_amount);
+        $this->assertSame('Koreksi histori gaji', $payment->note);
+        $this->assertCount(2, $payment->shift_snapshot);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->get(route('payroll', [
+                'start_date' => '2026-08-01',
+                'end_date' => '2026-08-31',
+                'employee_id' => $secondStaff->id,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Payroll/Index')
+                ->has('payments', 1)
+                ->where('payments.0.employee_name', 'Staff Baru')
+                ->where('payments.0.salary_type', 'DAILY')
+                ->where('payments.0.total_amount', 115000)
+            );
+    }
+
+    public function test_owner_can_delete_salary_payment_history(): void
+    {
+        $outlet = Outlet::create(['name' => 'Outlet Hapus Gaji']);
+        $owner = $this->createUser('owner-delete-payroll@karsa.local', 'OWNER', 'Owner Delete');
+        $staff = $this->createUser('staff-delete-payroll@karsa.local', 'STAFF', 'Staff Delete');
+        $staff->outlets()->attach($outlet->id);
+
+        $payment = EmployeeSalaryPayment::create([
+            'employee_id' => $staff->id,
+            'employee_name' => $staff->display_name,
+            'period_start' => Carbon::parse('2026-08-01'),
+            'period_end' => Carbon::parse('2026-08-31'),
+            'salary_type' => 'MONTHLY',
+            'monthly_amount' => 150000,
+            'work_days' => 0,
+            'shift_count' => 0,
+            'total_minutes' => 0,
+            'average_minutes' => 0,
+            'longest_shift_minutes' => 0,
+            'shortest_shift_minutes' => 0,
+            'base_amount' => 150000,
+            'bonus_amount' => 0,
+            'deduction_amount' => 0,
+            'total_amount' => 150000,
+            'paid_at' => Carbon::parse('2026-08-31'),
+            'paid_by' => $owner->id,
+        ]);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->delete(route('payroll.destroy', $payment))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('employee_salary_payments', ['id' => $payment->id]);
+
+        $this->actingAs($owner)
+            ->withSession(['outlet_id' => $outlet->id])
+            ->get(route('payroll', [
+                'start_date' => '2026-08-01',
+                'end_date' => '2026-08-31',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Payroll/Index')
+                ->has('payments', 0)
+            );
+    }
+
     public function test_july_filter_counts_unique_closed_shift_dates(): void
     {
         $outlet = Outlet::create(['name' => 'Outlet Payroll Juli']);

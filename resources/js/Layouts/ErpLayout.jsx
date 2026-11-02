@@ -1,5 +1,6 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
+import ApplicationLogo from '@/Components/ApplicationLogo';
 import {
     HomeIcon,
     CalculatorIcon,
@@ -12,8 +13,11 @@ import {
     BanknotesIcon,
     ChartBarIcon,
     BuildingOfficeIcon,
+    BuildingOffice2Icon,
+    BuildingStorefrontIcon,
     MapPinIcon,
     UsersIcon,
+    UserGroupIcon,
     Bars3Icon,
     XMarkIcon,
     ChevronDownIcon,
@@ -22,6 +26,15 @@ import {
     ChevronLeftIcon,
     DevicePhoneMobileIcon,
     DocumentTextIcon,
+    TagIcon,
+    ClipboardDocumentCheckIcon,
+    ClipboardDocumentListIcon,
+    ArrowTrendingDownIcon,
+    ArrowTrendingUpIcon,
+    DocumentChartBarIcon,
+    InboxArrowDownIcon,
+    IdentificationIcon,
+    ChartPieIcon,
 } from '@heroicons/react/24/outline';
 import { usePWAInstall } from '@/pwa/usePWAInstall';
 
@@ -29,16 +42,29 @@ const iconMap = {
     home: HomeIcon,
     calculator: CalculatorIcon,
     clock: ClockIcon,
-    receipt: ReceiptPercentIcon,
+    receipt: DocumentTextIcon,
     cube: CubeIcon,
+    tag: TagIcon,
     archive: ArchiveBoxIcon,
+    clipboard_check: ClipboardDocumentCheckIcon,
     trash: TrashIcon,
     truck: TruckIcon,
+    expense: ArrowTrendingDownIcon,
+    finance: BanknotesIcon,
+    reports: DocumentChartBarIcon,
+    mitra_reports: ClipboardDocumentListIcon,
+    settlements: InboxArrowDownIcon,
+    payroll: IdentificationIcon,
+    investments: ArrowTrendingUpIcon,
+    owner_finance: ChartPieIcon,
+    owner: BuildingOffice2Icon,
+    outlet: BuildingStorefrontIcon,
+    users: UserGroupIcon,
+    // Fallback aliases for backwards compatibility
+    chart: DocumentChartBarIcon,
     banknotes: BanknotesIcon,
-    chart: ChartBarIcon,
-    building: BuildingOfficeIcon,
-    map: MapPinIcon,
-    users: UsersIcon,
+    building: BuildingOffice2Icon,
+    map: BuildingStorefrontIcon,
     document: DocumentTextIcon,
 };
 
@@ -89,16 +115,6 @@ function NavItem({ item, collapsed }) {
                 </div>
             )}
         </Link>
-    );
-}
-
-function BrandMark({ className = 'h-9 w-9' }) {
-    return (
-        <img
-            src="/brand/karsa-logo.png"
-            alt="Karsa ERP"
-            className={`${className} object-contain`}
-        />
     );
 }
 
@@ -167,13 +183,15 @@ export default function ErpLayout({ title, children }) {
                 {/* Brand */}
                 <div className={`flex h-16 shrink-0 items-center border-b border-slate-100 px-4 ${collapsed ? 'justify-center' : 'justify-between'}`}>
                     {!collapsed && (
-                        <Link href={route('dashboard')} className="flex items-center gap-2">
-                            <BrandMark className="h-9 w-9 shrink-0" />
+                        <Link href={route('dashboard')} className="flex items-center gap-2.5">
+                            <ApplicationLogo className="h-9 w-9 shrink-0" />
                             <span className="font-display text-lg font-bold tracking-tight text-slate-900">Karsa ERP</span>
                         </Link>
                     )}
                     {collapsed && (
-                        <BrandMark className="h-10 w-10 shrink-0" />
+                        <Link href={route('dashboard')} title="Dashboard">
+                            <ApplicationLogo className="h-9 w-9 shrink-0" />
+                        </Link>
                     )}
                     <button
                         onClick={() => setCollapsed(v => !v)}
@@ -233,9 +251,14 @@ export default function ErpLayout({ title, children }) {
                         <button
                             onClick={() => setSidebarOpen(true)}
                             className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 lg:hidden"
+                            aria-label="Buka menu"
                         >
                             <Bars3Icon className="h-5 w-5" />
                         </button>
+                        <div className="flex items-center gap-2 lg:hidden">
+                            <ApplicationLogo className="h-7 w-7 shrink-0" />
+                            <span className="font-display text-base font-bold text-slate-900">Karsa ERP</span>
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-3">                        {/* PWA Install Button */}

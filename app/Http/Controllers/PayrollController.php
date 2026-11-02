@@ -8,6 +8,7 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class PayrollController extends Controller
@@ -101,6 +102,45 @@ class PayrollController extends Controller
             abort(403, 'Anda tidak memiliki akses ke halaman gaji pegawai.');
         }
 
+        EmployeeSalaryPayment::create([
+            ...$this->paymentAttributes($request),
+            'paid_by' => $user->id,
+        ]);
+
+        return back()->with('success', 'Pembayaran gaji berhasil dicatat.');
+    }
+
+    public function update(Request $request, EmployeeSalaryPayment $payment)
+    {
+        $user = $request->user();
+        if (! $this->canManagePayroll($user)) {
+            abort(403, 'Anda tidak memiliki akses untuk mengubah histori gaji pegawai.');
+        }
+
+        $payment->update($this->paymentAttributes($request));
+
+        return back()->with('success', 'Histori gaji berhasil diperbarui.');
+    }
+
+    public function destroy(Request $request, EmployeeSalaryPayment $payment)
+    {
+        $user = $request->user();
+        if (! $this->canManagePayroll($user)) {
+            abort(403, 'Anda tidak memiliki akses untuk menghapus histori gaji pegawai.');
+        }
+
+        $payment->delete();
+
+        return back()->with('success', 'Histori gaji berhasil dihapus.');
+    }
+
+    private function canManagePayroll(?User $user): bool
+    {
+        return (bool) ($user && ($user->isOwner() || ($user->feature_overrides['payroll'] ?? false)));
+    }
+
+    private function paymentAttributes(Request $request): array
+    {
         $data = $request->validate([
             'employee_id' => ['required', Rule::exists('users', 'id')->where('role', 'STAFF')],
             'period_start' => ['required', 'date_format:Y-m-d'],
@@ -127,18 +167,18 @@ class PayrollController extends Controller
         if ($salaryType === 'DAILY') {
             $dailyRate = (float) ($data['daily_rate'] ?? 0);
             if ($dailyRate <= 0 || $payableDays <= 0) {
-                return back()
-                    ->withErrors(['daily_rate' => 'Gaji harian membutuhkan tarif harian dan minimal 1 hari kerja dari shift tertutup.'])
-                    ->withInput();
+                throw ValidationException::withMessages([
+                    'daily_rate' => 'Gaji harian membutuhkan tarif harian dan minimal 1 hari kerja dari shift tertutup.',
+                ]);
             }
             $baseAmount = $dailyRate * $payableDays;
         } else {
             $salaryType = 'MONTHLY';
             $monthlyAmount = (float) ($data['monthly_amount'] ?? $data['base_amount'] ?? 0);
             if ($monthlyAmount <= 0) {
-                return back()
-                    ->withErrors(['monthly_amount' => 'Gaji bulanan membutuhkan nominal gaji pokok.'])
-                    ->withInput();
+                throw ValidationException::withMessages([
+                    'monthly_amount' => 'Gaji bulanan membutuhkan nominal gaji pokok.',
+                ]);
             }
             $baseAmount = $monthlyAmount;
             $payableDays = $stats['work_days'];
@@ -148,7 +188,7 @@ class PayrollController extends Controller
         $deductionAmount = (float) ($data['deduction_amount'] ?? 0);
         $totalAmount = max(0, $baseAmount + $bonusAmount - $deductionAmount);
 
-        EmployeeSalaryPayment::create([
+        return [
             'employee_id' => $employee->id,
             'employee_name' => $employee->display_name,
             'period_start' => $startDate,
@@ -170,15 +210,7 @@ class PayrollController extends Controller
             'note' => $data['note'] ?? null,
             'shift_snapshot' => $stats['shift_details'],
             'paid_at' => isset($data['paid_at']) ? Carbon::parse($data['paid_at']) : now(),
-            'paid_by' => $user->id,
-        ]);
-
-        return back()->with('success', 'Pembayaran gaji berhasil dicatat.');
-    }
-
-    private function canManagePayroll(?User $user): bool
-    {
-        return (bool) ($user && ($user->isOwner() || ($user->feature_overrides['payroll'] ?? false)));
+        ];
     }
 
     private function shiftStatsForEmployees(array $employeeIds, Carbon $startDate, Carbon $endDate): array

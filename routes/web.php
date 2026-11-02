@@ -78,6 +78,8 @@ Route::middleware(['auth', 'outlet'])->group(function () {
     // Payroll
     Route::get('/payroll', [\App\Http\Controllers\PayrollController::class, 'index'])->name('payroll');
     Route::post('/payroll', [\App\Http\Controllers\PayrollController::class, 'store'])->name('payroll.store');
+    Route::put('/payroll/{payment}', [\App\Http\Controllers\PayrollController::class, 'update'])->name('payroll.update');
+    Route::delete('/payroll/{payment}', [\App\Http\Controllers\PayrollController::class, 'destroy'])->name('payroll.destroy');
     
     // Mitra Reports
     Route::get('/mitra-reports', [\App\Http\Controllers\MitraReportController::class, 'index'])->name('mitra-reports');

@@ -6,6 +6,8 @@ import {
     CalendarDaysIcon,
     ClockIcon,
     FunnelIcon,
+    PencilSquareIcon,
+    TrashIcon,
     UserGroupIcon,
     XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -35,6 +37,10 @@ function todayInputValue() {
     return new Date().toISOString().slice(0, 10);
 }
 
+function dateInputValue(value) {
+    return value ? String(value).slice(0, 10) : '';
+}
+
 function monthBounds(monthValue) {
     if (!monthValue) return null;
     const [year, month] = monthValue.split('-').map(Number);
@@ -54,6 +60,8 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
     const [historyMonth, setHistoryMonth] = useState((filters.start_date || '').slice(0, 7));
     const [paymentEmployee, setPaymentEmployee] = useState(null);
     const [detailPayment, setDetailPayment] = useState(null);
+    const [editingPayment, setEditingPayment] = useState(null);
+    const [deletingPaymentId, setDeletingPaymentId] = useState(null);
 
     const totals = useMemo(() => {
         const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.total_amount || 0), 0);
@@ -101,6 +109,27 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
             preserveState: true,
             preserveScroll: true,
             replace: true,
+        });
+    };
+
+    const openEditPayment = (payment) => {
+        setDetailPayment(null);
+        setEditingPayment(payment);
+    };
+
+    const deletePayment = (payment) => {
+        if (!window.confirm(`Hapus histori gaji ${payment.employee_name} senilai ${formatRupiah(payment.total_amount)}?`)) {
+            return;
+        }
+
+        setDeletingPaymentId(payment.id);
+        router.delete(route('payroll.destroy', payment.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setDetailPayment((current) => current?.id === payment.id ? null : current);
+                setEditingPayment((current) => current?.id === payment.id ? null : current);
+            },
+            onFinish: () => setDeletingPaymentId(null),
         });
     };
 
@@ -196,7 +225,7 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
                     <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold text-slate-900">Histori Pemberian Gaji</h2>
-                            <p className="mt-1 text-sm text-slate-500">Klik baris tabel untuk melihat detail hitungan dan snapshot shift.</p>
+                            <p className="mt-1 text-sm text-slate-500">Klik baris untuk detail, atau gunakan tombol edit/hapus untuk koreksi input.</p>
                         </div>
                         <form onSubmit={applyMonthFilter} className="flex flex-col gap-2 sm:flex-row sm:items-end">
                             <label className="block">
@@ -219,10 +248,18 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
                         <>
                         <div className="grid gap-3 lg:hidden">
                             {payments.map((payment) => (
-                                <button
+                                <article
                                     key={payment.id}
-                                    type="button"
+                                    role="button"
+                                    tabIndex={0}
                                     onClick={() => setDetailPayment(payment)}
+                                    onKeyDown={(event) => {
+                                        if (event.target !== event.currentTarget) return;
+                                        if (event.key === 'Enter' || event.key === ' ') {
+                                            event.preventDefault();
+                                            setDetailPayment(payment);
+                                        }
+                                    }}
                                     className="rounded-lg border border-slate-200 bg-white p-4 text-left shadow-sm transition active:bg-indigo-50"
                                 >
                                     <div className="flex items-start justify-between gap-3">
@@ -244,20 +281,46 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
                                         <p className="text-xs font-semibold uppercase text-emerald-700">Total dibayar</p>
                                         <p className="mt-1 break-words text-2xl font-bold text-emerald-800">{formatRupiah(payment.total_amount)}</p>
                                     </div>
-                                </button>
+                                    <div className="mt-3 flex items-center justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                openEditPayment(payment);
+                                            }}
+                                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                        >
+                                            <PencilSquareIcon className="h-4 w-4" />
+                                            Edit
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={deletingPaymentId === payment.id}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                deletePayment(payment);
+                                            }}
+                                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            <TrashIcon className="h-4 w-4" />
+                                            {deletingPaymentId === payment.id ? 'Menghapus' : 'Hapus'}
+                                        </button>
+                                    </div>
+                                </article>
                             ))}
                         </div>
                         <div className="hidden overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm lg:block">
                             <div className="w-full">
                                 <table className="w-full table-fixed divide-y divide-slate-200 text-sm">
                                     <colgroup>
+                                        <col className="w-[12%]" />
                                         <col className="w-[15%]" />
-                                        <col className="w-[17%]" />
-                                        <col className="w-[18%]" />
+                                        <col className="w-[15%]" />
+                                        <col className="w-[8%]" />
+                                        <col className="w-[10%]" />
                                         <col className="w-[9%]" />
-                                        <col className="w-[11%]" />
-                                        <col className="w-[10%]" />
-                                        <col className="w-[10%]" />
+                                        <col className="w-[9%]" />
+                                        <col className="w-[12%]" />
                                         <col className="w-[10%]" />
                                     </colgroup>
                                     <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
@@ -270,6 +333,7 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
                                             <th className="px-4 py-3 text-right">Bonus</th>
                                             <th className="px-4 py-3 text-right">Potongan</th>
                                             <th className="px-4 py-3 text-right">Total</th>
+                                            <th className="px-4 py-3 text-right">Aksi</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -312,6 +376,35 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
                                                 <td className="px-4 py-3 text-right font-bold text-slate-900">
                                                     <span className="break-words">{formatRupiah(payment.total_amount)}</span>
                                                 </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <button
+                                                            type="button"
+                                                            title="Edit histori"
+                                                            aria-label={`Edit histori gaji ${payment.employee_name}`}
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                openEditPayment(payment);
+                                                            }}
+                                                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                                                        >
+                                                            <PencilSquareIcon className="h-4 w-4" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            title="Hapus histori"
+                                                            aria-label={`Hapus histori gaji ${payment.employee_name}`}
+                                                            disabled={deletingPaymentId === payment.id}
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                deletePayment(payment);
+                                                            }}
+                                                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-rose-500 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        >
+                                                            <TrashIcon className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -328,14 +421,27 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
             {paymentEmployee && (
                 <SalaryPaymentModal
                     employeeSummary={paymentEmployee}
+                    employees={employees}
                     filters={filters}
                     onClose={() => setPaymentEmployee(null)}
+                />
+            )}
+
+            {editingPayment && (
+                <SalaryPaymentModal
+                    payment={editingPayment}
+                    employees={employees}
+                    filters={filters}
+                    onClose={() => setEditingPayment(null)}
                 />
             )}
 
             {detailPayment && (
                 <PaymentDetailModal
                     payment={detailPayment}
+                    isDeleting={deletingPaymentId === detailPayment.id}
+                    onEdit={() => openEditPayment(detailPayment)}
+                    onDelete={() => deletePayment(detailPayment)}
                     onClose={() => setDetailPayment(null)}
                 />
             )}
@@ -343,33 +449,45 @@ export default function PayrollIndex({ filters, employees = [], summaries = [], 
     );
 }
 
-function SalaryPaymentModal({ employeeSummary, filters, onClose }) {
-    const periodStart = filters.start_date || '';
-    const periodEnd = filters.end_date || '';
-    const [salaryType, setSalaryType] = useState('MONTHLY');
-    const [monthlyAmount, setMonthlyAmount] = useState('');
-    const [dailyRate, setDailyRate] = useState('');
-    const [bonusAmount, setBonusAmount] = useState('');
-    const [deductionAmount, setDeductionAmount] = useState('');
-    const [paidAt, setPaidAt] = useState(todayInputValue());
-    const [note, setNote] = useState('');
+function SalaryPaymentModal({ employeeSummary, filters, onClose, payment = null, employees = [] }) {
+    const isEditing = Boolean(payment);
+    const [employeeId, setEmployeeId] = useState(payment?.employee_id || employeeSummary?.employee_id || '');
+    const [periodStart, setPeriodStart] = useState(payment?.period_start || filters.start_date || '');
+    const [periodEnd, setPeriodEnd] = useState(payment?.period_end || filters.end_date || '');
+    const [salaryType, setSalaryType] = useState(payment?.salary_type || 'MONTHLY');
+    const [monthlyAmount, setMonthlyAmount] = useState(payment ? String(Number(payment.monthly_amount || payment.base_amount || 0)) : '');
+    const [dailyRate, setDailyRate] = useState(payment ? String(Number(payment.daily_rate || 0)) : '');
+    const [bonusAmount, setBonusAmount] = useState(payment ? String(Number(payment.bonus_amount || 0)) : '');
+    const [deductionAmount, setDeductionAmount] = useState(payment ? String(Number(payment.deduction_amount || 0)) : '');
+    const [paidAt, setPaidAt] = useState(dateInputValue(payment?.paid_at) || todayInputValue());
+    const [note, setNote] = useState(payment?.note || '');
     const [submitting, setSubmitting] = useState(false);
 
-    const dailyWorkDays = Number(employeeSummary.work_days || 0);
+    const selectedEmployee = employees.find((employee) => employee.id === employeeId);
+    const employeeName = selectedEmployee?.display_name || payment?.employee_name || employeeSummary?.employee_name || 'Pegawai';
+    const employeeOptions = employeeId && !selectedEmployee
+        ? [{ id: employeeId, display_name: employeeName }, ...employees]
+        : employees;
+    const statSource = isEditing ? payment : employeeSummary;
+    const dailyWorkDays = Number((isEditing ? payment?.payable_days : employeeSummary?.work_days) || 0);
     const baseSalary = salaryType === 'DAILY'
         ? Number(dailyRate || 0) * dailyWorkDays
         : Number(monthlyAmount || 0);
     const totalSalary = Math.max(0, baseSalary + Number(bonusAmount || 0) - Number(deductionAmount || 0));
-    const lastPayment = employeeSummary.last_payment;
-    const cannotSubmitDaily = salaryType === 'DAILY' && (Number(dailyRate || 0) <= 0 || dailyWorkDays <= 0);
+    const lastPayment = employeeSummary?.last_payment;
+    const invalidPeriod = Boolean(periodStart && periodEnd && periodEnd < periodStart);
+    const cannotSubmitDaily = salaryType === 'DAILY' && (Number(dailyRate || 0) <= 0 || (!isEditing && dailyWorkDays <= 0));
+    const cannotSubmitAmount = salaryType === 'DAILY' && isEditing
+        ? Number(dailyRate || 0) <= 0
+        : totalSalary <= 0;
 
     const submitPayment = (event) => {
         event.preventDefault();
-        if (!employeeSummary.employee_id || cannotSubmitDaily || totalSalary <= 0) return;
+        if (!employeeId || !periodStart || !periodEnd || invalidPeriod || cannotSubmitDaily || totalSalary <= 0) return;
 
         setSubmitting(true);
-        router.post(route('payroll.store'), {
-            employee_id: employeeSummary.employee_id,
+        const payload = {
+            employee_id: employeeId,
             period_start: periodStart,
             period_end: periodEnd,
             salary_type: salaryType,
@@ -380,7 +498,11 @@ function SalaryPaymentModal({ employeeSummary, filters, onClose }) {
             deduction_amount: deductionAmount || 0,
             paid_at: paidAt || undefined,
             note,
-        }, {
+        };
+        const method = isEditing ? 'put' : 'post';
+        const target = isEditing ? route('payroll.update', payment.id) : route('payroll.store');
+
+        router[method](target, payload, {
             preserveScroll: true,
             onSuccess: onClose,
             onFinish: () => setSubmitting(false),
@@ -388,32 +510,78 @@ function SalaryPaymentModal({ employeeSummary, filters, onClose }) {
     };
 
     return (
-        <Modal title="Pemberian Gaji" subtitle={employeeSummary.employee_name} onClose={onClose} width="max-w-3xl">
+        <Modal title={isEditing ? 'Edit Histori Gaji' : 'Pemberian Gaji'} subtitle={employeeName} onClose={onClose} width="max-w-3xl">
             <form onSubmit={submitPayment} className="space-y-5">
                 <div className="grid gap-3 lg:grid-cols-[1fr_0.75fr]">
                     <div className="rounded-lg border border-slate-200 bg-white p-4">
-                        <p className="text-xs font-semibold uppercase text-slate-500">Periode gaji</p>
-                        <p className="mt-1 text-base font-semibold text-slate-900">{formatDate(periodStart)} - {formatDate(periodEnd)}</p>
-                        <p className="mt-2 text-xs leading-relaxed text-slate-500">
-                            Hari kerja mengikuti shift tertutup pada periode ini. Cuti atau hari tanpa shift tidak dihitung sebagai gaji harian.
-                        </p>
+                        <p className="text-xs font-semibold uppercase text-slate-500">Data gaji</p>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            {isEditing ? (
+                                <label className="block sm:col-span-2">
+                                    <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Pegawai</span>
+                                    <select
+                                        value={employeeId}
+                                        onChange={(event) => setEmployeeId(event.target.value)}
+                                        className="h-10 w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    >
+                                        {employeeOptions.map((employee) => (
+                                            <option key={employee.id} value={employee.id}>{employee.display_name}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                            ) : (
+                                <div className="sm:col-span-2">
+                                    <ReadOnlyField label="Pegawai" value={employeeName} />
+                                </div>
+                            )}
+                            <label className="block">
+                                <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Mulai</span>
+                                <input
+                                    type="date"
+                                    value={periodStart}
+                                    onChange={(event) => setPeriodStart(event.target.value)}
+                                    className="h-10 w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Sampai</span>
+                                <input
+                                    type="date"
+                                    min={periodStart || undefined}
+                                    value={periodEnd}
+                                    onChange={(event) => setPeriodEnd(event.target.value)}
+                                    className={`h-10 w-full rounded-md text-sm focus:border-indigo-500 focus:ring-indigo-500 ${invalidPeriod ? 'border-rose-400' : 'border-slate-300'}`}
+                                />
+                            </label>
+                        </div>
+                        {invalidPeriod && <p className="mt-2 text-xs font-medium text-rose-600">Tanggal akhir tidak boleh sebelum tanggal mulai.</p>}
                     </div>
                     <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
-                        <p className="text-xs font-semibold uppercase text-indigo-700">Terakhir gajian</p>
-                        <p className="mt-1 font-semibold">
-                            {lastPayment ? formatDate(lastPayment.paid_at, true) : 'Belum pernah'}
-                        </p>
-                        <p className="mt-1 text-xs text-indigo-800">
-                            {lastPayment ? formatRupiah(lastPayment.total_amount) : 'Belum ada histori pembayaran untuk pegawai ini.'}
-                        </p>
+                        {isEditing ? (
+                            <>
+                                <p className="text-xs font-semibold uppercase text-indigo-700">Snapshot saat ini</p>
+                                <p className="mt-1 font-semibold">{formatNumber(payment.shift_count)} shift | {formatNumber(payment.work_days)} hari</p>
+                                <p className="mt-1 text-xs text-indigo-800">Shift dan hari kerja akan dihitung ulang saat perubahan disimpan.</p>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-xs font-semibold uppercase text-indigo-700">Terakhir gajian</p>
+                                <p className="mt-1 font-semibold">
+                                    {lastPayment ? formatDate(lastPayment.paid_at, true) : 'Belum pernah'}
+                                </p>
+                                <p className="mt-1 text-xs text-indigo-800">
+                                    {lastPayment ? formatRupiah(lastPayment.total_amount) : 'Belum ada histori pembayaran untuk pegawai ini.'}
+                                </p>
+                            </>
+                        )}
                     </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <MiniMetric label="Hari kerja" value={`${formatNumber(employeeSummary.work_days)} hari`} />
-                    <MiniMetric label="Shift" value={formatNumber(employeeSummary.shift_count)} />
-                    <MiniMetric label="Rata-rata" value={employeeSummary.average_label} />
-                    <MiniMetric label="Total jam" value={employeeSummary.total_label} />
+                    <MiniMetric label="Hari kerja" value={`${formatNumber(statSource?.work_days)} hari`} />
+                    <MiniMetric label="Shift" value={formatNumber(statSource?.shift_count)} />
+                    <MiniMetric label="Rata-rata" value={statSource?.average_label || '0j 0m'} />
+                    <MiniMetric label="Total jam" value={statSource?.total_label || '0j 0m'} />
                 </div>
 
                 <div className="space-y-2">
@@ -449,6 +617,11 @@ function SalaryPaymentModal({ employeeSummary, filters, onClose }) {
                                 Belum ada shift tertutup pada periode ini, sehingga gaji harian belum bisa dicatat.
                             </p>
                         )}
+                        {isEditing && (
+                            <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 sm:col-span-2">
+                                Jika periode atau pegawai diganti, hari kerja harian akan dihitung ulang setelah disimpan.
+                            </p>
+                        )}
                     </div>
                 )}
 
@@ -477,7 +650,7 @@ function SalaryPaymentModal({ employeeSummary, filters, onClose }) {
 
                 <div className="sticky bottom-0 -mx-4 -mb-4 flex flex-col gap-3 border-t border-slate-200 bg-white px-4 py-4 sm:-mx-5 sm:-mb-5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                     <div>
-                        <p className="text-xs font-semibold uppercase text-slate-500">Total gaji fix</p>
+                        <p className="text-xs font-semibold uppercase text-slate-500">{isEditing && salaryType === 'DAILY' ? 'Estimasi total saat ini' : 'Total gaji fix'}</p>
                         <p className="text-3xl font-bold text-slate-900">{formatRupiah(totalSalary)}</p>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row">
@@ -486,11 +659,11 @@ function SalaryPaymentModal({ employeeSummary, filters, onClose }) {
                         </button>
                         <button
                             type="submit"
-                            disabled={submitting || !periodStart || !periodEnd || cannotSubmitDaily || totalSalary <= 0}
+                            disabled={submitting || !periodStart || !periodEnd || invalidPeriod || cannotSubmitDaily || cannotSubmitAmount}
                             className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-300"
                         >
-                            <BanknotesIcon className="h-5 w-5" />
-                            {submitting ? 'Menyimpan...' : 'Simpan Gaji'}
+                            {isEditing ? <PencilSquareIcon className="h-5 w-5" /> : <BanknotesIcon className="h-5 w-5" />}
+                            {submitting ? 'Menyimpan...' : (isEditing ? 'Simpan Perubahan' : 'Simpan Gaji')}
                         </button>
                     </div>
                 </div>
@@ -499,7 +672,7 @@ function SalaryPaymentModal({ employeeSummary, filters, onClose }) {
     );
 }
 
-function PaymentDetailModal({ payment, onClose }) {
+function PaymentDetailModal({ payment, onClose, onEdit, onDelete, isDeleting = false }) {
     return (
         <Modal title="Detail Pembayaran Gaji" subtitle={payment.employee_name} onClose={onClose} width="max-w-xl" compact>
             <div className="space-y-4">
@@ -514,6 +687,26 @@ function PaymentDetailModal({ payment, onClose }) {
                             <p className="mt-0.5 text-xs text-emerald-800">{formatDate(payment.period_start)} - {formatDate(payment.period_end)}</p>
                         </div>
                     </div>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <button
+                        type="button"
+                        onClick={onEdit}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                        <PencilSquareIcon className="h-5 w-5" />
+                        Edit Histori
+                    </button>
+                    <button
+                        type="button"
+                        disabled={isDeleting}
+                        onClick={onDelete}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <TrashIcon className="h-5 w-5" />
+                        {isDeleting ? 'Menghapus...' : 'Hapus Histori'}
+                    </button>
                 </div>
 
                 <div className="grid gap-2">

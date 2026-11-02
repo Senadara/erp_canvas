@@ -8,6 +8,10 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->call(ErpSeeder::class);
+        if (env('SEED_DEMO', false)) {
+            $this->call(DemoSeeder::class);
+        } else {
+            $this->call(ErpSeeder::class);
+        }
     }
 }
