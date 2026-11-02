@@ -120,7 +120,7 @@ class ShiftController extends Controller
             'total_revenue' => $totalRevenue,
             'cash_received_total' => (float) $cashSummary['cash']['sales'] + (float) $cashSummary['qris']['sales'],
             'avg_transaction' => round($avgTransaction),
-            'product_breakdown' => array_slice($categoryBreakdown, 0, 15),
+            'product_breakdown' => $categoryBreakdown,
             'expense_by_category' => $expenseByCategory,
             'total_expenses' => $totalOperatingExpenses,
             'cash_summary' => $cashSummary,

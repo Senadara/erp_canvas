@@ -617,7 +617,7 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                             <th className="px-4 py-3 font-medium">Tutup</th>
                              <th className="px-4 py-3 font-medium">Status</th>
                              <th className="px-4 py-3 font-medium text-right">Kas Awal</th>
-                             <th className="px-4 py-3 font-medium text-right">Ekspektasi Kas</th>
+                             <th className="px-4 py-3 font-medium text-right">Total Penghasilan</th>
                              <th className="px-4 py-3 font-medium text-right">Piutang</th>
                              <th className="px-4 py-3 font-medium text-right">Selisih</th>
                              {isOwner && <th className="px-4 py-3 font-medium text-center">Aksi</th>}
@@ -645,7 +645,9 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                         </span>
                                      </td>
                                      <td className="px-4 py-3 text-right">{formatRupiah(s.opening_cash)}</td>
-                                     <td className="px-4 py-3 text-right">{s.expected_cash !== null && s.expected_cash !== undefined ? formatRupiah(s.expected_cash) : '-'}</td>
+                                     <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                                         {formatRupiah(s.total_income ?? ((Number(s.total_sales_cash || 0) + Number(s.total_sales_qris || 0))))}
+                                     </td>
                                      <td className="px-4 py-3 text-right">
                                          {(Number(s.receivable_created_total || 0) > 0 || Number(s.receivable_collected_total || 0) > 0 || Number(s.receivable_remaining_total || 0) > 0) ? (
                                              <div className="space-y-0.5 text-xs">
@@ -742,32 +744,43 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                     <ReceivableActivityList title="Piutang Dibayar di Shift Ini" items={detailReceivables.collected || []} type="collected" />
                                 </div>
 
-                                {/* Product Breakdown */}
-                                {shiftDetail.product_breakdown?.length > 0 && (
-                                    <div>
-                                        <h3 className="text-sm font-semibold text-slate-800 mb-2">Produk Terlaris</h3>
-                                        <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
+                                {/* Product Breakdown / List Produk Terjual */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h3 className="text-sm font-semibold text-slate-800">List Produk Terjual</h3>
+                                        {shiftDetail.product_breakdown?.length > 0 && (
+                                            <span className="text-xs text-slate-500 font-medium">
+                                                {shiftDetail.product_breakdown.reduce((sum, p) => sum + (Number(p.qty) || 0), 0)} porsi terjual
+                                            </span>
+                                        )}
+                                    </div>
+                                    {shiftDetail.product_breakdown?.length > 0 ? (
+                                        <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden max-h-72 overflow-y-auto">
                                             <table className="w-full text-xs">
-                                                <thead>
-                                                    <tr className="bg-slate-100 text-slate-600">
+                                                <thead className="sticky top-0 bg-slate-100 text-slate-600 shadow-sm">
+                                                    <tr>
                                                         <th className="px-3 py-2 text-left font-medium">Produk</th>
                                                         <th className="px-3 py-2 text-right font-medium">Qty</th>
-                                                        <th className="px-3 py-2 text-right font-medium">Revenue</th>
+                                                        <th className="px-3 py-2 text-right font-medium">Total</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
                                                     {shiftDetail.product_breakdown.map((p, i) => (
                                                         <tr key={i} className="hover:bg-white">
-                                                            <td className="px-3 py-1.5 font-medium text-slate-700">{p.name}</td>
-                                                            <td className="px-3 py-1.5 text-right text-slate-600">{p.qty}x</td>
-                                                            <td className="px-3 py-1.5 text-right font-semibold text-slate-800">{formatRupiah(p.revenue)}</td>
+                                                            <td className="px-3 py-2 font-medium text-slate-700">{p.name}</td>
+                                                            <td className="px-3 py-2 text-right text-slate-600 font-medium">{p.qty}x</td>
+                                                            <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatRupiah(p.revenue)}</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
                                             </table>
                                         </div>
-                                    </div>
-                                )}
+                                    ) : (
+                                        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                                            Belum ada produk yang terjual di shift ini.
+                                        </div>
+                                    )}
+                                </div>
 
                                 {/* Expense Breakdown */}
                                 {Object.keys(shiftDetail.expense_by_category || {}).length > 0 && (
@@ -848,8 +861,12 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                                                 <span className="text-amber-300">{formatRupiah(shiftDetail.cash_summary?.outside?.expenses)}</span>
                                             </div>
                                         )}
-                                        <div className="border-t border-slate-700 pt-2 flex justify-between font-bold">
-                                            <span>Ekspektasi Kas</span>
+                                        <div className="border-t border-slate-700 pt-2 flex justify-between font-bold text-emerald-400">
+                                            <span>Total Penghasilan (Tanpa Kas Awal)</span>
+                                            <span>{formatRupiah((Number(shiftDetail.cash_summary?.cash?.sales || 0) + Number(shiftDetail.cash_summary?.qris?.sales || 0)) || shiftDetail.total_revenue || 0)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs text-slate-400">
+                                            <span>Ekspektasi Kas Kasir (Termasuk Kas Awal)</span>
                                             <span>{formatRupiah(shiftDetail.shift?.expected_cash)}</span>
                                         </div>
                                         <div className="flex justify-between font-bold">

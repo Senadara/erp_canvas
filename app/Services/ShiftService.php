@@ -109,6 +109,11 @@ class ShiftService
         $shift->setAttribute('receivable_remaining_total', $receivables['remaining_total']);
         $shift->setAttribute('receivable_remaining_count', $receivables['remaining_count']);
 
+        $totalIncome = (float) $summary['cash']['sales'] + (float) $summary['qris']['sales'];
+        $shift->setAttribute('total_income', $totalIncome);
+        $shift->setAttribute('total_sales_cash', $summary['cash']['sales']);
+        $shift->setAttribute('total_sales_qris', $summary['qris']['sales']);
+
         if ($shift->status !== 'CLOSED') {
             return $shift;
         }
@@ -116,8 +121,6 @@ class ShiftService
         $shift->setAttribute('expected_cash', $summary['cash']['expected']);
         $shift->setAttribute('expected_qris', $summary['qris']['expected']);
         $shift->setAttribute('discrepancy', (float) ($shift->actual_cash ?? 0) - (float) $summary['cash']['expected']);
-        $shift->setAttribute('total_sales_cash', $summary['cash']['sales']);
-        $shift->setAttribute('total_sales_qris', $summary['qris']['sales']);
         $shift->setAttribute('total_expenses', $this->operatingExpenseTotal($summary));
 
         return $shift;
