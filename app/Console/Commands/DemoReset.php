@@ -26,18 +26,30 @@ class DemoReset extends Command
 
         $this->info('⏳ Memulai reset database demo...');
 
-        // Matikan foreign key check sementara
-        DB::statement('PRAGMA foreign_keys = OFF');
+        // Matikan foreign key check sementara (kompatibel MySQL & SQLite)
+        $driver = DB::getDriverName();
+        if ($driver === 'sqlite') {
+            DB::statement('PRAGMA foreign_keys = OFF');
+        } else {
+            DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        }
 
         $this->info('→ Menjalankan migrate:fresh...');
         Artisan::call('migrate:fresh', ['--force' => true]);
         $this->line(Artisan::output());
 
         $this->info('→ Menjalankan DemoSeeder...');
-        Artisan::call('db:seed', ['--force' => true]);
+        Artisan::call('db:seed', [
+            '--class' => 'DemoSeeder',
+            '--force' => true,
+        ]);
         $this->line(Artisan::output());
 
-        DB::statement('PRAGMA foreign_keys = ON');
+        if ($driver === 'sqlite') {
+            DB::statement('PRAGMA foreign_keys = ON');
+        } else {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        }
 
         $this->newLine();
         $this->info('✅ Database demo berhasil direset!');
