@@ -44,10 +44,10 @@ function signedTone(value) {
 
 function Metric({ label, value, sub, tone = 'text-slate-900' }) {
     return (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
-            <p className={`mt-2 text-2xl font-bold ${tone}`}>{value}</p>
-            {sub && <p className="mt-1 text-xs leading-relaxed text-slate-500">{sub}</p>}
+        <div className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4 shadow-sm">
+            <p className="text-[10px] sm:text-xs font-semibold uppercase text-slate-500">{label}</p>
+            <p className={`mt-1 sm:mt-2 text-base sm:text-2xl font-bold ${tone}`}>{value}</p>
+            {sub && <p className="mt-1 text-[10px] sm:text-xs leading-relaxed text-slate-500 line-clamp-2 sm:line-clamp-none">{sub}</p>}
         </div>
     );
 }
@@ -167,7 +167,7 @@ export default function StockAuditIndex({ filters, report }) {
                             Bandingkan stok awal, penjualan produk, pengurangan stok yang tercatat, restock, waste, dan stok sistem per tanggal.
                         </p>
                     </div>
-                    <form onSubmit={applyFilter} className="grid gap-2 sm:grid-cols-[1fr_1fr_1.4fr_auto] sm:items-end">
+                    <form onSubmit={applyFilter} className="grid gap-2 sm:grid-cols-[1fr_1fr_1.4fr_auto] sm:items-end w-full lg:w-auto">
                         <label className="block">
                             <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Mulai</span>
                             <input
@@ -199,7 +199,7 @@ export default function StockAuditIndex({ filters, report }) {
                                 ))}
                             </select>
                         </label>
-                        <button type="submit" className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
+                        <button type="submit" className="inline-flex h-10 w-full sm:w-auto items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 transition">
                             <FunnelIcon className="h-4 w-4" />
                             Terapkan
                         </button>
@@ -215,7 +215,7 @@ export default function StockAuditIndex({ filters, report }) {
                     </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
                     <Metric label="Bahan Diaudit" value={`${summary.stock_count || 0} item`} sub={`${summary.ok_count || 0} sesuai, ${summary.warning_count || 0} warning, ${summary.critical_count || 0} perlu dicek.`} />
                     <Metric label="Estimasi Stok Keluar" value={formatQty(summary.estimated_sales_usage)} sub="Dari total penjualan produk sesuai konversi." tone="text-indigo-700" />
                     <Metric label="Deduksi Log Sistem" value={formatQty(summary.logged_sales_deduction)} sub="Pengurangan stok yang benar-benar tercatat." tone="text-slate-900" />
@@ -312,7 +312,7 @@ export default function StockAuditIndex({ filters, report }) {
                             </span>
                         </div>
 
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
                             <Metric label="Stok Awal" value={formatQty(selected.stock_start, selectedUnit)} sub={`Estimasi per ${formatDate(`${report.start_date}T00:00:00`)}.`} />
                             <Metric label="Estimasi Keluar" value={formatQty(selected.estimated_sales_usage, selectedUnit)} sub={`${formatQty(selected.product_qty_sold, 'porsi')} produk terjual.`} tone="text-indigo-700" />
                             <Metric label="Deduksi Log" value={formatQty(selected.logged_sales_deduction, selectedUnit)} sub={`Selisih log vs estimasi ${formatQty(selected.sales_movement_gap, selectedUnit)}.`} tone={signedTone(selected.sales_movement_gap)} />

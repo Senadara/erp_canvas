@@ -215,43 +215,43 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                 )}
             </div>
 
-            <div className="mb-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="flex items-center justify-between gap-3">
+            <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-3">
+                <div className="rounded-lg border border-slate-200 bg-white p-2.5 sm:p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-1 sm:gap-3">
                         <div>
-                            <p className="text-xs font-semibold uppercase text-slate-400">Total</p>
-                            <p className="mt-1 text-2xl font-semibold text-slate-900">{productStats.total}</p>
+                            <p className="text-[10px] sm:text-xs font-semibold uppercase text-slate-400">Total</p>
+                            <p className="mt-0.5 sm:mt-1 text-lg sm:text-2xl font-semibold text-slate-900">{productStats.total}</p>
                         </div>
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                        <div className="hidden sm:flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
                             <ArchiveBoxIcon className="h-5 w-5" />
                         </div>
                     </div>
                 </div>
-                <div className="rounded-lg border border-emerald-200 bg-white p-4 shadow-sm">
-                    <div className="flex items-center justify-between gap-3">
+                <div className="rounded-lg border border-emerald-200 bg-white p-2.5 sm:p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-1 sm:gap-3">
                         <div>
-                            <p className="text-xs font-semibold uppercase text-emerald-500">Aktif</p>
-                            <p className="mt-1 text-2xl font-semibold text-emerald-700">{productStats.active}</p>
+                            <p className="text-[10px] sm:text-xs font-semibold uppercase text-emerald-500">Aktif</p>
+                            <p className="mt-0.5 sm:mt-1 text-lg sm:text-2xl font-semibold text-emerald-700">{productStats.active}</p>
                         </div>
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                        <div className="hidden sm:flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
                             <CheckCircleIcon className="h-5 w-5" />
                         </div>
                     </div>
                 </div>
-                <div className="rounded-lg border border-amber-200 bg-white p-4 shadow-sm">
-                    <div className="flex items-center justify-between gap-3">
+                <div className="rounded-lg border border-amber-200 bg-white p-2.5 sm:p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-1 sm:gap-3">
                         <div>
-                            <p className="text-xs font-semibold uppercase text-amber-500">Nonaktif</p>
-                            <p className="mt-1 text-2xl font-semibold text-amber-700">{productStats.inactive}</p>
+                            <p className="text-[10px] sm:text-xs font-semibold uppercase text-amber-500">Nonaktif</p>
+                            <p className="mt-0.5 sm:mt-1 text-lg sm:text-2xl font-semibold text-amber-700">{productStats.inactive}</p>
                         </div>
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+                        <div className="hidden sm:flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
                             <NoSymbolIcon className="h-5 w-5" />
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-4 rounded-lg border border-slate-200 bg-white p-3.5 sm:p-4 shadow-sm">
                 <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                         <FunnelIcon className="h-5 w-5 text-slate-400" />
@@ -262,7 +262,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                             <button
                                 type="button"
                                 onClick={resetFilters}
-                                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                                className="rounded-lg border border-slate-200 px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-50"
                             >
                                 Reset
                             </button>
@@ -270,7 +270,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                         {isOwner && (
                             <button
                                 onClick={() => setIsGroupModalOpen(true)}
-                                className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100"
+                                className="inline-flex items-center gap-1.5 sm:gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-indigo-700 hover:bg-indigo-100"
                             >
                                 <Squares2X2Icon className="h-4 w-4" />
                                 Kelola Group
@@ -279,7 +279,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                     </div>
                 </div>
 
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_280px]">
+                <div className="grid gap-2.5 sm:gap-3 lg:grid-cols-[minmax(0,1fr)_220px_280px]">
                     <div className="relative">
                         <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                         <input
@@ -312,7 +312,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                 key={value}
                                 type="button"
                                 onClick={() => setFilterStatus(value)}
-                                className={`rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
+                                className={`rounded-md px-2 sm:px-3 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${
                                     filterStatus === value
                                         ? 'bg-white text-indigo-700 shadow-sm'
                                         : 'text-slate-500 hover:text-slate-800'
@@ -330,7 +330,7 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
             </div>
 
             <div className="bg-white shadow-sm rounded-lg border border-slate-200 overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-600">
+                <table className="w-full min-w-[760px] text-left text-sm text-slate-600">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-700">
                         <tr>
                             <th className="px-4 py-3 font-medium">Nama Produk</th>
@@ -419,15 +419,15 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
             </div>
 
             {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold text-slate-900">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="text-base sm:text-lg font-semibold text-slate-900">
                                 {editingProduct ? 'Edit Produk' : 'Tambah Produk'}
                             </h2>
-                            <button onClick={closeModal} className="text-slate-400 hover:text-slate-600">&times;</button>
+                            <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                         </div>
-                        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Nama Produk</label>
                                 <input
@@ -559,23 +559,23 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
 
             {/* BOM Modal */}
             {isBomModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold text-slate-900">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[92vh] overflow-y-auto">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="text-base sm:text-lg font-semibold text-slate-900">
                                 Komposisi Bahan (BOM) - {editingProduct?.name}
                             </h2>
-                            <button onClick={closeBomModal} className="text-slate-400 hover:text-slate-600">&times;</button>
+                            <button onClick={closeBomModal} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                         </div>
-                        <form onSubmit={handleBomSubmit} className="p-6 space-y-4">
-                            <p className="text-sm text-slate-600">
+                        <form onSubmit={handleBomSubmit} className="p-4 sm:p-6 space-y-4">
+                            <p className="text-xs sm:text-sm text-slate-600">
                                 Tentukan bahan stok dan kemasan yang membentuk HPP otomatis setiap kali produk ini terjual.
                             </p>
 
                             <div className="space-y-3">
                                 {bomData.conversions.map((conv, index) => (
-                                    <div key={index} className="flex gap-2 items-start bg-slate-50 p-3 rounded border border-slate-200">
-                                        <div className="flex-1">
+                                    <div key={index} className="flex flex-col sm:flex-row gap-2 items-start sm:items-center bg-slate-50 p-2.5 sm:p-3 rounded-lg border border-slate-200">
+                                        <div className="w-full sm:flex-1">
                                             <label className="block text-xs font-medium text-slate-700 mb-1">Bahan Stok</label>
                                             <select
                                                 value={conv.stock_item_id}
@@ -591,25 +591,26 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
                                                 ))}
                                             </select>
                                         </div>
-                                        <div className="w-1/4">
-                                            <label className="block text-xs font-medium text-slate-700 mb-1">Jumlah</label>
-                                            <input
-                                                type="number"
-                                                step="0.0001"
-                                                min="0.0001"
-                                                value={conv.ratio}
-                                                onChange={e => updateConversion(index, 'ratio', e.target.value)}
-                                                className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm"
-                                                required
-                                                placeholder="Cth: 1.5"
-                                            />
-                                        </div>
+                                        <div className="flex w-full sm:w-auto items-end gap-2">
+                                            <div className="flex-1 sm:w-28">
+                                                <label className="block text-xs font-medium text-slate-700 mb-1">Jumlah</label>
+                                                <input
+                                                    type="number"
+                                                    step="0.0001"
+                                                    min="0.0001"
+                                                    value={conv.ratio}
+                                                    onChange={e => updateConversion(index, 'ratio', e.target.value)}
+                                                    className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+                                                    required
+                                                    placeholder="Cth: 1.5"
+                                                />
+                                            </div>
 
-                                        <div className="pt-5">
                                             <button 
                                                 type="button" 
                                                 onClick={() => removeConversion(index)}
-                                                className="text-rose-500 hover:text-rose-700 px-2 py-1"
+                                                className="text-rose-500 hover:text-rose-700 p-2 text-lg font-bold"
+                                                title="Hapus bahan"
                                             >
                                                 &times;
                                             </button>
@@ -641,15 +642,15 @@ export default function ProductsIndex({ products, displayGroups, stockItems }) {
 
             {/* Display Group Modal */}
             {isGroupModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold text-slate-900">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="text-base sm:text-lg font-semibold text-slate-900">
                                 Kelola Group Produk
                             </h2>
-                            <button onClick={() => setIsGroupModalOpen(false)} className="text-slate-400 hover:text-slate-600">&times;</button>
+                            <button onClick={() => setIsGroupModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                         </div>
-                        <div className="p-6">
+                        <div className="p-4 sm:p-6">
                             <form onSubmit={handleGroupSubmit} className="flex gap-2 mb-6">
                                 <input
                                     type="text"

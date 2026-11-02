@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, router } from '@inertiajs/react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
 import {
     ArrowTrendingUpIcon,
     CalendarDaysIcon,
+    ChartBarIcon,
     ClipboardDocumentListIcon,
     FunnelIcon,
     InformationCircleIcon,
@@ -55,6 +56,10 @@ export default function ReportsIndex({
     const [productStart, setProductStart] = useState(productPerformance.start_date || '');
     const [productEnd, setProductEnd] = useState(productPerformance.end_date || '');
     const [selectedProductId, setSelectedProductId] = useState(productPerformance.selected_product_id || '');
+    const [chartMetric, setChartMetric] = useState('quantity_sold');
+    const [chartLimit, setChartLimit] = useState(10);
+    const [chartSort, setChartSort] = useState('DESC');
+    const [chartOrientation, setChartOrientation] = useState('horizontal');
     const invalidProductRange = Boolean(productStart && productEnd && productEnd < productStart);
 
     useEffect(() => {
@@ -114,6 +119,38 @@ export default function ReportsIndex({
     const ranking = productPerformance.ranking || [];
     const selectedProduct = productPerformance.selected_product;
 
+    const chartData = useMemo(() => {
+        let items = [...ranking];
+        items.sort((a, b) => {
+            const valA = Number(a[chartMetric]) || 0;
+            const valB = Number(b[chartMetric]) || 0;
+            return chartSort === 'DESC' ? valB - valA : valA - valB;
+        });
+        if (chartLimit < 999) {
+            items = items.slice(0, chartLimit);
+        }
+        return items.map((item) => ({
+            name: item.name,
+            quantity_sold: Number(item.quantity_sold) || 0,
+            revenue: Number(item.revenue) || 0,
+            gross_profit: Number(item.gross_profit) || 0,
+            value: Number(item[chartMetric]) || 0,
+            shortName: item.name.length > 16 ? item.name.slice(0, 14) + '...' : item.name,
+        }));
+    }, [ranking, chartMetric, chartLimit, chartSort]);
+
+    const metricTitle = (metric) => {
+        if (metric === 'quantity_sold') return 'Porsi Terjual';
+        if (metric === 'revenue') return 'Omzet Penjualan';
+        if (metric === 'gross_profit') return 'Profit Kotor';
+        return '';
+    };
+
+    const metricFormat = (val) => {
+        if (chartMetric === 'quantity_sold') return `${formatNumber(val)} porsi`;
+        return formatRupiah(val);
+    };
+
     return (
         <ErpLayout title="Laporan & Analisis">
             <Head title="Laporan" />
@@ -134,23 +171,23 @@ export default function ReportsIndex({
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
-                    <h3 className="text-sm font-medium text-slate-500 mb-1">Omzet Bulanan</h3>
-                    <p className="text-2xl font-bold text-slate-900">{formatRupiah(monthlyReport.omzet)}</p>
-                    <p className="text-xs text-slate-400 mt-1">{monthlyReport.transactionCount} Transaksi</p>
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4 mb-8">
+                <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <h3 className="text-xs sm:text-sm font-medium text-slate-500 mb-1">Omzet Bulanan</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-slate-900">{formatRupiah(monthlyReport.omzet)}</p>
+                    <p className="text-[11px] sm:text-xs text-slate-400 mt-1">{monthlyReport.transactionCount} Transaksi</p>
                 </div>
-                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
-                    <h3 className="text-sm font-medium text-slate-500 mb-1">HPP Bulanan</h3>
-                    <p className="text-2xl font-bold text-rose-600">{formatRupiah(monthlyReport.hpp)}</p>
+                <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <h3 className="text-xs sm:text-sm font-medium text-slate-500 mb-1">HPP Bulanan</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-rose-600">{formatRupiah(monthlyReport.hpp)}</p>
                 </div>
-                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
-                    <h3 className="text-sm font-medium text-slate-500 mb-1">Pengeluaran Kas Bulanan</h3>
-                    <p className="text-2xl font-bold text-rose-600">{formatRupiah(monthlyReport.pengeluaran)}</p>
+                <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <h3 className="text-xs sm:text-sm font-medium text-slate-500 mb-1">Pengeluaran Kas Bulanan</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-rose-600">{formatRupiah(monthlyReport.pengeluaran)}</p>
                 </div>
-                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
-                    <h3 className="text-sm font-medium text-slate-500 mb-1">Laba Bersih (Estimasi)</h3>
-                    <p className={`text-2xl font-bold ${monthlyReport.netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <h3 className="text-xs sm:text-sm font-medium text-slate-500 mb-1">Laba Bersih (Estimasi)</h3>
+                    <p className={`text-lg sm:text-2xl font-bold ${monthlyReport.netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {formatRupiah(monthlyReport.netProfit)}
                     </p>
                 </div>
@@ -274,6 +311,214 @@ export default function ReportsIndex({
                             </>
                         ) : (
                             <p className="text-sm text-slate-500">Belum ada profit yang dapat dihitung.</p>
+                        )}
+                    </div>
+                </div>
+
+                {/* Grafik Penjualan Produk yang Bisa Dikustomisasi */}
+                <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-slate-100 pb-4">
+                        <div className="flex items-center gap-2.5">
+                            <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
+                                <ChartBarIcon className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-semibold text-slate-900">Grafik Penjualan Produk</h3>
+                                <p className="text-xs text-slate-500">
+                                    Visualisasi komparasi performa menu produk berdasarkan {metricTitle(chartMetric).toLowerCase()}.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Kontrol Kustomisasi Grafik */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {/* Pilihan Metrik */}
+                            <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-medium">
+                                {[
+                                    ['quantity_sold', 'Porsi Terjual'],
+                                    ['revenue', 'Omzet (Rp)'],
+                                    ['gross_profit', 'Profit Kotor'],
+                                ].map(([mKey, mLabel]) => (
+                                    <button
+                                        key={mKey}
+                                        type="button"
+                                        onClick={() => setChartMetric(mKey)}
+                                        className={`rounded-md px-2.5 py-1.5 transition ${
+                                            chartMetric === mKey
+                                                ? 'bg-white text-indigo-700 shadow-sm font-semibold'
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                    >
+                                        {mLabel}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Pilihan Top N Limit */}
+                            <select
+                                value={chartLimit}
+                                onChange={(e) => setChartLimit(Number(e.target.value))}
+                                className="h-8 rounded-lg border-slate-200 bg-white px-2 text-xs font-medium text-slate-700 focus:border-indigo-500 focus:ring-indigo-500"
+                            >
+                                <option value={5}>Top 5</option>
+                                <option value={10}>Top 10</option>
+                                <option value={15}>Top 15</option>
+                                <option value={999}>Semua</option>
+                            </select>
+
+                            {/* Pilihan Urutan */}
+                            <select
+                                value={chartSort}
+                                onChange={(e) => setChartSort(e.target.value)}
+                                className="h-8 rounded-lg border-slate-200 bg-white px-2 text-xs font-medium text-slate-700 focus:border-indigo-500 focus:ring-indigo-500"
+                            >
+                                <option value="DESC">Tertinggi</option>
+                                <option value="ASC">Terendah</option>
+                            </select>
+
+                            {/* Pilihan Orientasi */}
+                            <button
+                                type="button"
+                                onClick={() => setChartOrientation(chartOrientation === 'horizontal' ? 'vertical' : 'horizontal')}
+                                className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                title="Ganti Orientasi Grafik"
+                            >
+                                {chartOrientation === 'horizontal' ? 'Mode Vertikal' : 'Mode Horizontal'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Area Render Chart */}
+                    <div className="mt-4">
+                        {chartData.length === 0 ? (
+                            <div className="flex h-56 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-xs text-slate-400">
+                                Belum ada data penjualan produk pada rentang tanggal ini.
+                            </div>
+                        ) : chartOrientation === 'horizontal' ? (
+                            <div style={{ height: `${Math.max(280, chartData.length * 38)}px` }} className="w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart
+                                        layout="vertical"
+                                        data={chartData}
+                                        margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
+                                    >
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                                        <XAxis
+                                            type="number"
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tick={{ fontSize: 11, fill: '#64748b' }}
+                                            tickFormatter={(val) => chartMetric === 'quantity_sold' ? `${val}` : `Rp${val >= 1000000 ? (val / 1000000).toFixed(1) + 'M' : val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val}`}
+                                        />
+                                        <YAxis
+                                            type="category"
+                                            dataKey="name"
+                                            width={110}
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tick={{ fontSize: 11, fill: '#334155' }}
+                                        />
+                                        <Tooltip
+                                            content={({ active, payload }) => {
+                                                if (active && payload && payload.length) {
+                                                    const d = payload[0].payload;
+                                                    return (
+                                                        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg text-xs">
+                                                            <p className="font-bold text-slate-900 mb-1.5">{d.name}</p>
+                                                            <p className="text-slate-600">
+                                                                Porsi Terjual: <strong className="text-slate-900">{formatNumber(d.quantity_sold)} porsi</strong>
+                                                            </p>
+                                                            <p className="text-slate-600">
+                                                                Omzet: <strong className="text-indigo-600">{formatRupiah(d.revenue)}</strong>
+                                                            </p>
+                                                            <p className="text-slate-600">
+                                                                Profit Kotor: <strong className="text-emerald-600">{formatRupiah(d.gross_profit)}</strong>
+                                                            </p>
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            }}
+                                        />
+                                        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={24}>
+                                            {chartData.map((entry, index) => (
+                                                <Cell
+                                                    key={`cell-${index}`}
+                                                    fill={
+                                                        chartMetric === 'gross_profit'
+                                                            ? '#059669'
+                                                            : chartMetric === 'revenue'
+                                                            ? '#4f46e5'
+                                                            : '#0284c7'
+                                                    }
+                                                />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        ) : (
+                            <div className="h-72 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart
+                                        data={chartData}
+                                        margin={{ top: 10, right: 10, left: -15, bottom: 25 }}
+                                    >
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis
+                                            dataKey="shortName"
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tick={{ fontSize: 10, fill: '#64748b' }}
+                                            interval={0}
+                                            angle={-30}
+                                            textAnchor="end"
+                                        />
+                                        <YAxis
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tick={{ fontSize: 10, fill: '#64748b' }}
+                                            tickFormatter={(val) => chartMetric === 'quantity_sold' ? `${val}` : `Rp${val >= 1000000 ? (val / 1000000).toFixed(1) + 'M' : val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val}`}
+                                        />
+                                        <Tooltip
+                                            content={({ active, payload }) => {
+                                                if (active && payload && payload.length) {
+                                                    const d = payload[0].payload;
+                                                    return (
+                                                        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg text-xs">
+                                                            <p className="font-bold text-slate-900 mb-1.5">{d.name}</p>
+                                                            <p className="text-slate-600">
+                                                                Porsi Terjual: <strong className="text-slate-900">{formatNumber(d.quantity_sold)} porsi</strong>
+                                                            </p>
+                                                            <p className="text-slate-600">
+                                                                Omzet: <strong className="text-indigo-600">{formatRupiah(d.revenue)}</strong>
+                                                            </p>
+                                                            <p className="text-slate-600">
+                                                                Profit Kotor: <strong className="text-emerald-600">{formatRupiah(d.gross_profit)}</strong>
+                                                            </p>
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            }}
+                                        />
+                                        <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={36}>
+                                            {chartData.map((entry, index) => (
+                                                <Cell
+                                                    key={`cell-${index}`}
+                                                    fill={
+                                                        chartMetric === 'gross_profit'
+                                                            ? '#059669'
+                                                            : chartMetric === 'revenue'
+                                                            ? '#4f46e5'
+                                                            : '#0284c7'
+                                                    }
+                                                />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
                         )}
                     </div>
                 </div>

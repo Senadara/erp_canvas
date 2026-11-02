@@ -28,7 +28,7 @@ export default function TransactionsIndex({ transactions }) {
             </div>
 
             <div className="bg-white shadow-sm rounded-lg border border-slate-200 overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-600">
+                <table className="w-full min-w-[620px] text-left text-sm text-slate-600">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-700">
                         <tr>
                             <th className="px-4 py-3 font-medium">Tanggal</th>
@@ -101,15 +101,15 @@ export default function TransactionsIndex({ transactions }) {
                             }
                         `}
                     </style>
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
                         <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh] print:shadow-none">
-                            <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                                <h2 className="text-lg font-semibold text-slate-900">Detail Struk</h2>
-                                <button onClick={() => setSelectedTransaction(null)} className="text-slate-400 hover:text-slate-600">&times;</button>
+                            <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex justify-between items-center">
+                                <h2 className="text-base sm:text-lg font-semibold text-slate-900">Detail Struk</h2>
+                                <button onClick={() => setSelectedTransaction(null)} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                             </div>
-                            <div className="p-6 overflow-y-auto text-slate-800" id="receipt-content">
+                            <div className="p-4 sm:p-6 overflow-y-auto text-slate-800" id="receipt-content">
                                 <div className="text-center mb-4">
-                                    <h3 className="font-bold text-lg">Outlet {selectedTransaction.outlet?.name || 'Toko'}</h3>
+                                    <h3 className="font-bold text-base sm:text-lg">Outlet {selectedTransaction.outlet?.name || 'Toko'}</h3>
                                     {selectedTransaction.outlet?.address && <p className="text-xs text-slate-600">{selectedTransaction.outlet.address}</p>}
                                     {selectedTransaction.outlet?.phone && <p className="text-xs text-slate-600">Telp: {selectedTransaction.outlet.phone}</p>}
                                     <p className="text-xs text-slate-500 mt-1">{new Date(selectedTransaction.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</p>
@@ -171,16 +171,16 @@ export default function TransactionsIndex({ transactions }) {
                                     Terima Kasih Atas Kunjungan Anda!
                                 </div>
                             </div>
-                            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
-                                <button onClick={() => setSelectedTransaction(null)} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
+                            <div className="p-3 sm:p-4 border-t border-slate-200 bg-slate-50 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
+                                <button onClick={() => setSelectedTransaction(null)} className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 text-center">
                                     Tutup
                                 </button>
                                 {selectedTransaction.payment_status !== 'CANCELED' && (
-                                    <button onClick={() => handleCancelOrder(selectedTransaction)} className="px-4 py-2 text-sm font-medium text-rose-700 bg-rose-50 rounded-md hover:bg-rose-100">
+                                    <button onClick={() => handleCancelOrder(selectedTransaction)} className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-rose-700 bg-rose-50 rounded-md hover:bg-rose-100 text-center">
                                         Batalkan
                                     </button>
                                 )}
-                                <button onClick={() => window.print()} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 flex items-center gap-2">
+                                <button onClick={() => window.print()} className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 flex items-center justify-center gap-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                                     </svg>

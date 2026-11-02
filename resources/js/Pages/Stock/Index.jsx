@@ -310,12 +310,12 @@ export default function StockIndex({
         <ErpLayout title="Inventaris Stok">
             <Head title="Stok" />
 
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-slate-900">Manajemen Stok</h1>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">Manajemen Stok</h1>
                 {isOwner && (
                     <button
                         onClick={() => openModal()}
-                        className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium"
+                        className="inline-flex items-center justify-center bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm font-medium transition"
                     >
                         + Tambah Bahan Stok
                     </button>
@@ -323,39 +323,39 @@ export default function StockIndex({
             </div>
 
             {/* Tabs */}
-            <div className="mb-6 flex gap-1 overflow-x-auto whitespace-nowrap border-b border-slate-200">
+            <div className="mb-6 flex gap-1 overflow-x-auto whitespace-nowrap border-b border-slate-200 pb-0.5">
                 <button 
                     onClick={() => setActiveTab('stock')} 
-                    className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'stock' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === 'stock' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Stok Outlet
                 </button>
                 <button
                     onClick={() => setActiveTab('warehouse')}
-                    className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'warehouse' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === 'warehouse' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Stok Gudang
                 </button>
                 <button 
                     onClick={() => setActiveTab('restock_logs')} 
-                    className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'restock_logs' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === 'restock_logs' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Histori Restock
                 </button>
                 <button
                     onClick={() => setActiveTab('deliveries')}
-                    className={`relative px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'deliveries' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`relative px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === 'deliveries' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Pasokan Gudang
                     {deliveries.filter((delivery) => delivery.status === 'SENT').length > 0 && (
-                        <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
+                        <span className="ml-1.5 sm:ml-2 rounded-full bg-amber-100 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-bold text-amber-800">
                             {deliveries.filter((delivery) => delivery.status === 'SENT').length}
                         </span>
                     )}
                 </button>
                 <button
                     onClick={() => setActiveTab('transfers')}
-                    className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'transfers' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === 'transfers' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Transfer Outlet
                 </button>
@@ -364,13 +364,13 @@ export default function StockIndex({
             {activeTab === 'stock' && (
                 <>
             {/* Filter Section */}
-            <div className="mb-4 flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                <div className="flex items-center gap-4">
-                    <label className="text-sm font-medium text-slate-700">Filter Group:</label>
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-3 sm:p-4 rounded-lg border border-slate-200 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
+                    <label className="text-xs sm:text-sm font-medium text-slate-700">Filter Group:</label>
                     <select 
                         value={filterGroup} 
                         onChange={e => setFilterGroup(e.target.value)}
-                        className="border border-slate-300 rounded-md px-3 py-1.5 text-sm min-w-[200px]"
+                        className="w-full sm:w-auto border border-slate-300 rounded-md px-3 py-1.5 text-sm min-w-0 sm:min-w-[200px]"
                     >
                         <option value="">Semua Group</option>
                         {displayGroups.map(g => (
@@ -381,7 +381,7 @@ export default function StockIndex({
                 {isOwner && (
                     <button
                         onClick={() => setIsGroupModalOpen(true)}
-                        className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                        className="text-xs sm:text-sm text-indigo-600 hover:text-indigo-800 font-medium self-end sm:self-auto"
                     >
                         Kelola Group
                     </button>
@@ -389,7 +389,7 @@ export default function StockIndex({
             </div>
 
             <div className="bg-white shadow-sm rounded-lg border border-slate-200 overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-600">
+                <table className="w-full min-w-[780px] text-left text-sm text-slate-600">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-700">
                         <tr>
                             <th className="px-4 py-3 font-medium">Nama Bahan</th>
@@ -555,7 +555,7 @@ export default function StockIndex({
 
             {activeTab === 'restock_logs' && (
                 <div className="bg-white shadow-sm rounded-lg border border-slate-200 overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-600">
+                    <table className="w-full min-w-[760px] text-left text-sm text-slate-600">
                         <thead className="bg-slate-50 border-b border-slate-200 text-slate-700">
                             <tr>
                                 <th className="px-4 py-3 font-medium">Tanggal</th>
@@ -728,15 +728,15 @@ export default function StockIndex({
             )}
 
             {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold text-slate-900">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="text-base sm:text-lg font-semibold text-slate-900">
                                 {editingItem ? 'Edit Bahan Stok' : 'Tambah Bahan Stok'}
                             </h2>
-                            <button onClick={closeModal} className="text-slate-400 hover:text-slate-600">&times;</button>
+                            <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                         </div>
-                        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Nama Bahan</label>
                                 <input
@@ -889,18 +889,18 @@ export default function StockIndex({
             )}
 
             {deliveryItem && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-                    <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
-                        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 sm:p-4">
+                    <div className="w-full max-w-md rounded-lg bg-white shadow-xl max-h-[92vh] overflow-y-auto">
+                        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
                             <div>
-                                <h2 className="font-semibold text-slate-900">Catat Pasokan Gudang</h2>
-                                <p className="mt-0.5 text-sm text-slate-500">{deliveryItem.name}</p>
+                                <h2 className="text-base sm:text-lg font-semibold text-slate-900">Catat Pasokan Gudang</h2>
+                                <p className="mt-0.5 text-xs sm:text-sm text-slate-500">{deliveryItem.name}</p>
                             </div>
-                            <button type="button" onClick={closeDeliveryModal} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
+                            <button type="button" onClick={closeDeliveryModal} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
                                 <XMarkIcon className="h-5 w-5" />
                             </button>
                         </div>
-                        <form onSubmit={submitDelivery} className="space-y-4 p-5">
+                        <form onSubmit={submitDelivery} className="space-y-4 p-4 sm:p-5">
                             <label className="block">
                                 <span className="mb-1.5 block text-sm font-medium text-slate-700">Jumlah Dikirim ({deliveryItem.unit_name})</span>
                                 <input
@@ -936,18 +936,18 @@ export default function StockIndex({
             )}
 
             {receivingDelivery && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-                    <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
-                        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 sm:p-4">
+                    <div className="w-full max-w-md rounded-lg bg-white shadow-xl max-h-[92vh] overflow-y-auto">
+                        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
                             <div>
-                                <h2 className="font-semibold text-slate-900">Periksa Pasokan Gudang</h2>
-                                <p className="mt-0.5 text-sm text-slate-500">{(receivingDelivery.warehouse_stock_item || receivingDelivery.stock_item)?.name}</p>
+                                <h2 className="text-base sm:text-lg font-semibold text-slate-900">Periksa Pasokan Gudang</h2>
+                                <p className="mt-0.5 text-xs sm:text-sm text-slate-500">{(receivingDelivery.warehouse_stock_item || receivingDelivery.stock_item)?.name}</p>
                             </div>
-                            <button type="button" onClick={closeReceiveModal} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
+                            <button type="button" onClick={closeReceiveModal} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
                                 <XMarkIcon className="h-5 w-5" />
                             </button>
                         </div>
-                        <form onSubmit={submitReceive} className="space-y-4 p-5">
+                        <form onSubmit={submitReceive} className="space-y-4 p-4 sm:p-5">
                             <div className="rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
                                 Mitra mencatat <strong>{Number(receivingDelivery.qty_sent).toLocaleString('id-ID')} {(receivingDelivery.warehouse_stock_item || receivingDelivery.stock_item)?.unit_name}</strong>.
                             </div>
@@ -986,18 +986,18 @@ export default function StockIndex({
             )}
 
             {transferItem && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-                    <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
-                        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 sm:p-4">
+                    <div className="w-full max-w-md rounded-lg bg-white shadow-xl max-h-[92vh] overflow-y-auto">
+                        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
                             <div className="min-w-0">
-                                <h2 className="font-semibold text-slate-900">Ambil Stok dari Gudang</h2>
-                                <p className="mt-0.5 truncate text-sm text-slate-500">{transferItem.name}</p>
+                                <h2 className="text-base sm:text-lg font-semibold text-slate-900">Ambil Stok dari Gudang</h2>
+                                <p className="mt-0.5 truncate text-xs sm:text-sm text-slate-500">{transferItem.name}</p>
                             </div>
-                            <button type="button" onClick={closeTransferModal} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
+                            <button type="button" onClick={closeTransferModal} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tutup">
                                 <XMarkIcon className="h-5 w-5" />
                             </button>
                         </div>
-                        <form onSubmit={submitTransfer} className="space-y-4 p-5">
+                        <form onSubmit={submitTransfer} className="space-y-4 p-4 sm:p-5">
                             <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-slate-200 bg-slate-200">
                                 <div className="bg-slate-50 p-3">
                                     <p className="text-xs text-slate-500">Stok gudang</p>
@@ -1048,15 +1048,15 @@ export default function StockIndex({
 
             {/* Restock Modal */}
             {isRestockModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-sm">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold text-slate-900">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-sm max-h-[92vh] overflow-y-auto">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="text-base sm:text-lg font-semibold text-slate-900">
                                 Restock dari Luar Gudang
                             </h2>
-                            <button onClick={closeRestockModal} className="text-slate-400 hover:text-slate-600">&times;</button>
+                            <button onClick={closeRestockModal} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                         </div>
-                        <form onSubmit={handleRestock} className="p-6 space-y-4">
+                        <form onSubmit={handleRestock} className="p-4 sm:p-6 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Stok Saat Ini</label>
                                 <div className="font-semibold text-lg">{Number(editingItem?.current_stock_biji).toFixed(2)} {editingItem?.unit_name}</div>
@@ -1123,15 +1123,15 @@ export default function StockIndex({
 
             {/* Display Group Modal */}
             {isGroupModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold text-slate-900">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="text-base sm:text-lg font-semibold text-slate-900">
                                 Kelola Group Stok
                             </h2>
-                            <button onClick={() => setIsGroupModalOpen(false)} className="text-slate-400 hover:text-slate-600">&times;</button>
+                            <button onClick={() => setIsGroupModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                         </div>
-                        <div className="p-6">
+                        <div className="p-4 sm:p-6">
                             <form onSubmit={handleGroupSubmit} className="flex gap-2 mb-6">
                                 <input
                                     type="text"

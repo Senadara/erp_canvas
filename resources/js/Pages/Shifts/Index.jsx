@@ -389,33 +389,33 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
             </div>
 
             {openShift && cashSummary && (
-                <div className="mb-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                    <div className="bg-white rounded-lg border border-emerald-200 shadow-sm p-4">
-                        <p className="text-xs font-semibold uppercase text-emerald-600">Saldo Cash Kasir</p>
-                        <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.cash?.expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Kas awal + penjualan tunai {formatRupiah(cashCurrentSales)} + pelunasan {formatRupiah(cashDebtCollections)} + top up {formatRupiah(cashierTopups)}.</p>
+                <div className="mb-6 grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
+                    <div className="bg-white rounded-lg border border-emerald-200 shadow-sm p-3 sm:p-4">
+                        <p className="text-[11px] sm:text-xs font-semibold uppercase text-emerald-600">Saldo Cash Kasir</p>
+                        <p className="mt-1 text-lg sm:text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.cash?.expected)}</p>
+                        <p className="mt-1 text-[10px] sm:text-xs text-slate-500 line-clamp-2 sm:line-clamp-none">Kas awal + penjualan tunai {formatRupiah(cashCurrentSales)} + pelunasan {formatRupiah(cashDebtCollections)} + top up {formatRupiah(cashierTopups)}.</p>
                     </div>
-                    <div className="bg-white rounded-lg border border-blue-200 shadow-sm p-4">
-                        <p className="text-xs font-semibold uppercase text-blue-600">Saldo QRIS</p>
-                        <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.qris?.expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Penjualan QRIS {formatRupiah(qrisCurrentSales)} + pelunasan {formatRupiah(qrisDebtCollections)}.</p>
+                    <div className="bg-white rounded-lg border border-blue-200 shadow-sm p-3 sm:p-4">
+                        <p className="text-[11px] sm:text-xs font-semibold uppercase text-blue-600">Saldo QRIS</p>
+                        <p className="mt-1 text-lg sm:text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.qris?.expected)}</p>
+                        <p className="mt-1 text-[10px] sm:text-xs text-slate-500 line-clamp-2 sm:line-clamp-none">Penjualan QRIS {formatRupiah(qrisCurrentSales)} + pelunasan {formatRupiah(qrisDebtCollections)}.</p>
                     </div>
-                    <div className="bg-white rounded-lg border border-amber-200 shadow-sm p-4">
-                        <p className="text-xs font-semibold uppercase text-amber-600">Piutang Shift</p>
-                        <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(openReceivableRemaining)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Piutang baru {formatRupiah(openReceivableCreated)}. Pelunasan masuk {formatRupiah(totalDebtCollections)}.</p>
+                    <div className="bg-white rounded-lg border border-amber-200 shadow-sm p-3 sm:p-4">
+                        <p className="text-[11px] sm:text-xs font-semibold uppercase text-amber-600">Piutang Shift</p>
+                        <p className="mt-1 text-lg sm:text-2xl font-bold text-slate-900">{formatRupiah(openReceivableRemaining)}</p>
+                        <p className="mt-1 text-[10px] sm:text-xs text-slate-500 line-clamp-2 sm:line-clamp-none">Piutang baru {formatRupiah(openReceivableCreated)}. Pelunasan masuk {formatRupiah(totalDebtCollections)}.</p>
                     </div>
-                    <div className="bg-white rounded-lg border border-indigo-200 shadow-sm p-4">
-                        <p className="text-xs font-semibold uppercase text-indigo-600">Total Cash + QRIS</p>
-                        <p className="mt-1 text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.total_expected)}</p>
-                        <p className="mt-1 text-xs text-slate-500">Penarikan owner tidak masuk shift. Pengeluaran laci tercatat terpisah {formatRupiah(drawerExpenses)}.</p>
+                    <div className="bg-white rounded-lg border border-indigo-200 shadow-sm p-3 sm:p-4">
+                        <p className="text-[11px] sm:text-xs font-semibold uppercase text-indigo-600">Total Cash + QRIS</p>
+                        <p className="mt-1 text-lg sm:text-2xl font-bold text-slate-900">{formatRupiah(cashSummary.total_expected)}</p>
+                        <p className="mt-1 text-[10px] sm:text-xs text-slate-500 line-clamp-2 sm:line-clamp-none">Penarikan owner tidak masuk shift. Pengeluaran laci tercatat terpisah {formatRupiah(drawerExpenses)}.</p>
                     </div>
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div className="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
-                    <h2 className="text-lg font-semibold text-slate-900 mb-4">Status Shift Saat Ini</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-8">
+                <div className="bg-white shadow-sm rounded-lg border border-slate-200 p-4 sm:p-6">
+                    <h2 className="text-base sm:text-lg font-semibold text-slate-900 mb-4">Status Shift Saat Ini</h2>
                     {openShift ? (
                         <div className="space-y-4">
                             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-md flex justify-between items-center">
@@ -522,21 +522,21 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                 </div>
 
                 {/* Bagian Pengeluaran/Kasbon */}
-                <div className="bg-white shadow-sm rounded-lg border border-slate-200 p-6 flex flex-col">
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-lg font-semibold text-slate-900">Mutasi Kas Shift</h2>
-                        <div className="flex flex-wrap justify-end gap-2">
+                <div className="bg-white shadow-sm rounded-lg border border-slate-200 p-4 sm:p-6 flex flex-col">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                        <h2 className="text-base sm:text-lg font-semibold text-slate-900">Mutasi Kas Shift</h2>
+                        <div className="flex items-center gap-2">
                             <button
                                 onClick={() => openMovementModal('expense')}
                                 disabled={!openShift}
-                                className="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+                                className="flex-1 sm:flex-initial bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 text-center transition"
                             >
                                 Pengeluaran
                             </button>
                             <button
                                 onClick={() => openMovementModal('add')}
                                 disabled={!openShift}
-                                className="bg-emerald-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+                                className="flex-1 sm:flex-initial bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 text-center transition"
                             >
                                 Top Up Kasir
                             </button>
@@ -606,10 +606,11 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                 </div>
             </div>
 
-            <div className="bg-white shadow-sm rounded-lg border border-slate-200 overflow-x-auto">
-                <h2 className="text-lg font-semibold text-slate-900 p-4 border-b border-slate-200">Riwayat Shift</h2>
-                <table className="w-full text-left text-sm text-slate-600">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-700">
+            <div className="bg-white shadow-sm rounded-lg border border-slate-200">
+                <h2 className="text-base sm:text-lg font-semibold text-slate-900 p-4 border-b border-slate-200">Riwayat Shift</h2>
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-left text-sm text-slate-600">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-700">
                         <tr>
                             <th className="px-4 py-3 font-medium">Shift</th>
                             <th className="px-4 py-3 font-medium">Buka</th>
@@ -679,41 +680,42 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
                         )}
                     </tbody>
                 </table>
+                </div>
             </div>
 
             {/* Shift Detail Modal */}
             {(shiftDetail || loadingDetail) && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-900 text-white">
-                            <h2 className="text-lg font-semibold">Detail Laporan Shift</h2>
-                            <button onClick={() => setShiftDetail(null)} className="text-white/70 hover:text-white text-xl">&times;</button>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2.5 sm:p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex justify-between items-center bg-slate-900 text-white">
+                            <h2 className="text-base sm:text-lg font-semibold">Detail Laporan Shift</h2>
+                            <button onClick={() => setShiftDetail(null)} className="text-white/70 hover:text-white text-xl p-1">&times;</button>
                         </div>
                         {loadingDetail ? (
-                            <div className="p-12 text-center text-slate-500">
+                            <div className="p-8 sm:p-12 text-center text-slate-500">
                                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-3"></div>
                                 Memuat data...
                             </div>
                         ) : shiftDetail && (
-                            <div className="p-6 overflow-y-auto space-y-5">
+                            <div className="p-3.5 sm:p-6 overflow-y-auto space-y-4 sm:space-y-5">
                                 {/* Summary Cards */}
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                    <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
-                                        <p className="text-xs text-indigo-600 font-medium">Durasi Shift</p>
-                                        <p className="text-lg font-bold text-indigo-900">{shiftDetail.duration}</p>
+                                <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+                                    <div className="bg-indigo-50 rounded-lg p-2.5 sm:p-3 border border-indigo-100">
+                                        <p className="text-[11px] sm:text-xs text-indigo-600 font-medium">Durasi Shift</p>
+                                        <p className="text-base sm:text-lg font-bold text-indigo-900">{shiftDetail.duration}</p>
                                     </div>
-                                    <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-100">
-                                        <p className="text-xs text-emerald-600 font-medium">Omzet Shift</p>
-                                        <p className="text-lg font-bold text-emerald-900">{formatRupiah(shiftDetail.total_revenue)}</p>
+                                    <div className="bg-emerald-50 rounded-lg p-2.5 sm:p-3 border border-emerald-100">
+                                        <p className="text-[11px] sm:text-xs text-emerald-600 font-medium">Omzet Shift</p>
+                                        <p className="text-base sm:text-lg font-bold text-emerald-900">{formatRupiah(shiftDetail.total_revenue)}</p>
                                     </div>
-                                    <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
-                                        <p className="text-xs text-blue-600 font-medium">Uang Masuk Shift</p>
-                                        <p className="text-lg font-bold text-blue-900">{formatRupiah(shiftDetail.cash_received_total)}</p>
-                                        <p className="text-[10px] text-blue-500">Penjualan {formatRupiah(detailCurrentSales)} + pelunasan {formatRupiah(detailDebtCollections)}</p>
+                                    <div className="bg-blue-50 rounded-lg p-2.5 sm:p-3 border border-blue-100">
+                                        <p className="text-[11px] sm:text-xs text-blue-600 font-medium">Uang Masuk Shift</p>
+                                        <p className="text-base sm:text-lg font-bold text-blue-900">{formatRupiah(shiftDetail.cash_received_total)}</p>
+                                        <p className="text-[10px] text-blue-500 line-clamp-1 sm:line-clamp-none">Penjualan {formatRupiah(detailCurrentSales)} + pelunasan {formatRupiah(detailDebtCollections)}</p>
                                     </div>
-                                    <div className="bg-amber-50 rounded-lg p-3 border border-amber-100">
-                                        <p className="text-xs text-amber-600 font-medium">Piutang Baru</p>
-                                        <p className="text-lg font-bold text-amber-900">{formatRupiah(detailReceivables.created_total)}</p>
+                                    <div className="bg-amber-50 rounded-lg p-2.5 sm:p-3 border border-amber-100">
+                                        <p className="text-[11px] sm:text-xs text-amber-600 font-medium">Piutang Baru</p>
+                                        <p className="text-base sm:text-lg font-bold text-amber-900">{formatRupiah(detailReceivables.created_total)}</p>
                                         <p className="text-[10px] text-amber-700">Sisa {formatRupiah(detailReceivables.remaining_total)}</p>
                                     </div>
                                 </div>
@@ -882,13 +884,13 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
             )}
 
             {editingShift && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3 sm:p-4">
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold text-slate-900">Koreksi Shift Owner</h2>
-                            <button onClick={() => setEditingShift(null)} className="text-slate-400 hover:text-slate-600">&times;</button>
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="text-base sm:text-lg font-semibold text-slate-900">Koreksi Shift Owner</h2>
+                            <button onClick={() => setEditingShift(null)} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                         </div>
-                        <form onSubmit={handleShiftEditSubmit} className="p-6 space-y-4">
+                        <form onSubmit={handleShiftEditSubmit} className="p-4 sm:p-6 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Nama Shift</label>
                                 <input type="text" value={editShiftData.name} onChange={e => setEditShiftData('name', e.target.value)} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" required />
@@ -937,15 +939,15 @@ export default function ShiftsIndex({ shifts, openShift, expenses, cashSummary, 
 
             {/* Expense Modal */}
             {isExpenseModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-sm">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold text-slate-900">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="text-base sm:text-lg font-semibold text-slate-900">
                                 {movementTitle}
                             </h2>
-                            <button onClick={() => setIsExpenseModalOpen(false)} className="text-slate-400 hover:text-slate-600">&times;</button>
+                            <button onClick={() => setIsExpenseModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                         </div>
-                        <form onSubmit={handleExpenseSubmit} className="p-6 space-y-4">
+                        <form onSubmit={handleExpenseSubmit} className="p-4 sm:p-6 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Nominal (Rp)</label>
                                 <input
