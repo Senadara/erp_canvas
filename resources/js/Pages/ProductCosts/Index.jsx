@@ -267,33 +267,33 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                 </form>
             </div>
 
-            <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="mb-5 grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4">
                 {[
                     ['Produk', report.summary.product_count, 'Total menu yang dihitung'],
                     ['Aktif', report.summary.active_count, 'Tampil di kasir'],
-                    ['Perlu Dicek', report.summary.needs_attention_count, 'BOM, harga, atau kemasan belum lengkap'],
+                    ['Perlu Dicek', report.summary.needs_attention_count, 'BOM/harga belum lengkap'],
                     ['Margin Rata-rata', formatPercent(report.summary.average_margin_percent), 'Berdasarkan HPP aktif'],
                 ].map(([label, value, note]) => (
-                    <div key={label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="text-xs font-semibold uppercase text-slate-400">{label}</p>
-                        <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
-                        <p className="mt-1 text-xs text-slate-500">{note}</p>
+                    <div key={label} className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm">
+                        <p className="text-[11px] sm:text-xs font-semibold uppercase text-slate-400 truncate">{label}</p>
+                        <p className="mt-1.5 text-xl sm:text-2xl font-bold text-slate-900">{value}</p>
+                        <p className="mt-0.5 text-[11px] sm:text-xs text-slate-500 line-clamp-1">{note}</p>
                     </div>
                 ))}
             </div>
 
-            <section className="mb-6 rounded-xl border border-indigo-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-slate-100 pb-4">
+            <section className="mb-6 rounded-xl border border-indigo-200 bg-white p-3.5 sm:p-5 shadow-sm">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
                     <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             <BanknotesIcon className="h-5 w-5 text-indigo-600" />
-                            <h2 className="text-base font-semibold text-slate-900">Evaluasi & Input Gaji Karyawan</h2>
+                            <h2 className="text-sm sm:text-base font-semibold text-slate-900">Evaluasi & Input Gaji Karyawan</h2>
                             {payrollEvaluation.custom_salary_enabled ? (
-                                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+                                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
                                     Memakai Gaji Manual
                                 </span>
                             ) : (
-                                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
                                     Gaji Otomatis Sistem
                                 </span>
                             )}
@@ -306,7 +306,7 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                         <button
                             type="button"
                             onClick={resetToRecordedSalary}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-rose-600"
+                            className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 sm:py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-rose-600"
                         >
                             <ArrowPathIcon className="h-3.5 w-3.5" />
                             Kembalikan ke Gaji Tercatat ({formatRupiah(payrollEvaluation.recorded_salary_total)})
@@ -314,114 +314,114 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                     )}
                 </div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-xl bg-slate-50 p-4 border border-slate-200">
+                <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
+                    <div className="rounded-xl bg-slate-50 p-3 sm:p-4 border border-slate-200">
                         <div className="flex items-center justify-between">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Rata-rata Omzet</p>
-                            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800">
+                            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500">Rata-rata Omzet</p>
+                            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold text-blue-800">
                                 Aktual
                             </span>
                         </div>
-                        <p className="mt-2 text-xl font-bold text-slate-900">
+                        <p className="mt-1.5 text-lg sm:text-xl font-bold text-slate-900">
                             {formatRupiah(payrollEvaluation.avg_daily_revenue || 0)}
                             <span className="text-xs font-normal text-slate-500 ml-1">/ hari</span>
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                            Total Omzet: <strong className="text-slate-700">{formatRupiah(payrollEvaluation.revenue || 0)}</strong> ({payrollEvaluation.active_sales_days || payrollEvaluation.day_count || 0} hari transaksi)
+                        <p className="mt-1 text-[11px] sm:text-xs text-slate-500">
+                            Total Omzet: <strong className="text-slate-700">{formatRupiah(payrollEvaluation.revenue || 0)}</strong> ({payrollEvaluation.active_sales_days || payrollEvaluation.day_count || 0} hari aktif)
                         </p>
                     </div>
 
-                    <div className="rounded-xl bg-indigo-50/70 p-4 border border-indigo-200">
+                    <div className="rounded-xl bg-indigo-50/70 p-3 sm:p-4 border border-indigo-200">
                         <div className="flex items-center justify-between">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">Target Omzet BEP</p>
-                            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
+                            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-indigo-700">Target Omzet BEP</p>
+                            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold text-indigo-800">
                                 Impas Biaya
                             </span>
                         </div>
-                        <p className="mt-2 text-xl font-bold text-indigo-950">
+                        <p className="mt-1.5 text-lg sm:text-xl font-bold text-indigo-950">
                             {formatRupiah(payrollEvaluation.target_bep_daily_revenue || 0)}
                             <span className="text-xs font-normal text-indigo-700 ml-1">/ hari</span>
                         </p>
-                        <p className="mt-1 text-xs text-indigo-700">
+                        <p className="mt-1 text-[11px] sm:text-xs text-indigo-700">
                             Target Total: <strong className="text-indigo-900">{formatRupiah(payrollEvaluation.target_bep_revenue || 0)}</strong> (Margin Kotor {payrollEvaluation.gross_margin_percent || 0}%)
                         </p>
                     </div>
 
-                    <div className="rounded-xl bg-slate-50 p-4 border border-slate-200">
+                    <div className="rounded-xl bg-slate-50 p-3 sm:p-4 border border-slate-200">
                         <div className="flex items-center justify-between">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500">
                                 {payrollEvaluation.custom_salary_enabled ? 'Gaji (Manual)' : 'Beban Gaji'}
                             </p>
-                            <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                            <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[10px] sm:text-[11px] font-medium text-slate-700">
                                 {payrollEvaluation.labor_cost_per_portion ? `${formatRupiah(payrollEvaluation.labor_cost_per_portion)}/porsi` : 'Biaya Tetap'}
                             </span>
                         </div>
-                        <p className="mt-2 text-xl font-bold text-slate-900">
+                        <p className="mt-1.5 text-lg sm:text-xl font-bold text-slate-900">
                             {formatRupiah(payrollEvaluation.salary_total || 0)}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-1 text-[11px] sm:text-xs text-slate-500">
                             Volume: <strong className="text-slate-700">{Number(payrollEvaluation.sold_portions || 0).toLocaleString('id-ID')}</strong> porsi terjual
                         </p>
                     </div>
 
-                    <div className={`rounded-xl p-4 border ${
+                    <div className={`rounded-xl p-3 sm:p-4 border ${
                         payrollEvaluation.is_profit
                             ? 'bg-emerald-50/80 border-emerald-200'
                             : 'bg-rose-50/80 border-rose-200'
                     }`}>
                         <div className="flex items-center justify-between">
-                            <p className={`text-xs font-semibold uppercase tracking-wider ${
+                            <p className={`text-[11px] sm:text-xs font-semibold uppercase tracking-wider ${
                                 payrollEvaluation.is_profit ? 'text-emerald-700' : 'text-rose-700'
                             }`}>
                                 Profit Setelah Gaji
                             </p>
-                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold ${
                                 payrollEvaluation.is_profit ? 'bg-emerald-200/80 text-emerald-900' : 'bg-rose-200/80 text-rose-900'
                             }`}>
                                 {payrollEvaluation.is_profit ? 'Surplus' : 'Defisit'}
                             </span>
                         </div>
-                        <p className={`mt-2 text-xl font-bold ${
+                        <p className={`mt-1.5 text-lg sm:text-xl font-bold ${
                             payrollEvaluation.is_profit ? 'text-emerald-800' : 'text-rose-800'
                         }`}>
                             {formatRupiah(payrollEvaluation.profit_after_labor || 0)}
                         </p>
-                        <p className={`mt-1 text-xs ${payrollEvaluation.is_profit ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        <p className={`mt-1 text-[11px] sm:text-xs ${payrollEvaluation.is_profit ? 'text-emerald-700' : 'text-rose-700'}`}>
                             Laba Kotor Produk: {formatRupiah(payrollEvaluation.gross_profit || 0)}
                         </p>
                     </div>
                 </div>
 
                 {/* Banner Kesimpulan Analisis Omzet vs Target BEP */}
-                <div className={`mt-4 rounded-xl border p-4.5 transition-all ${
+                <div className={`mt-4 rounded-xl border p-3.5 sm:p-4.5 transition-all ${
                     payrollEvaluation.is_profit
                         ? 'border-emerald-200 bg-emerald-50/60'
                         : 'border-rose-200 bg-rose-50/60'
                 }`}>
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="flex items-start gap-3.5">
-                            <div className={`mt-0.5 shrink-0 rounded-xl p-2.5 shadow-sm ${
+                    <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex items-start gap-3 sm:gap-3.5">
+                            <div className={`mt-0.5 shrink-0 rounded-xl p-2 sm:p-2.5 shadow-sm ${
                                 payrollEvaluation.is_profit ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
                             }`}>
                                 {payrollEvaluation.is_profit ? (
-                                    <ArrowTrendingUpIcon className="h-6 w-6" />
+                                    <ArrowTrendingUpIcon className="h-5 w-5 sm:h-6 sm:w-6" />
                                 ) : (
-                                    <ArrowTrendingDownIcon className="h-6 w-6" />
+                                    <ArrowTrendingDownIcon className="h-5 w-5 sm:h-6 sm:w-6" />
                                 )}
                             </div>
-                            <div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                            <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                    <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-500">
                                         Hasil Kesimpulan:
                                     </span>
-                                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                    <span className={`rounded-full px-2 py-0.5 text-[11px] sm:text-xs font-bold ${
                                         payrollEvaluation.is_profit
                                             ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                             : 'bg-rose-100 text-rose-800 border border-rose-300'
                                     }`}>
                                         {payrollEvaluation.is_profit ? 'SUDAH PROFIT' : 'MASIH MINUS'}
                                     </span>
-                                    <span className="text-xs font-semibold text-slate-600">
+                                    <span className="text-[11px] sm:text-xs font-semibold text-slate-600 break-words">
                                         ({payrollEvaluation.is_profit
                                             ? `+${formatRupiah(payrollEvaluation.daily_profit_difference)}/hari melampaui BEP`
                                             : `-${formatRupiah(Math.abs(payrollEvaluation.daily_profit_difference))}/hari di bawah BEP`})
@@ -442,13 +442,15 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                         </div>
 
                         {/* Indikator Pencapaian BEP */}
-                        <div className="shrink-0 rounded-lg bg-white/80 p-3 border border-slate-200/80 min-w-[200px] lg:text-right">
-                            <p className="text-[11px] font-semibold uppercase text-slate-500">Pencapaian Target BEP</p>
-                            <p className={`mt-0.5 text-2xl font-black ${
-                                payrollEvaluation.is_profit ? 'text-emerald-700' : 'text-rose-700'
-                            }`}>
-                                {payrollEvaluation.bep_achievement_percent || 0}%
-                            </p>
+                        <div className="w-full lg:w-auto shrink-0 rounded-xl bg-white/90 p-3 sm:p-3.5 border border-slate-200/80 min-w-0 lg:min-w-[200px] lg:text-right">
+                            <div className="flex items-center justify-between lg:block">
+                                <p className="text-[11px] font-semibold uppercase text-slate-500">Pencapaian Target BEP</p>
+                                <p className={`text-xl sm:text-2xl font-black ${
+                                    payrollEvaluation.is_profit ? 'text-emerald-700' : 'text-rose-700'
+                                }`}>
+                                    {payrollEvaluation.bep_achievement_percent || 0}%
+                                </p>
+                            </div>
                             <div className="mt-2 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
                                 <div
                                     className={`h-full rounded-full transition-all duration-500 ${
@@ -462,19 +464,19 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                 </div>
 
                 {/* Panel Input Manual Terpisah */}
-                <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 sm:p-4">
+                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                            <h3 className="text-sm font-semibold text-slate-900">Input Manual Gaji Karyawan (Terpisah dari Filter)</h3>
+                            <h3 className="text-sm font-semibold text-slate-900">Input Manual Gaji Karyawan</h3>
                             <p className="text-xs text-slate-500">
                                 Masukkan nominal manual jika data gaji belum diinput atau ingin simulasi gaji total menyeluruh maupun harian per shift.
                             </p>
                         </div>
-                        <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-medium">
+                        <div className="flex w-full sm:w-auto rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-medium">
                             <button
                                 type="button"
                                 onClick={() => setManualSalaryMode('TOTAL')}
-                                className={`rounded-md px-3 py-1.5 transition ${
+                                className={`flex-1 sm:flex-initial rounded-md py-1.5 px-3 transition text-center ${
                                     manualSalaryMode === 'TOTAL'
                                         ? 'bg-indigo-600 text-white shadow-sm'
                                         : 'text-slate-600 hover:text-slate-900'
@@ -485,7 +487,7 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                             <button
                                 type="button"
                                 onClick={() => setManualSalaryMode('DAILY')}
-                                className={`rounded-md px-3 py-1.5 transition ${
+                                className={`flex-1 sm:flex-initial rounded-md py-1.5 px-3 transition text-center ${
                                     manualSalaryMode === 'DAILY'
                                         ? 'bg-indigo-600 text-white shadow-sm'
                                         : 'text-slate-600 hover:text-slate-900'
@@ -498,7 +500,7 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
 
                     {manualSalaryMode === 'TOTAL' ? (
                         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-                            <div className="flex-1 max-w-md">
+                            <div className="flex-1 w-full sm:max-w-md">
                                 <label className="block">
                                     <span className="mb-1 block text-xs font-semibold text-slate-700">
                                         Nominal Total Gaji Periode (Rp)
@@ -513,12 +515,12 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                                     />
                                 </label>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                                 <button
                                     type="button"
                                     onClick={() => applyCustomSalary(customSalaryTotal)}
                                     disabled={!customSalaryTotal || Number(customSalaryTotal) <= 0}
-                                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:bg-slate-300"
+                                    className="inline-flex h-10 w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:bg-slate-300"
                                 >
                                     Terapkan Total Gaji
                                 </button>
@@ -526,7 +528,7 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                                     <button
                                         type="button"
                                         onClick={resetToRecordedSalary}
-                                        className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                        className="inline-flex h-10 w-full sm:w-auto items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
                                     >
                                         Batal Custom
                                     </button>
@@ -535,7 +537,7 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                         </div>
                     ) : (
                         <div className="mt-4 space-y-4">
-                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-200 pb-3">
                                 <span className="text-xs font-semibold text-slate-700">
                                     Kehadiran staf ({startDate} s/d {endDate}):
                                 </span>
@@ -569,7 +571,7 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                                     Belum ada data shift staf yang tercatat pada rentang tanggal ini.
                                 </p>
                             ) : (
-                                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                                <div className="overflow-x-auto rounded-lg border border-slate-200 -mx-1 sm:mx-0">
                                     <table className="w-full min-w-[560px] text-left text-xs">
                                         <thead className="border-b border-slate-200 text-slate-600 bg-slate-100/80">
                                             <tr>
@@ -636,16 +638,16 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                                 </div>
                             )}
 
-                            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
                                 <p className="text-xs text-slate-500">
                                     Total akumulasi: <strong className="text-slate-900">{formatRupiah(calculatedDailyTotal)}</strong> akan dipakai sebagai dasar evaluasi gaji per porsi produk.
                                 </p>
-                                <div className="flex gap-2">
+                                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                                     <button
                                         type="button"
                                         onClick={() => applyCustomSalary(calculatedDailyTotal)}
                                         disabled={calculatedDailyTotal <= 0}
-                                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 text-xs font-semibold text-white hover:bg-indigo-700 disabled:bg-slate-300"
+                                        className="inline-flex h-10 sm:h-9 w-full sm:w-auto items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 text-xs font-semibold text-white hover:bg-indigo-700 disabled:bg-slate-300"
                                     >
                                         <BanknotesIcon className="h-4 w-4" />
                                         Terapkan Hitungan Harian ({formatRupiah(calculatedDailyTotal)})
@@ -654,7 +656,7 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                                         <button
                                             type="button"
                                             onClick={resetToRecordedSalary}
-                                            className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                            className="inline-flex h-10 sm:h-9 w-full sm:w-auto items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
                                         >
                                             Batal Custom
                                         </button>
@@ -667,28 +669,30 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
             </section>
 
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px] items-start">
-                <section className="space-y-4">
-                    <div className="sticky top-4 z-20 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-sm backdrop-blur transition-all">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                                <Squares2X2Icon className="h-5 w-5 text-indigo-600" />
-                                <span>Ringkasan Produk</span>
+                <section className="space-y-4 min-w-0">
+                    <div className="sticky top-2 sm:top-4 z-20 rounded-xl border border-slate-200 bg-white/95 p-3 sm:p-4 shadow-sm backdrop-blur transition-all">
+                        <div className="flex flex-col gap-2.5 sm:gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex items-center justify-between lg:justify-start gap-2 text-sm font-semibold text-slate-800">
+                                <div className="flex items-center gap-2">
+                                    <Squares2X2Icon className="h-5 w-5 text-indigo-600" />
+                                    <span>Ringkasan Produk</span>
+                                </div>
                                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 font-medium">
                                     {filteredProducts.length} produk
                                 </span>
                             </div>
-                            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_220px] lg:w-[560px]">
+                            <div className="grid gap-2 grid-cols-1 sm:grid-cols-[minmax(0,1fr)_200px] lg:w-[560px]">
                                 <input
                                     type="search"
                                     value={query}
                                     onChange={(event) => setQuery(event.target.value)}
                                     placeholder="Cari produk atau kategori..."
-                                    className="h-10 rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    className="h-10 w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                                 />
                                 <select
                                     value={statusFilter}
                                     onChange={(event) => setStatusFilter(event.target.value)}
-                                    className="h-10 rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    className="h-10 w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                                 >
                                     <option value="ALL">Semua status</option>
                                     <option value="ACTIVE">Produk aktif</option>
@@ -699,7 +703,7 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                         </div>
                     </div>
 
-                    <div className="max-h-[calc(100vh-140px)] overflow-y-auto space-y-3 pr-1.5 scrollbar-thin">
+                    <div className="max-h-[calc(100vh-180px)] sm:max-h-[calc(100vh-140px)] overflow-y-auto space-y-3 pr-1 sm:pr-1.5 scrollbar-thin">
                         {filteredProducts.length === 0 ? (
                             <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
                                 Tidak ada produk yang sesuai dengan filter pencarian.
