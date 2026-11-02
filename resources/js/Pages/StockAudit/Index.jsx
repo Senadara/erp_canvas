@@ -320,13 +320,67 @@ export default function StockAuditIndex({ filters, report }) {
                         </div>
 
                         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-                            <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-                                <div className="border-b border-slate-200 px-5 py-4">
+                            <div className="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
+                                <div className="border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
                                     <h3 className="text-base font-semibold text-slate-900">Timeline Harian</h3>
-                                    <p className="mt-1 text-sm text-slate-500">Urutan stok berdasarkan log sistem dan estimasi konversi produk.</p>
+                                    <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-slate-500">Urutan stok berdasarkan log sistem dan estimasi konversi produk.</p>
                                 </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full min-w-[860px] text-sm">
+
+                                {/* Mobile Card View for Timeline */}
+                                <div className="block sm:hidden divide-y divide-slate-100">
+                                    {(selected.timeline || []).length === 0 ? (
+                                        <div className="p-4 text-center text-xs text-slate-400 italic">
+                                            Tidak ada data timeline harian.
+                                        </div>
+                                    ) : (
+                                        (selected.timeline || []).map((day) => (
+                                            <div key={day.date} className="p-3.5 space-y-2.5">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-semibold text-sm text-slate-900">
+                                                        {formatDate(`${day.date}T00:00:00`)}
+                                                    </span>
+                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${Number(day.ending_stock_gap) !== 0 ? (Number(day.ending_stock_gap) < 0 ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700') : 'bg-emerald-50 text-emerald-700'}`}>
+                                                        Selisih: {formatQty(day.ending_stock_gap, selectedUnit)}
+                                                    </span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                                                    <div>
+                                                        <span className="text-slate-400 block text-[10px] uppercase">Awal</span>
+                                                        <span className="font-medium text-slate-700">{formatQty(day.stock_start, selectedUnit)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-slate-400 block text-[10px] uppercase">Porsi Terjual</span>
+                                                        <span className="font-medium text-slate-700">{formatQty(day.product_qty_sold, 'porsi')}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-indigo-500 block text-[10px] uppercase">Estimasi Keluar</span>
+                                                        <span className="font-semibold text-indigo-700">{formatQty(day.estimated_sales_usage, selectedUnit)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-slate-400 block text-[10px] uppercase">Deduksi Log</span>
+                                                        <span className="font-medium text-slate-700">{formatQty(day.logged_sales_deduction, selectedUnit)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-emerald-500 block text-[10px] uppercase">Restock</span>
+                                                        <span className="font-medium text-emerald-700">+{formatQty(day.restock_qty, selectedUnit)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-rose-500 block text-[10px] uppercase">Waste</span>
+                                                        <span className="font-medium text-rose-700">-{formatQty(day.waste_qty, selectedUnit)}</span>
+                                                    </div>
+                                                    <div className="col-span-2 pt-1.5 border-t border-slate-200 flex justify-between items-center">
+                                                        <span className="text-slate-500 text-[11px] font-medium">Akhir Sistem:</span>
+                                                        <span className="font-bold text-slate-900">{formatQty(day.system_ending_stock, selectedUnit)}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
+                                {/* Desktop Table View */}
+                                <div className="hidden sm:block overflow-x-auto min-w-0">
+                                    <table className="w-full min-w-[780px] text-sm">
                                         <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
                                             <tr>
                                                 <th className="px-4 py-3">Tanggal</th>
@@ -359,61 +413,61 @@ export default function StockAuditIndex({ filters, report }) {
                                 </div>
                             </div>
 
-                            <form onSubmit={submitCount} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                            <form onSubmit={submitCount} className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
                                 <div className="mb-4 flex items-start justify-between gap-3">
-                                    <div>
+                                    <div className="min-w-0">
                                         <h3 className="text-base font-semibold text-slate-900">Catat Cek Fisik</h3>
-                                        <p className="mt-1 text-sm text-slate-500">Bandingkan stok asli di outlet dengan stok sistem saat ini.</p>
+                                        <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-slate-500">Bandingkan stok asli di outlet dengan stok sistem saat ini.</p>
                                     </div>
                                     {selected.latest_count ? (
-                                        <ExclamationTriangleIcon className="h-5 w-5 text-amber-500" />
+                                        <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-500" />
                                     ) : (
-                                        <CheckCircleIcon className="h-5 w-5 text-emerald-500" />
+                                        <CheckCircleIcon className="h-5 w-5 shrink-0 text-emerald-500" />
                                     )}
                                 </div>
 
                                 <input type="hidden" value={data.stock_item_id} readOnly />
-                                <div className="mb-3 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                                <div className="mb-3 rounded-md bg-slate-50 px-3 py-2 text-xs sm:text-sm text-slate-600">
                                     Stok sistem saat ini: <span className="font-semibold text-slate-900">{formatQty(selected.current_system_stock, selectedUnit)}</span>
                                 </div>
 
                                 <label className="block">
-                                    <span className="mb-1 block text-sm font-medium text-slate-700">Stok fisik</span>
+                                    <span className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">Stok fisik ({selectedUnit})</span>
                                     <input
                                         type="number"
                                         min="0"
                                         step="0.0001"
                                         value={data.counted_stock}
                                         onChange={(event) => setData('counted_stock', event.target.value)}
-                                        className="w-full rounded-md border-slate-300 text-sm"
+                                        className="w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                                         required
                                     />
                                     {errors.counted_stock && <p className="mt-1 text-xs text-rose-600">{errors.counted_stock}</p>}
                                 </label>
 
                                 <label className="mt-3 block">
-                                    <span className="mb-1 block text-sm font-medium text-slate-700">Waktu cek</span>
+                                    <span className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">Waktu cek</span>
                                     <input
                                         type="datetime-local"
                                         value={data.counted_at}
                                         onChange={(event) => setData('counted_at', event.target.value)}
-                                        className="w-full rounded-md border-slate-300 text-sm"
+                                        className="w-full max-w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                                     />
                                 </label>
 
                                 <label className="mt-3 block">
-                                    <span className="mb-1 block text-sm font-medium text-slate-700">Catatan</span>
+                                    <span className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">Catatan</span>
                                     <textarea
-                                        rows="3"
+                                        rows="2"
                                         value={data.note}
                                         onChange={(event) => setData('note', event.target.value)}
-                                        className="w-full rounded-md border-slate-300 text-sm"
+                                        className="w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                                         placeholder="Contoh: hitung ulang freezer / stok fisik kurang 2 pcs"
                                     />
                                 </label>
 
                                 {selected.latest_count && (
-                                    <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                                         Cek terakhir {formatDate(selected.latest_count.date, true)}: fisik {formatQty(selected.latest_count.counted_stock, selectedUnit)}, selisih {formatQty(selected.latest_count.difference, selectedUnit)}.
                                     </div>
                                 )}
@@ -421,17 +475,17 @@ export default function StockAuditIndex({ filters, report }) {
                                 <button
                                     type="submit"
                                     disabled={processing || Boolean(inspectingStockId)}
-                                    className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                                    className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 transition"
                                 >
                                     {processing ? 'Menyimpan...' : inspectingStockId ? 'Memuat inspeksi...' : 'Simpan Cek Fisik'}
                                 </button>
                             </form>
                         </div>
 
-                        <div className="grid gap-5 xl:grid-cols-2">
-                            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                        <div className="grid gap-4 sm:gap-5 xl:grid-cols-2">
+                            <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-3.5 sm:p-5 shadow-sm">
                                 <h3 className="text-base font-semibold text-slate-900">Ringkasan Produk yang Memakai Bahan Ini</h3>
-                                <div className="mt-4 space-y-2">
+                                <div className="mt-3 sm:mt-4 space-y-2">
                                     {(selected.product_breakdown || []).length === 0 ? (
                                         <EmptyState text="Tidak ada produk terjual yang memakai bahan ini pada periode filter." />
                                     ) : selected.product_breakdown.map((product) => (
@@ -449,9 +503,9 @@ export default function StockAuditIndex({ filters, report }) {
                                 </div>
                             </section>
 
-                            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                            <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-3.5 sm:p-5 shadow-sm">
                                 <h3 className="text-base font-semibold text-slate-900">Histori Cek Fisik</h3>
-                                <div className="mt-4 space-y-2">
+                                <div className="mt-3 sm:mt-4 space-y-2">
                                     {(selected.count_history || []).length === 0 ? (
                                         <EmptyState text="Belum ada cek fisik pada periode ini." />
                                     ) : selected.count_history.map((count) => (
@@ -468,10 +522,10 @@ export default function StockAuditIndex({ filters, report }) {
                             </section>
                         </div>
 
-                        <div className="grid gap-5 xl:grid-cols-3">
-                            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                        <div className="grid gap-4 sm:gap-5 xl:grid-cols-3">
+                            <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-3.5 sm:p-5 shadow-sm">
                                 <h3 className="text-base font-semibold text-slate-900">Detail Penjualan</h3>
-                                <div className="mt-4 max-h-96 space-y-2 overflow-y-auto">
+                                <div className="mt-3 sm:mt-4 max-h-96 space-y-2 overflow-y-auto">
                                     {(selected.transaction_details || []).length === 0 ? (
                                         <EmptyState text="Tidak ada detail penjualan pada periode ini." />
                                     ) : selected.transaction_details.map((item, index) => (
@@ -487,9 +541,9 @@ export default function StockAuditIndex({ filters, report }) {
                                 </div>
                             </section>
 
-                            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                            <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-3.5 sm:p-5 shadow-sm">
                                 <h3 className="text-base font-semibold text-slate-900">Detail Restock</h3>
-                                <div className="mt-4 max-h-96 space-y-2 overflow-y-auto">
+                                <div className="mt-3 sm:mt-4 max-h-96 space-y-2 overflow-y-auto">
                                     {(selected.restock_details || []).length === 0 ? (
                                         <EmptyState text="Tidak ada restock pada periode ini." />
                                     ) : selected.restock_details.map((item) => (
@@ -506,9 +560,9 @@ export default function StockAuditIndex({ filters, report }) {
                                 </div>
                             </section>
 
-                            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                            <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-3.5 sm:p-5 shadow-sm">
                                 <h3 className="text-base font-semibold text-slate-900">Waste dan Movement</h3>
-                                <div className="mt-4 max-h-96 space-y-2 overflow-y-auto">
+                                <div className="mt-3 sm:mt-4 max-h-96 space-y-2 overflow-y-auto">
                                     {(selected.waste_details || []).map((item) => (
                                         <div key={item.id} className="rounded-md border border-rose-100 bg-rose-50 px-3 py-2">
                                             <div className="flex items-center justify-between gap-3">
