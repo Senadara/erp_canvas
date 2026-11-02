@@ -56,7 +56,10 @@ class ShiftController extends Controller
         $durationMins = $durationMinutes % 60;
 
         // Transactions during shift
-        $txQuery = Transaction::where('shift_id', $shift->id);
+        $txQuery = Transaction::where(function ($q) use ($shift) {
+            $q->where('shift_id', $shift->id)
+              ->orWhere('payment_shift_id', $shift->id);
+        });
         $transactions = $txQuery->with('items')->get();
         $salesTransactions = $transactions->where('payment_status', '!=', 'CANCELED');
 

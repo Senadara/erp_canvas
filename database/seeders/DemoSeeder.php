@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Conversion;
 use App\Models\EmployeeSalaryPayment;
 use App\Models\Outlet;
 use App\Models\PettyCash;
@@ -31,7 +32,7 @@ class DemoSeeder extends Seeder
         ]);
 
         // ──────────────────────────────────────────────
-        // 2. OWNER
+        // 2. USERS (OWNER & STAFF)
         // ──────────────────────────────────────────────
         $ownerEmail    = env('SEED_OWNER_EMAIL', 'demo@karsa.id');
         $ownerPassword = env('SEED_OWNER_PASSWORD', 'Demo123!');
@@ -45,17 +46,14 @@ class DemoSeeder extends Seeder
         ]);
         $owner->outlets()->attach($outlet->id);
 
-        // ──────────────────────────────────────────────
-        // 3. STAFF
-        // ──────────────────────────────────────────────
-        $staff = User::create([
+        $staff1 = User::create([
             'email'         => 'staff@karsa.id',
             'password_hash' => Hash::make('Staff123!'),
             'display_name'  => 'Andi Susanto',
             'role'          => 'STAFF',
             'is_active'     => true,
         ]);
-        $staff->outlets()->attach($outlet->id);
+        $staff1->outlets()->attach($outlet->id);
 
         $staff2 = User::create([
             'email'         => 'staff2@karsa.id',
@@ -67,7 +65,7 @@ class DemoSeeder extends Seeder
         $staff2->outlets()->attach($outlet->id);
 
         // ──────────────────────────────────────────────
-        // 4. SUPPLIER
+        // 3. SUPPLIER & STOK BAHAN
         // ──────────────────────────────────────────────
         $supplier = Supplier::create([
             'name'    => 'CV Bahan Makanan Nusantara',
@@ -75,25 +73,20 @@ class DemoSeeder extends Seeder
             'address' => 'Jl. Pasar Sentral Blok B No. 12, Makassar',
         ]);
 
-        // ──────────────────────────────────────────────
-        // 5. STOK BAHAN
-        // ──────────────────────────────────────────────
         $stockDefs = [
-            ['name' => 'Kopi Robusta',        'unit' => 'gram',  'stock' => 5000,  'min' => 500,  'supplier_id' => $supplier->id],
-            ['name' => 'Susu UHT',            'unit' => 'ml',    'stock' => 20000, 'min' => 2000, 'supplier_id' => $supplier->id],
-            ['name' => 'Gula Pasir',           'unit' => 'gram',  'stock' => 10000, 'min' => 1000, 'supplier_id' => $supplier->id],
-            ['name' => 'Roti Tawar',           'unit' => 'lembar','stock' => 100,   'min' => 20,   'supplier_id' => null],
-            ['name' => 'Telur Ayam',           'unit' => 'butir', 'stock' => 120,   'min' => 24,   'supplier_id' => $supplier->id],
-            ['name' => 'Mentega',              'unit' => 'gram',  'stock' => 2000,  'min' => 200,  'supplier_id' => null],
-            ['name' => 'Teh Celup',            'unit' => 'sachet','stock' => 200,   'min' => 30,   'supplier_id' => $supplier->id],
-            ['name' => 'Sirup Coklat',         'unit' => 'ml',    'stock' => 3000,  'min' => 300,  'supplier_id' => null],
-            ['name' => 'Es Batu',              'unit' => 'kg',    'stock' => 50,    'min' => 10,   'supplier_id' => null],
-            ['name' => 'Pisang Cavendish',     'unit' => 'buah',  'stock' => 60,    'min' => 12,   'supplier_id' => $supplier->id],
+            ['name' => 'Kopi Robusta',    'unit' => 'gram',   'stock' => 5000,  'min' => 500,  'supplier_id' => $supplier->id],
+            ['name' => 'Susu UHT',        'unit' => 'ml',     'stock' => 20000, 'min' => 2000, 'supplier_id' => $supplier->id],
+            ['name' => 'Gula Pasir',      'unit' => 'gram',   'stock' => 10000, 'min' => 1000, 'supplier_id' => $supplier->id],
+            ['name' => 'Roti Tawar',      'unit' => 'lembar', 'stock' => 100,   'min' => 20,   'supplier_id' => null],
+            ['name' => 'Pisang Cavendish','unit' => 'buah',   'stock' => 80,    'min' => 15,   'supplier_id' => $supplier->id],
+            ['name' => 'Teh Celup',       'unit' => 'sachet', 'stock' => 250,   'min' => 30,   'supplier_id' => $supplier->id],
+            ['name' => 'Sirup Coklat',    'unit' => 'ml',     'stock' => 3000,  'min' => 300,  'supplier_id' => null],
+            ['name' => 'Es Batu',         'unit' => 'kg',     'stock' => 50,    'min' => 10,   'supplier_id' => null],
         ];
 
         $stocks = [];
         foreach ($stockDefs as $def) {
-            $s = StockItem::create([
+            $stocks[$def['name']] = StockItem::create([
                 'outlet_id'         => $outlet->id,
                 'name'              => $def['name'],
                 'unit_name'         => $def['unit'],
@@ -103,33 +96,27 @@ class DemoSeeder extends Seeder
                 'trackable'         => true,
                 'counting_basis'    => 'BIJI',
             ]);
-            $stocks[$def['name']] = $s;
         }
 
         // ──────────────────────────────────────────────
-        // 6. PRODUK
+        // 4. PRODUK & BOM
         // ──────────────────────────────────────────────
         $productDefs = [
-            ['name' => 'Kopi Hitam',          'category' => 'Minuman', 'price' => 12000,  'hpp' => 3500],
-            ['name' => 'Kopi Susu',           'category' => 'Minuman', 'price' => 18000,  'hpp' => 6000],
-            ['name' => 'Kopi Susu Gula Aren', 'category' => 'Minuman', 'price' => 22000,  'hpp' => 7500],
-            ['name' => 'Es Kopi',             'category' => 'Minuman', 'price' => 20000,  'hpp' => 7000],
-            ['name' => 'Matcha Latte',        'category' => 'Minuman', 'price' => 25000,  'hpp' => 9000],
-            ['name' => 'Teh Tarik',           'category' => 'Minuman', 'price' => 14000,  'hpp' => 4000],
-            ['name' => 'Es Teh Manis',        'category' => 'Minuman', 'price' => 8000,   'hpp' => 2000],
-            ['name' => 'Coklat Panas',        'category' => 'Minuman', 'price' => 20000,  'hpp' => 7000],
-            ['name' => 'Roti Bakar Coklat',   'category' => 'Makanan', 'price' => 18000,  'hpp' => 7000],
-            ['name' => 'Roti Bakar Keju',     'category' => 'Makanan', 'price' => 20000,  'hpp' => 8000],
-            ['name' => 'Pisang Goreng',       'category' => 'Makanan', 'price' => 12000,  'hpp' => 4000],
-            ['name' => 'Telur Dadar',         'category' => 'Makanan', 'price' => 15000,  'hpp' => 5000],
-            ['name' => 'Sandwich Telur',      'category' => 'Makanan', 'price' => 22000,  'hpp' => 9000],
-            ['name' => 'Nasi Goreng Kafe',    'category' => 'Makanan', 'price' => 28000,  'hpp' => 11000],
-            ['name' => 'Air Mineral',         'category' => 'Minuman', 'price' => 5000,   'hpp' => 1500],
+            ['name' => 'Kopi Susu',           'category' => 'Minuman', 'price' => 18000, 'hpp' => 5500],
+            ['name' => 'Kopi Hitam',          'category' => 'Minuman', 'price' => 12000, 'hpp' => 3000],
+            ['name' => 'Es Kopi Gula Aren',   'category' => 'Minuman', 'price' => 20000, 'hpp' => 6500],
+            ['name' => 'Teh Tarik',           'category' => 'Minuman', 'price' => 14000, 'hpp' => 4000],
+            ['name' => 'Es Teh Manis',        'category' => 'Minuman', 'price' => 8000,  'hpp' => 2000],
+            ['name' => 'Coklat Panas',        'category' => 'Minuman', 'price' => 20000, 'hpp' => 7000],
+            ['name' => 'Roti Bakar Coklat',   'category' => 'Makanan', 'price' => 16000, 'hpp' => 6000],
+            ['name' => 'Pisang Goreng Keju',  'category' => 'Makanan', 'price' => 15000, 'hpp' => 5000],
+            ['name' => 'Nasi Goreng Kafe',    'category' => 'Makanan', 'price' => 28000, 'hpp' => 11000],
+            ['name' => 'Air Mineral',         'category' => 'Minuman', 'price' => 5000,  'hpp' => 1500],
         ];
 
         $products = [];
         foreach ($productDefs as $def) {
-            $p = Product::create([
+            $products[$def['name']] = Product::create([
                 'outlet_id' => $outlet->id,
                 'name'      => $def['name'],
                 'category'  => $def['category'],
@@ -137,302 +124,319 @@ class DemoSeeder extends Seeder
                 'hpp'       => $def['hpp'],
                 'is_active' => true,
             ]);
-            $products[$def['name']] = $p;
+        }
+
+        // Setup BOM sederhana untuk beberapa produk
+        if (isset($products['Kopi Susu'], $stocks['Kopi Robusta'], $stocks['Susu UHT'])) {
+            Conversion::create(['product_id' => $products['Kopi Susu']->id, 'stock_item_id' => $stocks['Kopi Robusta']->id, 'ratio' => 15]);
+            Conversion::create(['product_id' => $products['Kopi Susu']->id, 'stock_item_id' => $stocks['Susu UHT']->id, 'ratio' => 120]);
+        }
+        if (isset($products['Kopi Hitam'], $stocks['Kopi Robusta'])) {
+            Conversion::create(['product_id' => $products['Kopi Hitam']->id, 'stock_item_id' => $stocks['Kopi Robusta']->id, 'ratio' => 15]);
+        }
+        if (isset($products['Es Teh Manis'], $stocks['Teh Celup'], $stocks['Gula Pasir'])) {
+            Conversion::create(['product_id' => $products['Es Teh Manis']->id, 'stock_item_id' => $stocks['Teh Celup']->id, 'ratio' => 1]);
+            Conversion::create(['product_id' => $products['Es Teh Manis']->id, 'stock_item_id' => $stocks['Gula Pasir']->id, 'ratio' => 20]);
         }
 
         // ──────────────────────────────────────────────
-        // 7. SHIFT + TRANSAKSI (30 HARI TERAKHIR)
+        // 5. SHIFT & TRANSAKSI REALISTIS (7 HARI TERAKHIR)
         // ──────────────────────────────────────────────
-        $today   = Carbon::today();
-        $invoice = 1001;
+        $today = Carbon::today();
+        $invoiceSeq = 1001;
 
-        // Kelompok produk untuk variasi transaksi
-        $minumanPagi   = ['Kopi Hitam', 'Kopi Susu', 'Teh Tarik', 'Es Teh Manis'];
-        $minumanSiang  = ['Es Kopi', 'Kopi Susu Gula Aren', 'Matcha Latte', 'Coklat Panas', 'Air Mineral'];
-        $makanan       = ['Roti Bakar Coklat', 'Roti Bakar Keju', 'Pisang Goreng', 'Telur Dadar', 'Sandwich Telur', 'Nasi Goreng Kafe'];
+        // Preset menu order realistis yang sering dipesan pelanggan
+        $orderPresets = [
+            [
+                ['name' => 'Kopi Susu', 'qty' => 2],
+                ['name' => 'Roti Bakar Coklat', 'qty' => 1],
+            ],
+            [
+                ['name' => 'Kopi Hitam', 'qty' => 1],
+                ['name' => 'Pisang Goreng Keju', 'qty' => 1],
+            ],
+            [
+                ['name' => 'Es Kopi Gula Aren', 'qty' => 1],
+                ['name' => 'Air Mineral', 'qty' => 1],
+            ],
+            [
+                ['name' => 'Nasi Goreng Kafe', 'qty' => 1],
+                ['name' => 'Es Teh Manis', 'qty' => 1],
+            ],
+            [
+                ['name' => 'Teh Tarik', 'qty' => 2],
+                ['name' => 'Pisang Goreng Keju', 'qty' => 1],
+            ],
+            [
+                ['name' => 'Coklat Panas', 'qty' => 1],
+                ['name' => 'Roti Bakar Coklat', 'qty' => 1],
+            ],
+            [
+                ['name' => 'Kopi Susu', 'qty' => 1],
+                ['name' => 'Kopi Hitam', 'qty' => 1],
+            ],
+            [
+                ['name' => 'Es Teh Manis', 'qty' => 2],
+                ['name' => 'Nasi Goreng Kafe', 'qty' => 2],
+            ],
+        ];
 
-        for ($day = 29; $day >= 0; $day--) {
-            $date   = $today->copy()->subDays($day);
-            $isWeekend = in_array($date->dayOfWeek, [Carbon::SATURDAY, Carbon::SUNDAY]);
+        // 7 Hari terakhir (H-6 s.d H-1 shift closed, H-0 shift hari ini)
+        for ($dayOffset = 6; $dayOffset >= 1; $dayOffset--) {
+            $date = $today->copy()->subDays($dayOffset);
 
-            // Shift Pagi
-            $shiftPagiOpen  = $date->copy()->setTime(8, 0);
-            $shiftPagiClose = $date->copy()->setTime(14, 30);
-            $cashPagi       = $isWeekend ? 100000 : 75000;
-            $salesCashPagi  = 0;
-            $salesQrisPagi  = 0;
-            $expensesPagi   = 0;
+            // ── Shift 1: Pagi (08:00 - 15:00) oleh Andi Susanto ──
+            $pagiOpen  = $date->copy()->setTime(8, 0);
+            $pagiClose = $date->copy()->setTime(15, 0);
+            $pagiOpeningCash = 50000;
 
-            // Shift Sore
-            $shiftSoreOpen  = $date->copy()->setTime(14, 30);
-            $shiftSoreClose = $date->copy()->setTime(21, 0);
-            $cashSore       = 50000;
-            $salesCashSore  = 0;
-            $salesQrisSore  = 0;
-            $expensesSore   = 0;
-
-            // Buat shift pagi
             $shiftPagi = ShiftRecord::create([
-                'outlet_id'       => $outlet->id,
-                'opened_by'       => $staff->id,
-                'closed_by'       => $staff->id,
-                'opened_at'       => $shiftPagiOpen,
-                'closed_at'       => $shiftPagiClose,
-                'opening_cash'    => $cashPagi,
-                'expected_cash'   => 0, // akan diupdate
-                'actual_cash'     => 0,
-                'expected_qris'   => 0,
-                'discrepancy'     => 0,
-                'total_sales_cash'=> 0,
-                'total_sales_qris'=> 0,
-                'total_expenses'  => 0,
-                'status'          => 'CLOSED',
-                'note'            => 'Shift pagi - demo data',
+                'outlet_id'        => $outlet->id,
+                'name'             => 'Shift Pagi ' . $date->format('d/m/Y'),
+                'opened_by'        => $staff1->id,
+                'closed_by'        => $staff1->id,
+                'opened_at'        => $pagiOpen,
+                'closed_at'        => $pagiClose,
+                'opening_cash'     => $pagiOpeningCash,
+                'status'           => 'CLOSED',
+                'note'             => 'Operasional lancar',
             ]);
 
-            // Buat shift sore
-            $shiftSore = ShiftRecord::create([
-                'outlet_id'       => $outlet->id,
-                'opened_by'       => $staff2->id,
-                'closed_by'       => $staff2->id,
-                'opened_at'       => $shiftSoreOpen,
-                'closed_at'       => $shiftSoreClose,
-                'opening_cash'    => $cashSore,
-                'expected_cash'   => 0,
-                'actual_cash'     => 0,
-                'expected_qris'   => 0,
-                'discrepancy'     => 0,
-                'total_sales_cash'=> 0,
-                'total_sales_qris'=> 0,
-                'total_expenses'  => 0,
-                'status'          => 'CLOSED',
-                'note'            => 'Shift sore - demo data',
-            ]);
+            [$salesCashPagi, $salesQrisPagi] = $this->seedShiftTransactions(
+                $outlet->id,
+                $shiftPagi->id,
+                $pagiOpen,
+                $products,
+                $orderPresets,
+                $invoiceSeq,
+                rand(5, 7)
+            );
 
-            // Transaksi Shift Pagi (8 – 14 transaksi)
-            $txCountPagi = $isWeekend ? rand(12, 18) : rand(8, 13);
-            for ($t = 0; $t < $txCountPagi; $t++) {
-                $minuteOffset = rand(0, 380);
-                $txTime       = $shiftPagiOpen->copy()->addMinutes($minuteOffset);
-                $payMethod    = (rand(1, 10) <= 6) ? 'CASH' : 'QRIS';
-
-                [$total, $items] = $this->buildOrder($products, $minumanPagi, $makanan, $isWeekend);
-
-                $tx = Transaction::create([
-                    'outlet_id'      => $outlet->id,
-                    'invoice_number' => 'INV-DEMO-' . str_pad($invoice++, 6, '0', STR_PAD_LEFT),
-                    'total_amount'   => $total,
-                    'payment_method' => $payMethod,
-                    'cash_received'  => $payMethod === 'CASH' ? $this->roundUp($total) : null,
-                    'change_amount'  => $payMethod === 'CASH' ? ($this->roundUp($total) - $total) : null,
-                    'payment_status' => 'PAID',
-                    'paid_at'        => $txTime,
-                    'created_at'     => $txTime,
-                ]);
-
-                foreach ($items as $item) {
-                    TransactionItem::create([
-                        'transaction_id'  => $tx->id,
-                        'product_id'      => $item['product']->id,
-                        'product_name'    => $item['product']->name,
-                        'qty_porsi'       => $item['qty'],
-                        'price_per_porsi' => $item['product']->price,
-                        'subtotal'        => $item['qty'] * $item['product']->price,
-                    ]);
-                }
-
-                if ($payMethod === 'CASH') {
-                    $salesCashPagi += $total;
-                } else {
-                    $salesQrisPagi += $total;
-                }
-            }
-
-            // Pengeluaran shift pagi (1-2 kali seminggu)
-            if (rand(1, 7) <= 2) {
-                $expAmount = rand(2, 8) * 5000;
+            // 1 Pengeluaran kasir di shift pagi (sesekali)
+            $pagiExpenses = 0;
+            if ($dayOffset % 2 === 0) {
+                $pagiExpenses = 20000;
                 PettyCash::create([
                     'outlet_id'      => $outlet->id,
-                    'amount'         => $expAmount,
+                    'amount'         => $pagiExpenses,
                     'category'       => 'Operasional',
-                    'description'    => collect(['Pembelian sabun cuci', 'Pembelian tisu', 'Pembelian deterjen', 'Isi ulang gas', 'Servis peralatan'])->random(),
+                    'description'    => 'Beli Es Batu Kristal 2 Bal',
                     'payment_method' => 'CASH',
                     'cash_flow'      => 'OUT',
-                    'created_at'     => $shiftPagiOpen->copy()->addMinutes(rand(30, 180)),
+                    'created_at'     => $pagiOpen->copy()->addHours(2),
                 ]);
-                $expensesPagi += $expAmount;
             }
 
-            // Transaksi Shift Sore (6 – 12 transaksi)
-            $txCountSore = $isWeekend ? rand(14, 20) : rand(6, 11);
-            for ($t = 0; $t < $txCountSore; $t++) {
-                $minuteOffset = rand(0, 390);
-                $txTime       = $shiftSoreOpen->copy()->addMinutes($minuteOffset);
-                $payMethod    = (rand(1, 10) <= 5) ? 'CASH' : 'QRIS';
-
-                [$total, $items] = $this->buildOrder($products, $minumanSiang, $makanan, $isWeekend);
-
-                $tx = Transaction::create([
-                    'outlet_id'      => $outlet->id,
-                    'invoice_number' => 'INV-DEMO-' . str_pad($invoice++, 6, '0', STR_PAD_LEFT),
-                    'total_amount'   => $total,
-                    'payment_method' => $payMethod,
-                    'cash_received'  => $payMethod === 'CASH' ? $this->roundUp($total) : null,
-                    'change_amount'  => $payMethod === 'CASH' ? ($this->roundUp($total) - $total) : null,
-                    'payment_status' => 'PAID',
-                    'paid_at'        => $txTime,
-                    'created_at'     => $txTime,
-                ]);
-
-                foreach ($items as $item) {
-                    TransactionItem::create([
-                        'transaction_id'  => $tx->id,
-                        'product_id'      => $item['product']->id,
-                        'product_name'    => $item['product']->name,
-                        'qty_porsi'       => $item['qty'],
-                        'price_per_porsi' => $item['product']->price,
-                        'subtotal'        => $item['qty'] * $item['product']->price,
-                    ]);
-                }
-
-                if ($payMethod === 'CASH') {
-                    $salesCashSore += $total;
-                } else {
-                    $salesQrisSore += $total;
-                }
-            }
-
-            // Pengeluaran shift sore (sesekali)
-            if (rand(1, 10) <= 3) {
-                $expAmount = rand(3, 15) * 5000;
-                PettyCash::create([
-                    'outlet_id'      => $outlet->id,
-                    'amount'         => $expAmount,
-                    'category'       => collect(['Bahan Baku', 'Operasional', 'Utilitas'])->random(),
-                    'description'    => collect(['Pembelian kopi', 'Pembelian susu', 'Rekening listrik', 'Pembelian gula', 'Pembelian es batu'])->random(),
-                    'payment_method' => 'CASH',
-                    'cash_flow'      => 'OUT',
-                    'created_at'     => $shiftSoreOpen->copy()->addMinutes(rand(30, 200)),
-                ]);
-                $expensesSore += $expAmount;
-            }
-
-            // Update ringkasan shift
-            $actualCashPagi = $cashPagi + $salesCashPagi - $expensesPagi;
+            $expectedCashPagi = $pagiOpeningCash + $salesCashPagi - $pagiExpenses;
             $shiftPagi->update([
                 'total_sales_cash' => $salesCashPagi,
                 'total_sales_qris' => $salesQrisPagi,
-                'total_expenses'   => $expensesPagi,
-                'expected_cash'    => $actualCashPagi,
-                'actual_cash'      => $actualCashPagi + rand(-5000, 5000), // sedikit selisih realistis
+                'total_expenses'   => $pagiExpenses,
+                'expected_cash'    => $expectedCashPagi,
+                'actual_cash'      => $expectedCashPagi, // Pas / akurat
                 'expected_qris'    => $salesQrisPagi,
-                'discrepancy'      => rand(-5000, 5000),
+                'discrepancy'      => 0,
             ]);
 
-            $actualCashSore = $cashSore + $salesCashSore - $expensesSore;
+            // ── Shift 2: Sore (15:00 - 22:00) oleh Rini Wulandari ──
+            $soreOpen  = $date->copy()->setTime(15, 0);
+            $soreClose = $date->copy()->setTime(22, 0);
+            $soreOpeningCash = 50000;
+
+            $shiftSore = ShiftRecord::create([
+                'outlet_id'        => $outlet->id,
+                'name'             => 'Shift Sore ' . $date->format('d/m/Y'),
+                'opened_by'        => $staff2->id,
+                'closed_by'        => $staff2->id,
+                'opened_at'        => $soreOpen,
+                'closed_at'        => $soreClose,
+                'opening_cash'     => $soreOpeningCash,
+                'status'           => 'CLOSED',
+                'note'             => 'Tutup shift malam',
+            ]);
+
+            [$salesCashSore, $salesQrisSore] = $this->seedShiftTransactions(
+                $outlet->id,
+                $shiftSore->id,
+                $soreOpen,
+                $products,
+                $orderPresets,
+                $invoiceSeq,
+                rand(6, 8)
+            );
+
+            $soreExpenses = 0;
+            if ($dayOffset % 3 === 0) {
+                $soreExpenses = 22000;
+                PettyCash::create([
+                    'outlet_id'      => $outlet->id,
+                    'amount'         => $soreExpenses,
+                    'category'       => 'Operasional',
+                    'description'    => 'Isi Ulang Gas LPG 3kg',
+                    'payment_method' => 'CASH',
+                    'cash_flow'      => 'OUT',
+                    'created_at'     => $soreOpen->copy()->addHours(3),
+                ]);
+            }
+
+            $expectedCashSore = $soreOpeningCash + $salesCashSore - $soreExpenses;
             $shiftSore->update([
                 'total_sales_cash' => $salesCashSore,
                 'total_sales_qris' => $salesQrisSore,
-                'total_expenses'   => $expensesSore,
-                'expected_cash'    => $actualCashSore,
-                'actual_cash'      => $actualCashSore + rand(-5000, 5000),
+                'total_expenses'   => $soreExpenses,
+                'expected_cash'    => $expectedCashSore,
+                'actual_cash'      => $expectedCashSore,
                 'expected_qris'    => $salesQrisSore,
-                'discrepancy'      => rand(-5000, 5000),
+                'discrepancy'      => 0,
             ]);
         }
 
-        // Shift aktif hari ini (belum tutup)
-        ShiftRecord::create([
-            'outlet_id'       => $outlet->id,
-            'opened_by'       => $staff->id,
-            'closed_by'       => null,
-            'opened_at'       => $today->copy()->setTime(8, 0),
-            'closed_at'       => null,
-            'opening_cash'    => 75000,
-            'expected_cash'   => null,
-            'actual_cash'     => null,
-            'expected_qris'   => null,
-            'discrepancy'     => null,
-            'total_sales_cash'=> 0,
-            'total_sales_qris'=> 0,
-            'total_expenses'  => 0,
-            'status'          => 'OPEN',
-            'note'            => 'Shift aktif hari ini',
+        // ── Shift Hari Ini (H-0): Sedang Berjalan (OPEN) ──
+        $todayOpen = $today->copy()->setTime(8, 0);
+        $todayOpeningCash = 50000;
+
+        $activeShift = ShiftRecord::create([
+            'outlet_id'        => $outlet->id,
+            'name'             => 'Shift Pagi ' . $today->format('d/m/Y'),
+            'opened_by'        => $staff1->id,
+            'closed_by'        => null,
+            'opened_at'        => $todayOpen,
+            'closed_at'        => null,
+            'opening_cash'     => $todayOpeningCash,
+            'status'           => 'OPEN',
+            'note'             => 'Shift sedang berjalan hari ini',
         ]);
 
+        // Berikan beberapa transaksi awal hari ini agar terlihat aktif
+        [$todayCash, $todayQris] = $this->seedShiftTransactions(
+            $outlet->id,
+            $activeShift->id,
+            $todayOpen,
+            $products,
+            $orderPresets,
+            $invoiceSeq,
+            4
+        );
+
         // ──────────────────────────────────────────────
-        // 8. PAYROLL BULAN LALU
+        // 6. HISTORI GAJI (PAYROLL) BULAN LALU
         // ──────────────────────────────────────────────
         $lastMonthStart = $today->copy()->startOfMonth()->subMonth();
         $lastMonthEnd   = $lastMonthStart->copy()->endOfMonth();
 
-        foreach ([$staff, $staff2] as $idx => $karyawan) {
-            $shiftCount  = rand(20, 26);
-            $workDays    = rand(18, 24);
-            $totalMins   = $shiftCount * rand(360, 480);
+        foreach ([$staff1, $staff2] as $idx => $karyawan) {
+            $shiftCount  = $idx === 0 ? 24 : 22;
+            $workDays    = $idx === 0 ? 24 : 22;
+            $totalMins   = $shiftCount * 420; // ~7 jam per shift
             $baseSalary  = 2500000;
-            $bonus        = $idx === 0 ? 250000 : 150000;
+            $bonus       = $idx === 0 ? 200000 : 150000;
 
             EmployeeSalaryPayment::create([
-                'employee_id'     => $karyawan->id,
-                'employee_name'   => $karyawan->display_name,
-                'period_start'    => $lastMonthStart,
-                'period_end'      => $lastMonthEnd,
-                'work_days'       => $workDays,
-                'shift_count'     => $shiftCount,
-                'total_minutes'   => $totalMins,
-                'average_minutes' => (int) ($totalMins / $shiftCount),
-                'longest_shift_minutes'  => 480,
-                'shortest_shift_minutes' => 360,
-                'salary_type'     => 'MONTHLY',
-                'monthly_amount'  => $baseSalary,
-                'daily_rate'      => 0,
-                'payable_days'    => $workDays,
-                'base_amount'     => $baseSalary,
-                'bonus_amount'    => $bonus,
-                'deduction_amount'=> 0,
-                'total_amount'    => $baseSalary + $bonus,
-                'note'            => 'Gaji bulan ' . $lastMonthStart->translatedFormat('F Y'),
-                'paid_at'         => $lastMonthEnd->copy()->addDays(3),
-                'paid_by'         => $owner->id,
+                'employee_id'            => $karyawan->id,
+                'employee_name'          => $karyawan->display_name,
+                'period_start'           => $lastMonthStart,
+                'period_end'             => $lastMonthEnd,
+                'work_days'              => $workDays,
+                'shift_count'            => $shiftCount,
+                'total_minutes'          => $totalMins,
+                'average_minutes'        => 420,
+                'longest_shift_minutes'  => 450,
+                'shortest_shift_minutes' => 390,
+                'salary_type'            => 'MONTHLY',
+                'monthly_amount'         => $baseSalary,
+                'daily_rate'             => 0,
+                'payable_days'           => $workDays,
+                'base_amount'            => $baseSalary,
+                'bonus_amount'           => $bonus,
+                'deduction_amount'       => 0,
+                'total_amount'           => $baseSalary + $bonus,
+                'note'                   => 'Gaji bulan ' . $lastMonthStart->translatedFormat('F Y'),
+                'paid_at'                => $lastMonthEnd->copy()->addDays(2),
+                'paid_by'                => $owner->id,
             ]);
         }
     }
 
-    // ──────────────────────────────────────────────
-    // Helper: Buat order acak
-    // ──────────────────────────────────────────────
-    private function buildOrder(array $products, array $menuList, array $makananList, bool $isWeekend): array
-    {
-        $items      = [];
-        $total      = 0;
-        $itemCount  = rand(1, $isWeekend ? 4 : 3);
+    /**
+     * Helper untuk membuat transaksi dalam suatu shift secara konsisten
+     */
+    private function seedShiftTransactions(
+        string $outletId,
+        string $shiftId,
+        Carbon $startTime,
+        array $products,
+        array $orderPresets,
+        int &$invoiceSeq,
+        int $count
+    ): array {
+        $salesCash = 0;
+        $salesQris = 0;
 
-        // Selalu ada minimal 1 minuman
-        $menuKey = $menuList[array_rand($menuList)];
-        if (isset($products[$menuKey])) {
-            $qty    = rand(1, 2);
-            $items[] = ['product' => $products[$menuKey], 'qty' => $qty];
-            $total  += $qty * $products[$menuKey]->price;
-        }
+        for ($i = 0; $i < $count; $i++) {
+            $txTime = $startTime->copy()->addMinutes(30 + ($i * 50) + rand(-10, 10));
+            $preset = $orderPresets[$i % count($orderPresets)];
 
-        // Tambahan item
-        for ($i = 1; $i < $itemCount; $i++) {
-            $allMenu  = array_merge($menuList, $makananList);
-            $key      = $allMenu[array_rand($allMenu)];
-            if (isset($products[$key])) {
-                $qty    = 1;
-                $items[] = ['product' => $products[$key], 'qty' => $qty];
-                $total  += $qty * $products[$key]->price;
+            $total = 0;
+            $itemsData = [];
+
+            foreach ($preset as $orderItem) {
+                $pName = $orderItem['name'];
+                if (!isset($products[$pName])) continue;
+
+                $product = $products[$pName];
+                $qty = $orderItem['qty'];
+                $subtotal = $qty * $product->price;
+                $total += $subtotal;
+
+                $itemsData[] = [
+                    'product_id'      => $product->id,
+                    'product_name'    => $product->name,
+                    'qty_porsi'       => $qty,
+                    'price_per_porsi' => $product->price,
+                    'subtotal'        => $subtotal,
+                ];
+            }
+
+            // Pola metode bayar bergantian (CASH / QRIS)
+            $payMethod = ($i % 2 === 0) ? 'CASH' : 'QRIS';
+            $cashReceived = $payMethod === 'CASH' ? (int) (ceil($total / 10000) * 10000) : null;
+            if ($cashReceived !== null && $cashReceived < $total) {
+                $cashReceived = $total;
+            }
+            $changeAmount = $cashReceived !== null ? ($cashReceived - $total) : null;
+
+            $tx = Transaction::create([
+                'outlet_id'        => $outletId,
+                'shift_id'         => $shiftId,
+                'payment_shift_id' => $shiftId,
+                'invoice_number'   => 'INV-' . $txTime->format('ymd') . '-' . str_pad($invoiceSeq++, 4, '0', STR_PAD_LEFT),
+                'total_amount'     => $total,
+                'payment_method'   => $payMethod,
+                'cash_received'    => $cashReceived,
+                'change_amount'    => $changeAmount,
+                'payment_status'   => 'PAID',
+                'paid_at'          => $txTime,
+                'created_at'       => $txTime,
+            ]);
+
+            foreach ($itemsData as $item) {
+                TransactionItem::create([
+                    'transaction_id'  => $tx->id,
+                    'product_id'      => $item['product_id'],
+                    'product_name'    => $item['product_name'],
+                    'qty_porsi'       => $item['qty_porsi'],
+                    'price_per_porsi' => $item['price_per_porsi'],
+                    'subtotal'        => $item['subtotal'],
+                ]);
+            }
+
+            if ($payMethod === 'CASH') {
+                $salesCash += $total;
+            } else {
+                $salesQris += $total;
             }
         }
 
-        return [$total, $items];
-    }
-
-    // Helper: Bulatkan ke 1000 terdekat ke atas
-    private function roundUp(int $amount): int
-    {
-        return (int) (ceil($amount / 1000) * 1000);
+        return [$salesCash, $salesQris];
     }
 }
