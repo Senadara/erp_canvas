@@ -3,6 +3,8 @@ import ErpLayout from '@/Layouts/ErpLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import {
     ArrowPathIcon,
+    ArrowTrendingDownIcon,
+    ArrowTrendingUpIcon,
     BanknotesIcon,
     BookmarkSquareIcon,
     CalculatorIcon,
@@ -313,35 +315,149 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-lg bg-slate-50 p-3 border border-slate-100">
-                        <p className="text-xs font-semibold uppercase text-slate-500">Gaji Tercatat Sistem</p>
-                        <p className="mt-1 text-lg font-bold text-slate-800">
-                            {formatRupiah(payrollEvaluation.recorded_salary_total ?? payrollEvaluation.salary_total)}
+                    <div className="rounded-xl bg-slate-50 p-4 border border-slate-200">
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Rata-rata Omzet</p>
+                            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800">
+                                Aktual
+                            </span>
+                        </div>
+                        <p className="mt-2 text-xl font-bold text-slate-900">
+                            {formatRupiah(payrollEvaluation.avg_daily_revenue || 0)}
+                            <span className="text-xs font-normal text-slate-500 ml-1">/ hari</span>
                         </p>
-                        <p className="mt-0.5 text-xs text-slate-400">Dari pembayaran slip payroll</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                            Total Omzet: <strong className="text-slate-700">{formatRupiah(payrollEvaluation.revenue || 0)}</strong> ({payrollEvaluation.active_sales_days || payrollEvaluation.day_count || 0} hari transaksi)
+                        </p>
                     </div>
-                    <div className="rounded-lg bg-indigo-50/70 p-3 border border-indigo-100">
-                        <p className="text-xs font-semibold uppercase text-indigo-600">
-                            {payrollEvaluation.custom_salary_enabled ? 'Gaji Manual Dipakai' : 'Total Gaji Dihitung'}
+
+                    <div className="rounded-xl bg-indigo-50/70 p-4 border border-indigo-200">
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">Target Omzet BEP</p>
+                            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
+                                Impas Biaya
+                            </span>
+                        </div>
+                        <p className="mt-2 text-xl font-bold text-indigo-950">
+                            {formatRupiah(payrollEvaluation.target_bep_daily_revenue || 0)}
+                            <span className="text-xs font-normal text-indigo-700 ml-1">/ hari</span>
                         </p>
-                        <p className="mt-1 text-lg font-bold text-indigo-950">
-                            {formatRupiah(payrollEvaluation.salary_total)}
+                        <p className="mt-1 text-xs text-indigo-700">
+                            Target Total: <strong className="text-indigo-900">{formatRupiah(payrollEvaluation.target_bep_revenue || 0)}</strong> (Margin Kotor {payrollEvaluation.gross_margin_percent || 0}%)
                         </p>
-                        <p className="mt-0.5 text-xs text-indigo-600/80">Dasar perhitungan porsi</p>
                     </div>
-                    <div className="rounded-lg bg-slate-50 p-3 border border-slate-100">
-                        <p className="text-xs font-semibold uppercase text-slate-500">Porsi Terjual</p>
-                        <p className="mt-1 text-lg font-bold text-slate-800">
-                            {Number(payrollEvaluation.sold_portions || 0).toLocaleString('id-ID')}
+
+                    <div className="rounded-xl bg-slate-50 p-4 border border-slate-200">
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                {payrollEvaluation.custom_salary_enabled ? 'Gaji (Manual)' : 'Beban Gaji'}
+                            </p>
+                            <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                                {payrollEvaluation.labor_cost_per_portion ? `${formatRupiah(payrollEvaluation.labor_cost_per_portion)}/porsi` : 'Biaya Tetap'}
+                            </span>
+                        </div>
+                        <p className="mt-2 text-xl font-bold text-slate-900">
+                            {formatRupiah(payrollEvaluation.salary_total || 0)}
                         </p>
-                        <p className="mt-0.5 text-xs text-slate-400">Total volume transaksi</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                            Volume: <strong className="text-slate-700">{Number(payrollEvaluation.sold_portions || 0).toLocaleString('id-ID')}</strong> porsi terjual
+                        </p>
                     </div>
-                    <div className="rounded-lg bg-slate-50 p-3 border border-slate-100">
-                        <p className="text-xs font-semibold uppercase text-slate-500">Gaji per Porsi (Labor Cost)</p>
-                        <p className="mt-1 text-lg font-bold text-indigo-700">
-                            {formatRupiah(payrollEvaluation.labor_cost_per_portion)}
+
+                    <div className={`rounded-xl p-4 border ${
+                        payrollEvaluation.is_profit
+                            ? 'bg-emerald-50/80 border-emerald-200'
+                            : 'bg-rose-50/80 border-rose-200'
+                    }`}>
+                        <div className="flex items-center justify-between">
+                            <p className={`text-xs font-semibold uppercase tracking-wider ${
+                                payrollEvaluation.is_profit ? 'text-emerald-700' : 'text-rose-700'
+                            }`}>
+                                Profit Setelah Gaji
+                            </p>
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                payrollEvaluation.is_profit ? 'bg-emerald-200/80 text-emerald-900' : 'bg-rose-200/80 text-rose-900'
+                            }`}>
+                                {payrollEvaluation.is_profit ? 'Surplus' : 'Defisit'}
+                            </span>
+                        </div>
+                        <p className={`mt-2 text-xl font-bold ${
+                            payrollEvaluation.is_profit ? 'text-emerald-800' : 'text-rose-800'
+                        }`}>
+                            {formatRupiah(payrollEvaluation.profit_after_labor || 0)}
                         </p>
-                        <p className="mt-0.5 text-xs text-slate-400">Beban per porsi terjual</p>
+                        <p className={`mt-1 text-xs ${payrollEvaluation.is_profit ? 'text-emerald-700' : 'text-rose-700'}`}>
+                            Laba Kotor Produk: {formatRupiah(payrollEvaluation.gross_profit || 0)}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Banner Kesimpulan Analisis Omzet vs Target BEP */}
+                <div className={`mt-4 rounded-xl border p-4.5 transition-all ${
+                    payrollEvaluation.is_profit
+                        ? 'border-emerald-200 bg-emerald-50/60'
+                        : 'border-rose-200 bg-rose-50/60'
+                }`}>
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex items-start gap-3.5">
+                            <div className={`mt-0.5 shrink-0 rounded-xl p-2.5 shadow-sm ${
+                                payrollEvaluation.is_profit ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                            }`}>
+                                {payrollEvaluation.is_profit ? (
+                                    <ArrowTrendingUpIcon className="h-6 w-6" />
+                                ) : (
+                                    <ArrowTrendingDownIcon className="h-6 w-6" />
+                                )}
+                            </div>
+                            <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                                        Hasil Kesimpulan:
+                                    </span>
+                                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                        payrollEvaluation.is_profit
+                                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                            : 'bg-rose-100 text-rose-800 border border-rose-300'
+                                    }`}>
+                                        {payrollEvaluation.is_profit ? 'SUDAH PROFIT' : 'MASIH MINUS'}
+                                    </span>
+                                    <span className="text-xs font-semibold text-slate-600">
+                                        ({payrollEvaluation.is_profit
+                                            ? `+${formatRupiah(payrollEvaluation.daily_profit_difference)}/hari melampaui BEP`
+                                            : `-${formatRupiah(Math.abs(payrollEvaluation.daily_profit_difference))}/hari di bawah BEP`})
+                                    </span>
+                                </div>
+                                <p className="mt-1.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
+                                    {payrollEvaluation.is_profit ? (
+                                        <>
+                                            Rata-rata omzet aktual sebesar <strong className="text-slate-900">{formatRupiah(payrollEvaluation.avg_daily_revenue)}/hari</strong> telah <strong className="text-emerald-700">melampaui target titik impas BEP</strong> ({formatRupiah(payrollEvaluation.target_bep_daily_revenue)}/hari). Usaha mencatatkan laba bersih operasional sebesar <strong className="text-emerald-700">{formatRupiah(payrollEvaluation.profit_after_labor)}</strong> setelah dikurangi seluruh beban gaji karyawan.
+                                        </>
+                                    ) : (
+                                        <>
+                                            Rata-rata omzet aktual sebesar <strong className="text-slate-900">{formatRupiah(payrollEvaluation.avg_daily_revenue)}/hari</strong> masih <strong className="text-rose-700">di bawah target titik impas BEP</strong> ({formatRupiah(payrollEvaluation.target_bep_daily_revenue)}/hari). Diperlukan tambahan omzet sekitar <strong className="text-rose-700">{formatRupiah(Math.abs(payrollEvaluation.daily_profit_difference))}/hari</strong> (total defisit {formatRupiah(Math.abs(payrollEvaluation.total_profit_difference))}) agar laba kotor dapat menutup biaya gaji pegawai secara penuh.
+                                        </>
+                                    )}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Indikator Pencapaian BEP */}
+                        <div className="shrink-0 rounded-lg bg-white/80 p-3 border border-slate-200/80 min-w-[200px] lg:text-right">
+                            <p className="text-[11px] font-semibold uppercase text-slate-500">Pencapaian Target BEP</p>
+                            <p className={`mt-0.5 text-2xl font-black ${
+                                payrollEvaluation.is_profit ? 'text-emerald-700' : 'text-rose-700'
+                            }`}>
+                                {payrollEvaluation.bep_achievement_percent || 0}%
+                            </p>
+                            <div className="mt-2 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                                <div
+                                    className={`h-full rounded-full transition-all duration-500 ${
+                                        payrollEvaluation.is_profit ? 'bg-emerald-600' : 'bg-rose-500'
+                                    }`}
+                                    style={{ width: `${Math.min(100, Math.max(0, payrollEvaluation.bep_achievement_percent || 0))}%` }}
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -550,20 +666,23 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                 </div>
             </section>
 
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px] items-start">
                 <section className="space-y-4">
-                    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="sticky top-4 z-20 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-sm backdrop-blur transition-all">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                                <Squares2X2Icon className="h-5 w-5 text-slate-400" />
-                                Ringkasan Produk
+                                <Squares2X2Icon className="h-5 w-5 text-indigo-600" />
+                                <span>Ringkasan Produk</span>
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 font-medium">
+                                    {filteredProducts.length} produk
+                                </span>
                             </div>
                             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_220px] lg:w-[560px]">
                                 <input
                                     type="search"
                                     value={query}
                                     onChange={(event) => setQuery(event.target.value)}
-                                    placeholder="Cari produk atau kategori"
+                                    placeholder="Cari produk atau kategori..."
                                     className="h-10 rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                                 />
                                 <select
@@ -580,8 +699,12 @@ export default function ProductCostsIndex({ outlet, filters, report }) {
                         </div>
                     </div>
 
-                    <div className="grid gap-3">
-                        {filteredProducts.map((product) => (
+                    <div className="max-h-[calc(100vh-140px)] overflow-y-auto space-y-3 pr-1.5 scrollbar-thin">
+                        {filteredProducts.length === 0 ? (
+                            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
+                                Tidak ada produk yang sesuai dengan filter pencarian.
+                            </div>
+                        ) : filteredProducts.map((product) => (
                             <article key={product.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                     <div className="min-w-0">

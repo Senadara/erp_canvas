@@ -397,9 +397,41 @@ class ProductCostService
         $grossProfit = $revenue - $hpp;
         $laborCostPerPortion = $soldPortions > 0 ? $salaryTotal / $soldPortions : 0.0;
 
+        $dayCount = $this->inclusiveDayCount($startDate, $endDate);
+        $activeSalesDays = $transactions->map(function ($t) {
+            return ($t->paid_at ?? $t->created_at)?->toDateString();
+        })->filter()->unique()->count();
+
+        $grossMarginRatio = $revenue > 0 ? ($grossProfit / $revenue) : 0.0;
+        $grossMarginPercent = round($grossMarginRatio * 100, 2);
+
+        $avgDailyRevenue = $dayCount > 0 ? round($revenue / $dayCount) : 0.0;
+        $avgActiveDailyRevenue = $activeSalesDays > 0 ? round($revenue / $activeSalesDays) : $avgDailyRevenue;
+
+        // Target omzet BEP (Break Even Point) agar laba kotor menutup biaya gaji
+        $targetBepRevenue = $grossMarginRatio > 0 ? round($salaryTotal / $grossMarginRatio) : round($salaryTotal + $hpp);
+        $targetBepDailyRevenue = $dayCount > 0 ? round($targetBepRevenue / $dayCount) : $targetBepRevenue;
+
+        $profitAfterLabor = $grossProfit - $salaryTotal;
+        $isProfit = $profitAfterLabor >= 0;
+        $dailyProfitDifference = $avgDailyRevenue - $targetBepDailyRevenue;
+        $totalProfitDifference = $revenue - $targetBepRevenue;
+        $bepAchievementPercent = $targetBepRevenue > 0
+            ? round(($revenue / $targetBepRevenue) * 100, 1)
+            : ($revenue > 0 ? 100.0 : 0.0);
+
+        $conclusionStatus = match (true) {
+            $salaryTotal <= 0 => 'NO_SALARY',
+            $revenue <= 0 => 'MINUS',
+            $isProfit => 'PROFIT',
+            default => 'MINUS',
+        };
+
         return [
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
+            'day_count' => $dayCount,
+            'active_sales_days' => $activeSalesDays,
             'salary_total' => round($salaryTotal),
             'recorded_salary_total' => round($recordedSalaryTotal),
             'custom_salary_total' => $customSalaryTotal !== null ? round($customSalaryTotal) : null,
@@ -408,8 +440,18 @@ class ProductCostService
             'revenue' => round($revenue),
             'estimated_hpp' => round($hpp),
             'gross_profit' => round($grossProfit),
+            'gross_margin_percent' => $grossMarginPercent,
             'labor_cost_per_portion' => round($laborCostPerPortion, 2),
-            'profit_after_labor' => round($grossProfit - $salaryTotal),
+            'profit_after_labor' => round($profitAfterLabor),
+            'avg_daily_revenue' => $avgDailyRevenue,
+            'avg_active_daily_revenue' => $avgActiveDailyRevenue,
+            'target_bep_revenue' => $targetBepRevenue,
+            'target_bep_daily_revenue' => $targetBepDailyRevenue,
+            'daily_profit_difference' => round($dailyProfitDifference),
+            'total_profit_difference' => round($totalProfitDifference),
+            'bep_achievement_percent' => $bepAchievementPercent,
+            'is_profit' => $isProfit,
+            'conclusion_status' => $conclusionStatus,
             'staff_shifts' => $staffShifts->all(),
         ];
     }
